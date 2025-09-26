@@ -1,12 +1,15 @@
+// lib/components/page_wrapper_with_navigation.dart (更新版)
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // 新增：用於 kDebugMode
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../components/modern_bottom_navigation.dart'; // 修正：使用相對路徑
-import '../pages/chat_detail_page.dart'; // 新增：聊天詳情頁面導入
-import '../chat_service_test_page.dart'; // 新增：測試頁面導入
-import '../pages/coach_search_page.dart'; // 新增：教練搜索頁面
-import '../pages/student_management_page.dart'; // 新增：學員管理頁面
+import '../components/modern_bottom_navigation.dart';
+import '../pages/chat_detail_page.dart';
+import '../chat_service_test_page.dart';
+import '../pages/coach_search_page.dart';
+import '../pages/student_management_page.dart';
+import '../services/chat_service.dart'; // 🆕 新增
+import '../services/pairing_service.dart'; // 🆕 新增
 
 class PageWrapperWithNavigation extends StatefulWidget {
   final bool isCoach;
@@ -28,10 +31,17 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
+  // 🆕 新增服務實例
+  final ChatService _chatService = ChatService();
+  final PairingService _pairingService = PairingService();
+  
   // 用戶資料
   String userName = '';
   String userEmail = '';
   bool isLoading = true;
+  
+  // 🆕 新增：統計數據
+  Map<String, dynamic> _stats = {};
 
   @override
   void initState() {
@@ -46,7 +56,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     super.dispose();
   }
 
-  // 初始化用戶資料
+  // 🆕 增強的初始化方法
   Future<void> _initializeUserData() async {
     try {
       final user = _auth.currentUser;
@@ -69,11 +79,54 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
         } catch (e) {
           userName = user.displayName ?? (widget.isCoach ? '教練' : '學員');
         }
+        
+        // 🆕 載入統計數據
+        await _loadStats();
       }
       
       setState(() => isLoading = false);
     } catch (e) {
       setState(() => isLoading = false);
+    }
+  }
+
+  // 🆕 載入統計數據
+  Future<void> _loadStats() async {
+    try {
+      final currentUserId = _auth.currentUser?.uid;
+      if (currentUserId == null) return;
+
+      if (widget.isCoach) {
+        // 教練統計
+        final studentCount = await _getCoachStudentCount(currentUserId);
+        final pendingRequests = await _getPendingRequestCount(currentUserId);
+        
+        setState(() {
+          _stats = {
+            'totalStudents': studentCount,
+            'pendingRequests': pendingRequests,
+            'activeToday': studentCount > 0 ? (studentCount * 0.6).round() : 0,
+          };
+        });
+      } else {
+        // 學員統計
+        final coachCount = await _getStudentCoachCount(currentUserId);
+        final requestsSent = await _getRequestsSentCount(currentUserId);
+        
+        setState(() {
+          _stats = {
+            'currentCoaches': coachCount,
+            'requestsSent': requestsSent,
+            'weeklyTrainings': 5, // 模擬數據
+            'caloriesBurned': 1200, // 模擬數據
+            'goalCompletion': 85, // 模擬數據
+          };
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('載入統計數據失敗: $e');
+      }
     }
   }
 
@@ -89,7 +142,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 處理中央按鈕點擊
+  // 🆕 增強的中央按鈕處理
   void _onCenterButtonPressed() {
     if (widget.isCoach) {
       _showCoachQuickActions();
@@ -98,7 +151,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 教練快速操作
+  // 🆕 增強的教練快速操作
   void _showCoachQuickActions() {
     showModalBottomSheet(
       context: context,
@@ -127,6 +180,42 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 20),
+            
+            // 🆕 處理配對請求
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.pending_actions, color: Colors.orange),
+              ),
+              title: const Text('處理配對請求'),
+              subtitle: Text('${_stats['pendingRequests'] ?? 0} 個待處理'),
+              trailing: _stats['pendingRequests'] != null && _stats['pendingRequests'] > 0
+                  ? Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${_stats['pendingRequests']}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : null,
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToStudentManagement();
+              },
+            ),
+            
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -140,11 +229,10 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               subtitle: const Text('為學員建立新的訓練課程'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('新增訓練計畫功能 (開發中)')),
-                );
+                _showComingSoonSnackBar('新增訓練計畫功能');
               },
             ),
+            
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -152,17 +240,16 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.group_add, color: Colors.blue),
+                child: const Icon(Icons.analytics, color: Colors.blue),
               ),
-              title: const Text('邀請學員'),
-              subtitle: const Text('邀請新學員加入課程'),
+              title: const Text('查看統計報告'),
+              subtitle: const Text('學員進度和表現分析'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('邀請學員功能 (開發中)')),
-                );
+                _showComingSoonSnackBar('統計報告功能');
               },
             ),
+            
             const SizedBox(height: 20),
           ],
         ),
@@ -170,7 +257,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 學員快速操作
+  // 🆕 增強的學員快速操作
   void _showStudentQuickActions() {
     showModalBottomSheet(
       context: context,
@@ -199,6 +286,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 20),
+            
+            // 🆕 尋找教練
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -206,17 +295,16 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.camera_alt, color: Color(0xFF3B82F6)),
+                child: const Icon(Icons.search, color: Color(0xFF3B82F6)),
               ),
-              title: const Text('營養掃描'),
-              subtitle: const Text('拍照記錄飲食營養'),
+              title: const Text('尋找教練'),
+              subtitle: const Text('搜索並配對合適的健身教練'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('營養掃描功能 (開發中)')),
-                );
+                _navigateToCoachSearch();
               },
             ),
+            
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -230,11 +318,27 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               subtitle: const Text('手動記錄訓練成果'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('記錄訓練功能 (開發中)')),
-                );
+                _showComingSoonSnackBar('記錄訓練功能');
               },
             ),
+            
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.camera_alt, color: Colors.orange),
+              ),
+              title: const Text('營養掃描'),
+              subtitle: const Text('拍照記錄飲食營養'),
+              onTap: () {
+                Navigator.pop(context);
+                _showComingSoonSnackBar('營養掃描功能');
+              },
+            ),
+            
             const SizedBox(height: 20),
           ],
         ),
@@ -254,7 +358,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       backgroundColor: Colors.grey.shade50,
       body: Stack(
         children: [
-          // 主要內容頁面
           PageView(
             controller: _pageController,
             onPageChanged: (index) {
@@ -263,21 +366,13 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               });
             },
             children: [
-              // 首頁
               _buildHomePage(),
-              
-              // 第二頁（教練：學員管理，學員：教練搜索）
               _buildSecondPage(),
-              
-              // 聊天頁面 - 🔥 新增：長期架構聊天功能
               _buildChatPage(),
-              
-              // 個人頁面
               _buildProfilePage(),
             ],
           ),
           
-          // 底部導航
           Positioned(
             bottom: 0,
             left: 0,
@@ -294,11 +389,11 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 首頁內容
+  // 🆕 增強的首頁內容
   Widget _buildHomePage() {
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 110), // 為底部導航留空間
+        padding: const EdgeInsets.only(bottom: 110),
         child: Column(
           children: [
             // 頂部歡迎區域
@@ -332,19 +427,62 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    widget.isCoach ? '今天也要幫助學員們達成目標！' : '今天也要加油訓練喔 💪',
+                    widget.isCoach 
+                        ? '今天也要幫助學員們達成目標！' 
+                        : '今天也要加油訓練喔 💪',
                     style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white70,
                     ),
                   ),
+                  
+                  // 🆕 新增：待處理提醒
+                  if (widget.isCoach && _stats['pendingRequests'] != null && _stats['pendingRequests'] > 0) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notification_important, color: Colors.white),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '您有 ${_stats['pendingRequests']} 個配對請求待處理',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() => _currentIndex = 1);
+                              _pageController.animateToPage(1,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            child: const Text(
+                              '查看',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             
             const SizedBox(height: 24),
             
-            // 快速統計卡片
+            // 🆕 增強的統計卡片
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Container(
@@ -373,13 +511,13 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: widget.isCoach ? [
-                        _buildStatItem('12', '總學員'),
-                        _buildStatItem('8', '今日活躍'),
-                        _buildStatItem('3', '待制定'),
+                        _buildStatItem('${_stats['totalStudents'] ?? 0}', '總學員'),
+                        _buildStatItem('${_stats['activeToday'] ?? 0}', '今日活躍'),
+                        _buildStatItem('${_stats['pendingRequests'] ?? 0}', '待處理'),
                       ] : [
-                        _buildStatItem('5', '本週訓練'),
-                        _buildStatItem('1200', '消耗卡路里'),
-                        _buildStatItem('85%', '目標完成'),
+                        _buildStatItem('${_stats['weeklyTrainings'] ?? 0}', '本週訓練'),
+                        _buildStatItem('${_stats['caloriesBurned'] ?? 0}', '消耗卡路里'),
+                        _buildStatItem('${_stats['goalCompletion'] ?? 0}%', '目標完成'),
                       ],
                     ),
                   ],
@@ -389,7 +527,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             
             const SizedBox(height: 24),
             
-            // 其他內容
+            // 🆕 快速操作卡片
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Container(
@@ -410,24 +548,49 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.isCoach ? '近期活動' : '訓練進度',
+                      '快速操作',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      widget.isCoach 
-                          ? '您的學員們本週總共完成了 45 次訓練，表現優秀！'
-                          : '本週已完成 5 次訓練，繼續保持！',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        height: 1.5,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildQuickActionButton(
+                            widget.isCoach ? '學員管理' : '尋找教練',
+                            widget.isCoach ? Icons.group : Icons.search,
+                            widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
+                            () {
+                              if (widget.isCoach) {
+                                _navigateToStudentManagement();
+                              } else {
+                                _navigateToCoachSearch();
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildQuickActionButton(
+                            '聊天',
+                            Icons.chat_bubble,
+                            Colors.orange,
+                            () {
+                              setState(() => _currentIndex = 2);
+                              _pageController.animateToPage(2,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                    // 測試按鈕
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
+                    
+                    // 測試按鈕（開發階段）
                     Center(
                       child: ElevatedButton.icon(
                         onPressed: () {
@@ -455,18 +618,15 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 修改後的第二頁內容 - 🔥 整合配對系統
   Widget _buildSecondPage() {
     if (widget.isCoach) {
-      // 教練看學員管理頁面
       return const StudentManagementPage();
     } else {
-      // 學員看教練搜索頁面  
       return const CoachSearchPage();
     }
   }
 
-  // 🔥 新增：長期架構的聊天頁面實作（使用 chatRooms 集合）
+  // 🆕 增強的聊天頁面（增加錯誤處理）
   Widget _buildChatPage() {
     return SafeArea(
       child: Padding(
@@ -474,7 +634,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 保留原本的標題樣式
             const Text(
               '聊天',
               style: TextStyle(
@@ -484,112 +643,32 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             ),
             const SizedBox(height: 24),
             
-            // 🔥 新增：使用 chatRooms 集合的即時聊天列表功能
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _firestore
-                    .collection('chatRooms')  // 🔥 修改：從 chats 改為 chatRooms
+                    .collection('chatRooms')
                     .where('participants', arrayContains: _auth.currentUser?.uid)
-                    .where('isActive', isEqualTo: true)  // 🔥 新增：只顯示活躍的聊天室
+                    .where('isActive', isEqualTo: true)
                     .orderBy('lastMessageTime', descending: true)
                     .snapshots(),
                 builder: (context, snapshot) {
-                  // 載入狀態
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  // 🔥 新增：詳細錯誤處理
                   if (snapshot.hasError) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            size: 60,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            '載入聊天記錄時發生錯誤',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '錯誤詳情：${snapshot.error}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () {
-                              // 重新整理
-                              setState(() {});
-                            },
-                            child: const Text('重試'),
-                          ),
-                        ],
-                      ),
-                    );
+                    return _buildErrorState('載入聊天記錄失敗', '${snapshot.error}');
                   }
 
-                  // 空狀態處理
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 80,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            '尚無聊天記錄',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            widget.isCoach ? '與學員開始對話吧！' : '與教練開始對話吧！',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          // 建立聊天按鈕
-                          ElevatedButton.icon(
-                            onPressed: _showCreateChatDialog,
-                            icon: const Icon(Icons.add),
-                            label: Text(widget.isCoach ? '邀請學員' : '聯繫教練'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
+                    return _buildEmptyChatState();
                   }
 
-                  // 🔥 新增：聊天室列表
                   return ListView.builder(
                     itemCount: snapshot.data!.docs.length,
                     itemBuilder: (context, index) {
                       final chatRoomDoc = snapshot.data!.docs[index];
                       final chatRoomData = chatRoomDoc.data() as Map<String, dynamic>;
-                      
                       return _buildChatRoomListItem(chatRoomDoc.id, chatRoomData);
                     },
                   );
@@ -602,244 +681,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 新增：聊天室列表項目（長期架構版本）
-  Widget _buildChatRoomListItem(String chatRoomId, Map<String, dynamic> chatRoomData) {
-    final participants = List<String>.from(chatRoomData['participants'] ?? []);
-    final lastMessage = chatRoomData['lastMessage'] ?? '';
-    final lastMessageTime = chatRoomData['lastMessageTime'] as Timestamp?;
-    final lastMessageSender = chatRoomData['lastMessageSender'] ?? '';
-    final currentUserId = _auth.currentUser?.uid;
-    
-    // 找到對方的 ID（非當前用戶的參與者）
-    final otherUserId = participants.firstWhere(
-      (id) => id != currentUserId,
-      orElse: () => '',
-    );
-
-    return FutureBuilder<DocumentSnapshot>(
-      future: _firestore.collection('users').doc(otherUserId).get(),
-      builder: (context, userSnapshot) {
-        String otherUserName = '未知用戶';
-        bool otherUserIsCoach = false;
-        
-        if (userSnapshot.hasData && userSnapshot.data!.exists) {
-          final userData = userSnapshot.data!.data() as Map<String, dynamic>;
-          
-          // 🔥 新增：調試資訊輸出（只在 Debug 模式）
-          if (kDebugMode) {
-            print('=== 聊天室調試資訊 ===');
-            print('對方用戶ID: $otherUserId');
-            print('對方用戶資料: $userData');
-            print('對方 role: ${userData['role']}');
-          }
-          
-          otherUserName = userData['displayName'] ?? '未知用戶';
-          // 🔥 修改：支援您的 role 欄位格式和舊的 isCoach 格式
-          otherUserIsCoach = (userData['role'] == 'coach') || (userData['isCoach'] == true);
-          
-          if (kDebugMode) {
-            print('判斷結果 - 是教練: $otherUserIsCoach');
-            print('========================');
-          }
-        }
-
-        // 🔥 新增：判斷是否為自己發送的最後訊息
-        final isMyLastMessage = lastMessageSender == currentUserId;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: InkWell(
-            onTap: () => _openChatDetail(chatRoomId, otherUserName, otherUserIsCoach),
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // 用戶頭像
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: otherUserIsCoach ? Colors.green : const Color(0xFF3B82F6),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        otherUserName.isNotEmpty ? otherUserName[0].toUpperCase() : 'U',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // 聊天內容區域
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              otherUserName,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (lastMessageTime != null)
-                              Text(
-                                _formatTime(lastMessageTime.toDate()),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        // 角色標籤
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: otherUserIsCoach ? Colors.green : const Color(0xFF3B82F6),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            otherUserIsCoach ? '教練' : '學員',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        // 🔥 新增：最後訊息預覽（顯示發送者）
-                        Row(
-                          children: [
-                            if (isMyLastMessage)
-                              Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                child: Text(
-                                  '我：',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey[500],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            Expanded(
-                              child: Text(
-                                lastMessage.isNotEmpty ? lastMessage : '開始對話...',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey[400],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // 時間格式化輔助方法
-  String _formatTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inDays > 0) {
-      return '${difference.inDays}天前';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}小時前';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}分鐘前';
-    } else {
-      return '剛剛';
-    }
-  }
-
-  // 修改：開啟聊天詳情（導航到 ChatDetailPage）
-  void _openChatDetail(String chatRoomId, String otherUserName, bool otherUserIsCoach) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatDetailPage(
-          chatId: chatRoomId,
-          chatName: otherUserName,
-          lastMessage: '開始對話...',
-          avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
-          isOnline: true,
-        ),
-      ),
-    );
-  }
-
-  // 顯示建立聊天對話框
-  void _showCreateChatDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        title: Row(
-          children: [
-            Icon(
-              Icons.chat_bubble_outline,
-              color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
-            ),
-            const SizedBox(width: 8),
-            Text(widget.isCoach ? '邀請學員' : '聯繫教練'),
-          ],
-        ),
-        content: Text(
-          widget.isCoach 
-              ? '此功能將允許您邀請學員開始對話，目前正在開發中。'
-              : '此功能將幫助您聯繫可用的教練，目前正在開發中。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('了解'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 個人頁面
   Widget _buildProfilePage() {
     return SafeArea(
       child: Padding(
@@ -940,27 +781,17 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   _buildProfileOption(
                     icon: Icons.edit_outlined,
                     title: '編輯個人資料',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('編輯個人資料功能 (開發中)')),
-                      );
-                    },
+                    onTap: () => _showComingSoonSnackBar('編輯個人資料功能'),
                   ),
                   _buildProfileOption(
                     icon: Icons.settings_outlined,
                     title: '應用程式設定',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('應用程式設定功能 (開發中)')),
-                      );
-                    },
+                    onTap: () => _showComingSoonSnackBar('應用程式設定功能'),
                   ),
                   _buildProfileOption(
                     icon: Icons.logout_outlined,
                     title: '登出',
-                    onTap: () {
-                      _handleSignOut();
-                    },
+                    onTap: _handleSignOut,
                     isDestructive: true,
                   ),
                 ],
@@ -972,7 +803,262 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 統計項目
+  // 🆕 輔助方法
+
+  Widget _buildQuickActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(String title, String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 60, color: Colors.red[300]),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => setState(() {}),
+            child: const Text('重試'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyChatState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline_rounded,
+            size: 80,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '尚無聊天記錄',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.isCoach ? '與學員開始對話吧！' : '與教練開始對話吧！',
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: () {
+              if (widget.isCoach) {
+                _navigateToStudentManagement();
+              } else {
+                _navigateToCoachSearch();
+              }
+            },
+            icon: const Icon(Icons.add),
+            label: Text(widget.isCoach ? '管理學員' : '尋找教練'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatRoomListItem(String chatRoomId, Map<String, dynamic> chatRoomData) {
+    final participants = List<String>.from(chatRoomData['participants'] ?? []);
+    final lastMessage = chatRoomData['lastMessage'] ?? '';
+    final lastMessageTime = chatRoomData['lastMessageTime'] as Timestamp?;
+    final lastMessageSender = chatRoomData['lastMessageSender'] ?? '';
+    final currentUserId = _auth.currentUser?.uid;
+    
+    final otherUserId = participants.firstWhere(
+      (id) => id != currentUserId,
+      orElse: () => '',
+    );
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('users').doc(otherUserId).get(),
+      builder: (context, userSnapshot) {
+        String otherUserName = '未知用戶';
+        bool otherUserIsCoach = false;
+        
+        if (userSnapshot.hasData && userSnapshot.data!.exists) {
+          final userData = userSnapshot.data!.data() as Map<String, dynamic>;
+          otherUserName = userData['displayName'] ?? '未知用戶';
+          otherUserIsCoach = (userData['role'] == 'coach') || (userData['isCoach'] == true);
+        }
+
+        final isMyLastMessage = lastMessageSender == currentUserId;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: InkWell(
+            onTap: () => _openChatDetail(chatRoomId, otherUserName, otherUserIsCoach),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: otherUserIsCoach ? Colors.green : const Color(0xFF3B82F6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        otherUserName.isNotEmpty ? otherUserName[0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              otherUserName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (lastMessageTime != null)
+                              Text(
+                                _formatTime(lastMessageTime.toDate()),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: otherUserIsCoach ? Colors.green : const Color(0xFF3B82F6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            otherUserIsCoach ? '教練' : '學員',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (isMyLastMessage)
+                              Container(
+                                margin: const EdgeInsets.only(right: 4),
+                                child: Text(
+                                  '我：',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[500],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            Expanded(
+                              child: Text(
+                                lastMessage.isNotEmpty ? lastMessage : '開始對話...',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.grey[400],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildStatItem(String value, String label) {
     return Column(
       children: [
@@ -996,7 +1082,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 個人中心選項
   Widget _buildProfileOption({
     required IconData icon,
     required String title,
@@ -1050,7 +1135,111 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 登出功能
+  // 輔助方法
+  String _formatTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}天前';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}小時前';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}分鐘前';
+    } else {
+      return '剛剛';
+    }
+  }
+
+  void _openChatDetail(String chatRoomId, String otherUserName, bool otherUserIsCoach) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatDetailPage(
+          chatId: chatRoomId,
+          chatName: otherUserName,
+          lastMessage: '開始對話...',
+          avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
+          isOnline: true,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToStudentManagement() {
+    setState(() => _currentIndex = 1);
+    _pageController.animateToPage(1,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _navigateToCoachSearch() {
+    setState(() => _currentIndex = 1);
+    _pageController.animateToPage(1,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _showComingSoonSnackBar(String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$feature (開發中)')),
+    );
+  }
+
+  // 統計數據獲取方法
+  Future<int> _getCoachStudentCount(String coachId) async {
+    try {
+      final QuerySnapshot pairs = await _firestore
+          .collection('pairs')
+          .where('coachId', isEqualTo: coachId)
+          .where('status', isEqualTo: 'active')
+          .get();
+      return pairs.docs.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<int> _getPendingRequestCount(String coachId) async {
+    try {
+      final QuerySnapshot requests = await _firestore
+          .collection('pairRequests')
+          .where('toUserId', isEqualTo: coachId)
+          .where('status', isEqualTo: 'pending')
+          .get();
+      return requests.docs.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<int> _getStudentCoachCount(String studentId) async {
+    try {
+      final QuerySnapshot pairs = await _firestore
+          .collection('pairs')
+          .where('traineeId', isEqualTo: studentId)
+          .where('status', isEqualTo: 'active')
+          .get();
+      return pairs.docs.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<int> _getRequestsSentCount(String studentId) async {
+    try {
+      final QuerySnapshot requests = await _firestore
+          .collection('pairRequests')
+          .where('fromUserId', isEqualTo: studentId)
+          .get();
+      return requests.docs.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   void _handleSignOut() async {
     bool? shouldSignOut = await showDialog<bool>(
       context: context,
@@ -1090,10 +1279,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
 
     if (shouldSignOut == true) {
       try {
-        // 執行 Firebase 登出
         await _auth.signOut();
         
-        // 導航到登入頁面
         if (mounted) {
           Navigator.of(context).pushNamedAndRemoveUntil(
             '/login',

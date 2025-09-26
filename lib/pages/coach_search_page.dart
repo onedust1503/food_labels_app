@@ -1,10 +1,9 @@
-// lib/pages/coach_search_page.dart (完整版本)
+// lib/pages/coach_search_page.dart (修復版本)
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/user_service.dart';
 import '../services/chat_service.dart';
-import '../services/pairing_service.dart'; // 🆕 新增
-import '../widgets/pair_request_dialog.dart'; // 🆕 新增
+import '../services/pairing_service.dart';
+import '../widgets/pair_request_dialog.dart';
 import 'chat_detail_page.dart';
 
 class CoachSearchPage extends StatefulWidget {
@@ -16,9 +15,8 @@ class CoachSearchPage extends StatefulWidget {
 
 class _CoachSearchPageState extends State<CoachSearchPage> {
   final TextEditingController _searchController = TextEditingController();
-  final UserService _userService = UserService();
   final ChatService _chatService = ChatService();
-  final PairingService _pairingService = PairingService(); // 🆕 新增
+  final PairingService _pairingService = PairingService();
   
   List<DocumentSnapshot> _coaches = [];
   List<DocumentSnapshot> _filteredCoaches = [];
@@ -26,7 +24,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
   bool _isLoading = true;
   bool _isSearching = false;
   
-  // 配對狀態緩存 🆕
+  // 配對狀態緩存
   Map<String, PairStatus> _pairStatusCache = {};
   
   // 專業領域選項
@@ -82,7 +80,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         _isLoading = false;
       });
 
-      // 🆕 載入配對狀態
+      // 載入配對狀態
       _loadPairStatuses();
     } catch (e) {
       setState(() => _isLoading = false);
@@ -90,7 +88,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     }
   }
 
-  // 🆕 載入配對狀態
+  // 載入配對狀態
   Future<void> _loadPairStatuses() async {
     final Map<String, PairStatus> statuses = {};
     
@@ -115,7 +113,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
       setState(() {
         _filteredCoaches = _coaches;
       });
-      _loadPairStatuses(); // 🆕 重新載入配對狀態
+      _loadPairStatuses();
       return;
     }
     
@@ -172,7 +170,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         _isSearching = false;
       });
 
-      // 🆕 載入新結果的配對狀態
+      // 載入新結果的配對狀態
       _loadPairStatuses();
     } catch (e) {
       setState(() => _isSearching = false);
@@ -180,7 +178,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     }
   }
 
-  // 🆕 智能聯繫教練方法（根據配對狀態決定行為）
+  // 智能聯繫教練方法（根據配對狀態決定行為）
   Future<void> _contactCoach(DocumentSnapshot coachDoc) async {
     try {
       final coachData = coachDoc.data() as Map<String, dynamic>;
@@ -207,7 +205,6 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
           break;
           
         case PairStatus.none:
-        default:
           // 未配對：顯示配對請求對話框
           _showPairRequestDialog(coachDoc);
           break;
@@ -217,7 +214,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     }
   }
 
-  // 🆕 顯示配對請求對話框
+  // 顯示配對請求對話框
   Future<void> _showPairRequestDialog(DocumentSnapshot coachDoc) async {
     final result = await showDialog<bool>(
       context: context,
@@ -246,7 +243,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     }
   }
 
-  // 🆕 顯示待處理請求對話框
+  // 顯示待處理請求對話框
   void _showPendingRequestDialog(String coachName) {
     showDialog(
       context: context,
@@ -290,7 +287,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     );
   }
 
-  // 🆕 顯示被拒絕對話框
+  // 顯示被拒絕對話框
   void _showRejectedDialog() {
     showDialog(
       context: context,
@@ -347,7 +344,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     );
   }
 
-  // 🆕 增強的教練卡片（顯示配對狀態）
+  // 增強的教練卡片（顯示配對狀態）
   Widget _buildCoachCard(DocumentSnapshot coachDoc) {
     final coachData = coachDoc.data() as Map<String, dynamic>;
     final coachName = coachData['displayName'] ?? '教練';
@@ -356,7 +353,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     final specialties = List<String>.from(coachData['specialties'] ?? []);
     final certifications = List<String>.from(coachData['certifications'] ?? []);
     
-    // 🆕 獲取配對狀態
+    // 獲取配對狀態
     final pairStatus = _pairStatusCache[coachDoc.id] ?? PairStatus.none;
     
     return Container(
@@ -408,7 +405,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
                                 ),
                               ),
                             ),
-                            // 🆕 配對狀態標籤
+                            // 配對狀態標籤
                             _buildPairStatusBadge(pairStatus),
                           ],
                         ),
@@ -527,7 +524,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
               
               const SizedBox(height: 16),
               
-              // 🆕 智能聯繫按鈕（根據配對狀態變化）
+              // 智能聯繫按鈕（根據配對狀態變化）
               SizedBox(
                 width: double.infinity,
                 child: _buildContactButton(coachDoc, pairStatus),
@@ -539,7 +536,7 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     );
   }
 
-  // 🆕 根據配對狀態顯示不同的標籤
+  // 根據配對狀態顯示不同的標籤
   Widget _buildPairStatusBadge(PairStatus status) {
     switch (status) {
       case PairStatus.paired:
@@ -615,12 +612,11 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         );
         
       case PairStatus.none:
-      default:
         return const SizedBox.shrink();
     }
   }
 
-  // 🆕 根據配對狀態顯示不同的按鈕
+  // 根據配對狀態顯示不同的按鈕
   Widget _buildContactButton(DocumentSnapshot coachDoc, PairStatus status) {
     final coachData = coachDoc.data() as Map<String, dynamic>;
     final coachName = coachData['displayName'] ?? '教練';
@@ -669,7 +665,6 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         );
         
       case PairStatus.none:
-      default:
         return ElevatedButton.icon(
           onPressed: () => _contactCoach(coachDoc),
           icon: const Icon(Icons.person_add),
@@ -683,102 +678,6 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
           ),
         );
     }
-  }
-
-  // 🆕 顯示配對狀態說明
-  void _showStatusGuide() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.info_outline, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('配對狀態說明'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStatusItem(
-              Colors.green,
-              Icons.check_circle,
-              '已配對',
-              '已與教練建立配對關係，可以開始聊天',
-            ),
-            const SizedBox(height: 12),
-            _buildStatusItem(
-              Colors.orange,
-              Icons.pending_actions,
-              '待回應',
-              '配對請求已發送，等待教練回應',
-            ),
-            const SizedBox(height: 12),
-            _buildStatusItem(
-              Colors.grey,
-              Icons.schedule,
-              '請稍候',
-              '請稍後再試，或嘗試聯繫其他教練',
-            ),
-            const SizedBox(height: 12),
-            _buildStatusItem(
-              Colors.blue,
-              Icons.person_add,
-              '可配對',
-              '可以發送配對請求給此教練',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('了解'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusItem(Color color, IconData icon, String title, String description) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 
   // 開啟現有聊天
@@ -890,13 +789,6 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: Colors.black,
-        actions: [
-          // 🆕 配對狀態圖例按鈕
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            onPressed: _showStatusGuide,
-          ),
-        ],
       ),
       body: Column(
         children: [

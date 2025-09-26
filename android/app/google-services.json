@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1012394598981",
+    "project_id": "work-app-4bc14",
+    "storage_bucket": "work-app-4bc14.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1012394598981:android:426ab3dcfebc7f93a4792c",
+        "android_client_info": {
+          "package_name": "com.example.food_labels_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGR1WhtrS1oTuFXgV8aPaARd3oZjbBPP4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

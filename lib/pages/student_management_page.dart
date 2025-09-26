@@ -1,8 +1,10 @@
+// lib/pages/student_management_page.dart (更新版本)
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/user_service.dart';
 import '../services/chat_service.dart';
+import '../services/pairing_service.dart'; // 新增
 import 'chat_detail_page.dart';
 
 class StudentManagementPage extends StatefulWidget {
@@ -16,6 +18,7 @@ class _StudentManagementPageState extends State<StudentManagementPage>
     with SingleTickerProviderStateMixin {
   final UserService _userService = UserService();
   final ChatService _chatService = ChatService();
+  final PairingService _pairingService = PairingService(); // 新增
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
   late TabController _tabController;
@@ -36,7 +39,7 @@ class _StudentManagementPageState extends State<StudentManagementPage>
     super.dispose();
   }
 
-  // 修正：載入學員列表
+  // 載入學員列表
   Future<void> _loadStudents() async {
     setState(() => _isLoading = true);
     
@@ -47,11 +50,7 @@ class _StudentManagementPageState extends State<StudentManagementPage>
         return;
       }
       
-      print('當前教練 ID: $currentUserId');
-      
-      // 使用修正後的 UserService 方法
       final students = await _userService.getCoachStudents(currentUserId);
-      print('找到 ${students.length} 個學員');
       
       // 載入學員統計數據
       final Map<String, Map<String, dynamic>> stats = {};
@@ -66,9 +65,120 @@ class _StudentManagementPageState extends State<StudentManagementPage>
         _isLoading = false;
       });
     } catch (e) {
-      print('載入學員列表錯誤: $e');
       setState(() => _isLoading = false);
       _showErrorSnackBar('載入學員列表失敗：$e');
+    }
+  }
+
+  // 🆕 處理配對請求 - 接受
+  Future<void> _acceptPairRequest(PairRequest request) async {
+    try {
+      // 顯示載入對話框
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('正在處理配對請求...'),
+            ],
+          ),
+        ),
+      );
+
+      // 接受配對請求
+      final pairId = await _pairingService.acceptPairRequest(request.id);
+      
+      // 獲取聊天室ID
+      final chatRoomId = await _pairingService.getChatRoomIdByPairId(pairId);
+      
+      // 發送歡迎訊息
+      if (chatRoomId != null) {
+        await _chatService.sendMessage(
+          chatRoomId: chatRoomId,
+          text: '歡迎！我是您的健身教練，很高興與您配對。讓我們一起達成您的健身目標！',
+        );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(); // 關閉載入對話框
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已接受 ${request.fromUserName} 的配對請求！'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // 刷新數據
+        _loadStudents();
+        
+        // 如果有聊天室，導向聊天頁面
+        if (chatRoomId != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatDetailPage(
+                chatId: chatRoomId,
+                chatName: request.fromUserName,
+                lastMessage: '歡迎！我是您的健身教練...',
+                avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(request.fromUserName)}&background=3B82F6&color=fff',
+                isOnline: true,
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // 關閉載入對話框
+        _showErrorSnackBar('接受配對請求失敗：$e');
+      }
+    }
+  }
+
+  // 🆕 處理配對請求 - 拒絕
+  Future<void> _rejectPairRequest(PairRequest request) async {
+    // 顯示確認對話框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('確認拒絕'),
+        content: Text('確定要拒絕 ${request.fromUserName} 的配對請求嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('確認拒絕'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _pairingService.rejectPairRequest(request.id);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('已拒絕 ${request.fromUserName} 的配對請求'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } catch (e) {
+        _showErrorSnackBar('拒絕配對請求失敗：$e');
+      }
     }
   }
 
@@ -79,7 +189,6 @@ class _StudentManagementPageState extends State<StudentManagementPage>
       final studentId = studentDoc.id;
       final studentName = studentData['displayName'] ?? '學員';
       
-      // 創建或獲取聊天室
       final chatRoomId = await _chatService.createOrGetChatRoom(studentId);
       
       if (mounted) {
@@ -292,7 +401,7 @@ class _StudentManagementPageState extends State<StudentManagementPage>
           controller: _tabController,
           tabs: const [
             Tab(text: '我的學員'),
-            Tab(text: '配對請求'),
+            Tab(text: '配對請求'), // 🆕 更新標籤
           ],
           labelColor: Colors.green,
           unselectedLabelColor: Colors.grey,
@@ -311,8 +420,8 @@ class _StudentManagementPageState extends State<StudentManagementPage>
           // 我的學員列表
           _buildStudentsList(),
           
-          // 配對請求列表
-          _buildPendingRequestsList(),
+          // 配對請求列表 🆕 實際實現
+          _buildPairRequestsList(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -350,7 +459,7 @@ class _StudentManagementPageState extends State<StudentManagementPage>
             ),
             const SizedBox(height: 8),
             Text(
-              '等待學員主動配對或邀請新學員',
+              '等待學員主動配對或查看配對請求',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey.shade500,
@@ -383,34 +492,279 @@ class _StudentManagementPageState extends State<StudentManagementPage>
     );
   }
 
-  Widget _buildPendingRequestsList() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.pending_actions,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '配對請求功能',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
+  // 🆕 實際實現配對請求列表
+  Widget _buildPairRequestsList() {
+    return StreamBuilder<List<PairRequest>>(
+      stream: _pairingService.getPendingRequestsStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 60,
+                  color: Colors.red.shade300,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '載入配對請求失敗',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${snapshot.error}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('重試'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '開發中...',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade500,
+          );
+        }
+
+        final requests = snapshot.data ?? [];
+
+        if (requests.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.pending_actions,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '暫無配對請求',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '學員發送配對請求後會顯示在這裡',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
             ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: requests.length,
+          itemBuilder: (context, index) {
+            return _buildPairRequestCard(requests[index]);
+          },
+        );
+      },
+    );
+  }
+
+  // 🆕 配對請求卡片
+  Widget _buildPairRequestCard(PairRequest request) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 請求者資訊
+              Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF3B82F6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        request.fromUserName.isNotEmpty 
+                            ? request.fromUserName[0].toUpperCase() 
+                            : 'S',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          request.fromUserName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3B82F6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            '學員',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatRequestTime(request.createdAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 狀態標籤
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      border: Border.all(color: Colors.orange),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      '待處理',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // 配對訊息
+              if (request.message.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.message_outlined,
+                            size: 16,
+                            color: Colors.grey[600],
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '配對訊息：',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        request.message,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              
+              // 操作按鈕
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _rejectPairRequest(request),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('拒絕'),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.red),
+                        foregroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _acceptPairRequest(request),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('接受'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -673,5 +1027,21 @@ class _StudentManagementPageState extends State<StudentManagementPage>
 
   String _formatDate(DateTime date) {
     return '${date.year}/${date.month}/${date.day}';
+  }
+
+  // 🆕 格式化請求時間
+  String _formatRequestTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays} 天前';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} 小時前';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} 分鐘前';
+    } else {
+      return '剛剛';
+    }
   }
 }

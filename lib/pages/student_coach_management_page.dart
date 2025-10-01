@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/user_service.dart';
 import '../services/chat_service.dart';
+import '../services/pair_request_service.dart';
 import 'chat_detail_page.dart';
 import 'coach_search_page.dart';
 
@@ -18,6 +19,7 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
     with SingleTickerProviderStateMixin {
   final UserService _userService = UserService();
   final ChatService _chatService = ChatService();
+  final PairRequestService _pairRequestService = PairRequestService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
   late TabController _tabController;
@@ -27,7 +29,7 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this); // 改為 3 個 Tab
     _loadCoaches();
   }
 
@@ -260,6 +262,7 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
           controller: _tabController,
           tabs: const [
             Tab(text: '我的教練'),
+            Tab(text: '配對請求'),
             Tab(text: '尋找教練'),
           ],
           labelColor: const Color(0xFF3B82F6),
@@ -276,13 +279,15 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildCoachesList(),
-          const CoachSearchPage(),
+          _buildCoachesList(),      // Tab 1: 我的教練
+          _buildRequestsList(),     // Tab 2: 配對請求
+          const CoachSearchPage(isEmbedded: true),  // Tab 3: 尋找教練
         ],
       ),
     );
   }
 
+  // Tab 1: 我的教練列表
   Widget _buildCoachesList() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -318,7 +323,7 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () {
-                _tabController.animateTo(1);
+                _tabController.animateTo(2); // 跳轉到「尋找教練」Tab
               },
               icon: const Icon(Icons.search),
               label: const Text('尋找教練'),
@@ -340,6 +345,215 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
         itemBuilder: (context, index) {
           return _buildCoachCard(_coaches[index]);
         },
+      ),
+    );
+  }
+
+  // Tab 2: 配對請求列表
+  Widget _buildRequestsList() {
+    return StreamBuilder<List<PairRequest>>(
+      stream: _pairRequestService.getSentRequestsStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 60, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('載入失敗: ${snapshot.error}'),
+              ],
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.send_outlined,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '尚未發送配對請求',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '前往「尋找教練」頁面發送配對請求',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    _tabController.animateTo(2);
+                  },
+                  icon: const Icon(Icons.search),
+                  label: const Text('尋找教練'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: snapshot.data!.length,
+          itemBuilder: (context, index) {
+            final request = snapshot.data![index];
+            return _buildRequestCard(request);
+          },
+        );
+      },
+    );
+  }
+
+  // 配對請求卡片
+  Widget _buildRequestCard(PairRequest request) {
+    Color statusColor;
+    String statusText;
+    IconData statusIcon;
+    
+    switch (request.status) {
+      case PairRequestStatus.pending:
+        statusColor = Colors.orange;
+        statusText = '待處理';
+        statusIcon = Icons.schedule;
+        break;
+      case PairRequestStatus.accepted:
+        statusColor = Colors.green;
+        statusText = '已接受';
+        statusIcon = Icons.check_circle;
+        break;
+      case PairRequestStatus.rejected:
+        statusColor = Colors.red;
+        statusText = '已拒絕';
+        statusIcon = Icons.cancel;
+        break;
+      case PairRequestStatus.cancelled:
+        statusColor = Colors.grey;
+        statusText = '已取消';
+        statusIcon = Icons.block;
+        break;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: const BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      request.toUserName.isNotEmpty 
+                          ? request.toUserName[0].toUpperCase()
+                          : 'C',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.toUserName,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _formatTime(request.createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.1),
+                    border: Border.all(color: statusColor),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(statusIcon, size: 14, color: statusColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                request.message,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -542,5 +756,15 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
         ),
       );
     }
+  }
+
+  String _formatTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    
+    if (diff.inDays > 0) return '${diff.inDays}天前';
+    if (diff.inHours > 0) return '${diff.inHours}小時前';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}分鐘前';
+    return '剛剛';
   }
 }

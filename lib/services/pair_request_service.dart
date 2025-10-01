@@ -37,8 +37,8 @@ class PairRequest {
       id: doc.id,
       fromUserId: data['fromUserId'] ?? '',
       toUserId: data['toUserId'] ?? '',
-      fromUserName: data['fromUserName'] ?? '',
-      toUserName: data['toUserName'] ?? '',
+      fromUserName: data['fromUserName'] ?? data['studentName'] ?? '',  // 後備方案兼容舊數據
+      toUserName: data['toUserName'] ?? data['coachName'] ?? '',        // 後備方案兼容舊數據
       status: _parseStatus(data['status']),
       message: data['message'] ?? '',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -95,59 +95,62 @@ class PairRequestService {
   }
 
   /// 📤 發送配對請求
-Future<String> sendPairRequest({
-  required String coachId,
-  String? message,
-}) async {
-  try {
-    final currentUserId = this.currentUserId;
-    if (currentUserId == null) {
-      throw Exception('用戶未登入');
+  Future<String> sendPairRequest({
+    required String coachId,
+    String? message,
+  }) async {
+    try {
+      final currentUserId = this.currentUserId;
+      if (currentUserId == null) {
+        throw Exception('用戶未登入');
+      }
+
+      // 獲取用戶資料
+      final studentDoc = await _firestore.collection('users').doc(currentUserId).get();
+      final coachDoc = await _firestore.collection('users').doc(coachId).get();
+
+      if (!studentDoc.exists || !coachDoc.exists) {
+        throw Exception('用戶資料不存在');
+      }
+
+      final studentData = studentDoc.data() as Map<String, dynamic>;
+      final coachData = coachDoc.data() as Map<String, dynamic>;
+
+      // 檢查現有狀態
+      final existingStatus = await checkPairStatus(coachId, currentUserId);
+      if (existingStatus == PairRequestStatus.accepted) {
+        throw Exception('已經與此教練配對');
+      }
+      if (existingStatus == PairRequestStatus.pending) {
+        throw Exception('已有待處理的配對請求');
+      }
+
+      // 創建配對請求 - 統一使用 fromUserId/toUserId 和 fromUserName/toUserName
+      final requestDoc = await _firestore.collection('pairRequests').add({
+        // 配對相關欄位
+        'coachId': coachId,
+        'studentId': currentUserId,
+        
+        // 方向性欄位（從學員發送給教練）
+        'fromUserId': currentUserId,                          // 發送者（學員）
+        'toUserId': coachId,                                   // 接收者（教練）
+        'fromUserName': studentData['displayName'] ?? '學員',  // 發送者名稱
+        'toUserName': coachData['displayName'] ?? '教練',      // 接收者名稱
+        
+        // 狀態和訊息
+        'status': 'pending',
+        'message': message ?? '希望能與您配對學習健身，請多指教！',
+        'createdAt': FieldValue.serverTimestamp(),
+        'respondedAt': null,
+      });
+
+      print('✅ 配對請求已發送: ${requestDoc.id}');
+      return requestDoc.id;
+    } catch (e) {
+      print('❌ 發送配對請求失敗: $e');
+      rethrow;
     }
-
-    // 獲取用戶資料
-    final studentDoc = await _firestore.collection('users').doc(currentUserId).get();
-    final coachDoc = await _firestore.collection('users').doc(coachId).get();
-
-    if (!studentDoc.exists || !coachDoc.exists) {
-      throw Exception('用戶資料不存在');
-    }
-
-    final studentData = studentDoc.data() as Map<String, dynamic>;
-    final coachData = coachDoc.data() as Map<String, dynamic>;
-
-    // 檢查現有狀態
-    final existingStatus = await checkPairStatus(coachId, currentUserId);
-    if (existingStatus == PairRequestStatus.accepted) {
-      throw Exception('已經與此教練配對');
-    }
-    if (existingStatus == PairRequestStatus.pending) {
-      throw Exception('已有待處理的配對請求');
-    }
-
-    // 創建配對請求（統一使用 coachId 和 studentId）
-    final requestDoc = await _firestore.collection('pairRequests').add({
-      'coachId': coachId,
-      'studentId': currentUserId,
-      'coachName': coachData['displayName'] ?? '教練',
-      'studentName': studentData['displayName'] ?? '學員',
-      'fromUserId': currentUserId,
-      'toUserId': coachId,
-      'fromUserName': studentData['displayName'] ?? '學員',
-      'toUserName': coachData['displayName'] ?? '教練',
-      'status': 'pending',
-      'message': message ?? '希望能與您配對學習健身，請多指教！',
-      'createdAt': FieldValue.serverTimestamp(),
-      'respondedAt': null,
-    });
-
-    print('✅ 配對請求已發送: ${requestDoc.id}');
-    return requestDoc.id;
-  } catch (e) {
-    print('❌ 發送配對請求失敗: $e');
-    rethrow;
   }
-}
 
   /// ✅ 接受配對請求（教練使用）
   Future<String> acceptPairRequest(String requestId) async {
@@ -301,8 +304,8 @@ Future<String> sendPairRequest({
         // 停用聊天室
         final pairDoc = await transaction.get(pairRef);
         if (pairDoc.exists) {
-          final coachId = pairDoc.data()?['coachUid'];
-          final studentId = pairDoc.data()?['traineeUid'];
+          final coachId = pairDoc.data()?['coachId'];
+          final studentId = pairDoc.data()?['traineeId'];
           
           if (coachId != null && studentId != null) {
             final chatRoomId = _generateChatRoomId(coachId, studentId);

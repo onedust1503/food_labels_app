@@ -85,24 +85,25 @@ class UserService {
     }
   }
 
-  // 簡化：檢查配對關係（避免複雜查詢）
+  // 修正：檢查配對關係（統一使用 coachId 和 traineeId）
   Future<bool> isCoachStudentPaired(String coachId, String studentId) async {
     try {
-      // 簡化查詢，只檢查基本配對
+      // 使用一致的 pairId 格式：coachId_studentId
+      final pairId = '${coachId}_$studentId';
+      
       final doc = await _firestore
           .collection('pairs')
-          .doc('${coachId}_$studentId')
+          .doc(pairId)
           .get();
       
-      return doc.exists && 
-             (doc.data()?['status'] == 'active');
+      return doc.exists && (doc.data()?['status'] == 'active');
     } catch (e) {
       print('檢查配對關係失敗: $e');
       return false;
     }
   }
 
-  // 修正：創建配對（使用確定性的文檔 ID）
+  // 創建配對（使用確定性的文檔 ID）
   Future<String> createCoachStudentPair(String coachId, String studentId) async {
     try {
       final currentUserId = _auth.currentUser?.uid;
@@ -110,7 +111,7 @@ class UserService {
         throw Exception('用戶未登入');
       }
 
-      // 使用確定性的文檔 ID
+      // 使用確定性的文檔 ID（coachId_studentId 格式）
       final pairId = '${coachId}_$studentId';
       
       // 檢查是否已經配對
@@ -126,10 +127,10 @@ class UserService {
         }
       }
 
-      // 創建或更新配對文檔
+      // 創建或更新配對文檔（只使用 coachId 和 traineeId）
       await _firestore.collection('pairs').doc(pairId).set({
-        'coachUid': coachId,
-        'traineeUid': studentId,
+        'coachId': coachId,
+        'traineeId': studentId,
         'status': 'active',
         'createdBy': currentUserId,
         'createdAt': FieldValue.serverTimestamp(),
@@ -144,7 +145,7 @@ class UserService {
     }
   }
 
-  // 修正：獲取教練的學員列表
+  // 修正：獲取教練的學員列表（只使用 coachId 和 traineeId）
   Future<List<DocumentSnapshot>> getCoachStudents(String coachId) async {
     try {
       print('查詢教練 $coachId 的學員...');
@@ -156,16 +157,17 @@ class UserService {
       
       print('總共找到 ${allPairs.docs.length} 個配對記錄');
       
-      // 客戶端過濾教練的配對
+      // 客戶端過濾教練的配對（只使用 coachId）
       List<String> studentIds = [];
       for (final doc in allPairs.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        print('檢查配對記錄: ${data}');
+        print('檢查配對記錄: $data');
         
-        if (data['coachUid'] == coachId && data['status'] == 'active') {
-          final studentId = data['traineeUid'] as String?;
+        // 只檢查 coachId 欄位
+        if (data['coachId'] == coachId && data['status'] == 'active') {
+          final studentId = data['traineeId'];
           if (studentId != null && studentId.isNotEmpty) {
-            studentIds.add(studentId);
+            studentIds.add(studentId as String);
             print('找到學員ID: $studentId');
           }
         }
@@ -204,7 +206,7 @@ class UserService {
     }
   }
 
-  // 獲取學員的教練列表
+  // 修正：獲取學員的教練列表（只使用 traineeId 和 coachId）
   Future<List<DocumentSnapshot>> getStudentCoaches(String studentId) async {
     try {
       // 簡化查詢
@@ -215,10 +217,12 @@ class UserService {
       List<String> coachIds = [];
       for (final doc in allPairs.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        if (data['traineeUid'] == studentId && data['status'] == 'active') {
-          final coachId = data['coachUid'] as String?;
+        
+        // 只檢查 traineeId 欄位
+        if (data['traineeId'] == studentId && data['status'] == 'active') {
+          final coachId = data['coachId'];
           if (coachId != null && coachId.isNotEmpty) {
-            coachIds.add(coachId);
+            coachIds.add(coachId as String);
           }
         }
       }

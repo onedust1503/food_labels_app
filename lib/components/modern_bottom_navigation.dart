@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import '../services/chat_service.dart';
 
 class ModernBottomNavigation extends StatelessWidget {
   final int currentIndex;
   final Function(int) onTap;
   final VoidCallback? onCenterButtonPressed;
-  final bool isCoach; // 區分教練和學員
+  final bool isCoach;
 
   const ModernBottomNavigation({
     super.key,
@@ -16,6 +17,8 @@ class ModernBottomNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print('🎨 ModernBottomNavigation 渲染 - currentIndex: $currentIndex');
+    
     return Container(
       margin: const EdgeInsets.all(20),
       child: Stack(
@@ -38,35 +41,30 @@ class ModernBottomNavigation extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // 首頁
                 _buildNavItem(
+                  context: context,
                   icon: Icons.home_outlined,
                   activeIcon: Icons.home_rounded,
                   index: 0,
                   isActive: currentIndex == 0,
                 ),
-                
-                // 第二個按鈕（教練：學員管理，學員：進度）
                 _buildNavItem(
+                  context: context,
                   icon: isCoach ? Icons.group_outlined : Icons.trending_up_outlined,
                   activeIcon: isCoach ? Icons.group_rounded : Icons.trending_up_rounded,
                   index: 1,
                   isActive: currentIndex == 1,
                 ),
-                
-                // 中央空間（為突出按鈕預留）
                 const SizedBox(width: 60),
-                
-                // 第三個按鈕（聊天）
-                _buildNavItem(
+                _buildChatNavItem(
+                  context: context,
                   icon: Icons.chat_bubble_outline_rounded,
                   activeIcon: Icons.chat_bubble_rounded,
                   index: 2,
                   isActive: currentIndex == 2,
                 ),
-                
-                // 個人頁面
                 _buildNavItem(
+                  context: context,
                   icon: Icons.person_outline_rounded,
                   activeIcon: Icons.person_rounded,
                   index: 3,
@@ -80,7 +78,11 @@ class ModernBottomNavigation extends StatelessWidget {
           Positioned(
             bottom: 10,
             child: GestureDetector(
-              onTap: onCenterButtonPressed,
+              onTap: () {
+                print('🔥 中央按鈕被點擊');
+                onCenterButtonPressed?.call();
+              },
+              behavior: HitTestBehavior.opaque,
               child: Container(
                 width: 60,
                 height: 60,
@@ -114,7 +116,93 @@ class ModernBottomNavigation extends StatelessWidget {
     );
   }
 
+  Widget _buildChatNavItem({
+    required BuildContext context,
+    required IconData icon,
+    required IconData activeIcon,
+    required int index,
+    required bool isActive,
+  }) {
+    final ChatService chatService = ChatService();
+    final Color activeColor = isCoach ? Colors.green : const Color(0xFF3B82F6);
+    const Color inactiveColor = Colors.grey;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          print('🔥 聊天按鈕被點擊 (index: $index)');
+          onTap(index);
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: Colors.transparent,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: StreamBuilder<int>(
+            stream: chatService.getTotalUnreadCountStream(),
+            builder: (context, snapshot) {
+              final unreadCount = snapshot.data ?? 0;
+              
+              return Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isActive ? activeIcon : icon,
+                        color: isActive ? activeColor : inactiveColor,
+                        size: 26,
+                      ),
+                      const SizedBox(height: 4),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: isActive ? 6 : 0,
+                        height: isActive ? 6 : 0,
+                        decoration: BoxDecoration(
+                          color: activeColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: 10,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildNavItem({
+    required BuildContext context,
     required IconData icon,
     required IconData activeIcon,
     required int index,
@@ -123,14 +211,19 @@ class ModernBottomNavigation extends StatelessWidget {
     final Color activeColor = isCoach ? Colors.green : const Color(0xFF3B82F6);
     const Color inactiveColor = Colors.grey;
 
-    return GestureDetector(
-      onTap: () => onTap(index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          print('🔥 導航按鈕被點擊 (index: $index)');
+          onTap(index);
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: Colors.transparent,
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 isActive ? activeIcon : icon,
@@ -138,7 +231,6 @@ class ModernBottomNavigation extends StatelessWidget {
                 size: 26,
               ),
               const SizedBox(height: 4),
-              // 活動狀態指示點
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 width: isActive ? 6 : 0,

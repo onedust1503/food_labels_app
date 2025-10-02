@@ -36,7 +36,7 @@ class ChatService {
 
   String? get currentUserId => _auth.currentUser?.uid;
 
-  // 修正：創建或獲取聊天室（防止重複）
+  // 創建或獲取聊天室（防止重複）
   Future<String> createOrGetChatRoom(String otherUserId) async {
     try {
       final currentUserId = this.currentUserId;
@@ -88,7 +88,7 @@ class ChatService {
     }
   }
 
-  // 發送訊息
+  // 發送訊息（更新：增加對方的未讀計數）
   Future<void> sendMessage({
     required String chatRoomId,
     required String text,
@@ -103,6 +103,22 @@ class ChatService {
         throw Exception('訊息內容不能為空');
       }
 
+      // 獲取聊天室信息以找到對方的 ID
+      final chatRoomDoc = await _firestore
+          .collection('chatRooms')
+          .doc(chatRoomId)
+          .get();
+      
+      final participants = List<String>.from(
+        chatRoomDoc.data()?['participants'] ?? []
+      );
+      
+      // 找出對方的 ID
+      final otherUserId = participants.firstWhere(
+        (id) => id != currentUserId,
+        orElse: () => '',
+      );
+
       // 添加訊息到子集合
       await _firestore
           .collection('chatRooms')
@@ -115,13 +131,20 @@ class ChatService {
         'isRead': false,
       });
 
-      // 更新聊天室資訊
-      await _firestore.collection('chatRooms').doc(chatRoomId).update({
+      // 更新聊天室資訊和未讀計數
+      final updates = {
         'lastMessage': text.trim(),
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSender': currentUserId,
         'isActive': true,
-      });
+      };
+
+      // 增加對方的未讀計數
+      if (otherUserId.isNotEmpty) {
+        updates['unreadCount.$otherUserId'] = FieldValue.increment(1);
+      }
+
+      await _firestore.collection('chatRooms').doc(chatRoomId).update(updates);
     } catch (e) {
       throw Exception('發送訊息失敗: $e');
     }
@@ -140,37 +163,52 @@ class ChatService {
             .toList());
   }
 
-  // 標記聊天室為已讀
-  Future<void> markChatRoomAsRead(String chatRoomId) async {
+  // 標記聊天室為已讀（新增方法）
+  Future<void> markAsRead(String chatRoomId) async {
     try {
       final currentUserId = this.currentUserId;
       if (currentUserId == null) return;
 
-      // 重置未讀計數
+      // 重置當前用戶的未讀計數
       await _firestore.collection('chatRooms').doc(chatRoomId).update({
         'unreadCount.$currentUserId': 0,
       });
 
-      // 標記所有訊息為已讀
-      final messagesQuery = await _firestore
-          .collection('chatRooms')
-          .doc(chatRoomId)
-          .collection('messages')
-          .where('senderId', isNotEqualTo: currentUserId)
-          .where('isRead', isEqualTo: false)
-          .get();
-
-      final batch = _firestore.batch();
-      for (final doc in messagesQuery.docs) {
-        batch.update(doc.reference, {'isRead': true});
-      }
-      
-      if (messagesQuery.docs.isNotEmpty) {
-        await batch.commit();
-      }
+      print('✅ 已標記聊天室為已讀: $chatRoomId');
     } catch (e) {
-      print('標記已讀失敗: $e');
+      print('❌ 標記已讀失敗: $e');
     }
+  }
+
+  // 標記聊天室為已讀（舊方法，保持向後兼容）
+  Future<void> markChatRoomAsRead(String chatRoomId) async {
+    await markAsRead(chatRoomId);
+  }
+
+  // 新增：獲取當前用戶的總未讀訊息數
+  Stream<int> getTotalUnreadCountStream() {
+    final currentUserId = this.currentUserId;
+    if (currentUserId == null) {
+      return Stream.value(0);
+    }
+
+    return _firestore
+        .collection('chatRooms')
+        .where('participants', arrayContains: currentUserId)
+        .where('isActive', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) {
+          int totalUnread = 0;
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            final unreadCount = data['unreadCount'] as Map<String, dynamic>?;
+            if (unreadCount != null && unreadCount.containsKey(currentUserId)) {
+              totalUnread += (unreadCount[currentUserId] as int?) ?? 0;
+            }
+          }
+          print('📊 總未讀數: $totalUnread');
+          return totalUnread;
+        });
   }
 
   // 獲取聊天室列表

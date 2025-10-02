@@ -81,168 +81,174 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
 
   // 處理底部導航點擊
   void _onNavTap(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+  if (kDebugMode) {
+    print('🔥 導航點擊: index=$index');
   }
+  
+  setState(() {
+    _currentIndex = index;
+  });
+  
+  _pageController.animateToPage(
+    index,
+    duration: const Duration(milliseconds: 300),
+    curve: Curves.easeInOut,
+  );
+}
 
-  // 處理中央按鈕點擊
   void _onCenterButtonPressed() {
-    if (widget.isCoach) {
-      _showCoachQuickActions();
-    } else {
-      _showStudentQuickActions();
-    }
+  if (kDebugMode) {
+    print('🔥 中央按鈕點擊');
   }
+  
+  if (widget.isCoach) {
+    _showCoachQuickActions();
+  } else {
+    _showStudentQuickActions();
+  }
+}
 
-  // 教練快速操作
-  void _showCoachQuickActions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
+void _showCoachQuickActions() {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) => Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '快速操作',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: const Icon(Icons.fitness_center, color: Colors.green),
             ),
-            const SizedBox(height: 20),
-            const Text(
-              '快速操作',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            title: const Text('新增訓練計畫'),
+            subtitle: const Text('為學員建立新的訓練課程'),
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('新增訓練計畫功能 (開發中)')),
+              );
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: const Icon(Icons.group_add, color: Colors.blue),
             ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.fitness_center, color: Colors.green),
-              ),
-              title: const Text('新增訓練計畫'),
-              subtitle: const Text('為學員建立新的訓練課程'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('新增訓練計畫功能 (開發中)')),
-                );
-              },
-            ),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.group_add, color: Colors.blue),
-              ),
-              title: const Text('邀請學員'),
-              subtitle: const Text('邀請新學員加入課程'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('邀請學員功能 (開發中)')),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+            title: const Text('邀請學員'),
+            subtitle: const Text('邀請新學員加入課程'),
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('邀請學員功能 (開發中)')),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
-  // 學員快速操作
-  void _showStudentQuickActions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
+void _showStudentQuickActions() {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) => Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '快速操作',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
+                color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: const Icon(Icons.camera_alt, color: Color(0xFF3B82F6)),
             ),
-            const SizedBox(height: 20),
-            const Text(
-              '快速操作',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            title: const Text('營養掃描'),
+            subtitle: const Text('拍照記錄飲食營養'),
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('營養掃描功能 (開發中)')),
+              );
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: const Icon(Icons.fitness_center, color: Colors.green),
             ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.camera_alt, color: Color(0xFF3B82F6)),
-              ),
-              title: const Text('營養掃描'),
-              subtitle: const Text('拍照記錄飲食營養'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('營養掃描功能 (開發中)')),
-                );
-              },
-            ),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.fitness_center, color: Colors.green),
-              ),
-              title: const Text('記錄訓練'),
-              subtitle: const Text('手動記錄訓練成果'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('記錄訓練功能 (開發中)')),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+            title: const Text('記錄訓練'),
+            subtitle: const Text('手動記錄訓練成果'),
+            onTap: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('記錄訓練功能 (開發中)')),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -265,21 +271,14 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               });
             },
             children: [
-              // 首頁
               _buildHomePage(),
-              
-              // 第二頁（教練：學員管理，學員：教練搜索）
               _buildSecondPage(),
-              
-              // 聊天頁面 - 🔥 新增：長期架構聊天功能
               _buildChatPage(),
-              
-              // 個人頁面
               _buildProfilePage(),
             ],
           ),
           
-          // 底部導航
+          // 底部導航 - 🔥 更新為新版本
           Positioned(
             bottom: 0,
             left: 0,

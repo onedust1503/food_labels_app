@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/chat_service.dart'; // 修正：從 lib/pages/chat/ 往上兩層到 lib/services/
 import '../chat_detail_page.dart';
 
 class ChatTab extends StatefulWidget {
@@ -19,6 +20,7 @@ class ChatTab extends StatefulWidget {
 class _ChatTabState extends State<ChatTab> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ChatService _chatService = ChatService(); // 新增：ChatService 實例
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +208,7 @@ class _ChatTabState extends State<ChatTab> {
               ),
               child: Row(
                 children: [
+                  // 頭像
                   Container(
                     width: 50,
                     height: 50,
@@ -225,6 +228,7 @@ class _ChatTabState extends State<ChatTab> {
                     ),
                   ),
                   const SizedBox(width: 16),
+                  // 聊天內容
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,11 +236,14 @@ class _ChatTabState extends State<ChatTab> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              otherUserName,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                            Expanded(
+                              child: Text(
+                                otherUserName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             if (lastMessageTime != null)
@@ -250,6 +257,7 @@ class _ChatTabState extends State<ChatTab> {
                           ],
                         ),
                         const SizedBox(height: 4),
+                        // 角色標籤
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
@@ -266,6 +274,7 @@ class _ChatTabState extends State<ChatTab> {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        // 最後訊息
                         Row(
                           children: [
                             if (isMyLastMessage)
@@ -296,10 +305,36 @@ class _ChatTabState extends State<ChatTab> {
                       ],
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey[400],
+                  const SizedBox(width: 8),
+                  // 右側：箭頭和未讀數量
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 8),
+                      // 新增：顯示未讀數量標籤
+                      if ((chatRoomData['unreadCount']?[currentUserId] ?? 0) > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${chatRoomData['unreadCount'][currentUserId]}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -326,19 +361,24 @@ class _ChatTabState extends State<ChatTab> {
     }
   }
 
-  void _openChatDetail(String chatRoomId, String otherUserName, bool otherUserIsCoach) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatDetailPage(
-          chatId: chatRoomId,
-          chatName: otherUserName,
-          lastMessage: '開始對話...',
-          avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
-          isOnline: true,
+  void _openChatDetail(String chatRoomId, String otherUserName, bool otherUserIsCoach) async {
+    // 新增：打開聊天前先標記為已讀
+    await _chatService.markAsRead(chatRoomId);
+    
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatDetailPage(
+            chatId: chatRoomId,
+            chatName: otherUserName,
+            lastMessage: '開始對話...',
+            avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
+            isOnline: true,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   void _showCreateChatDialog() {

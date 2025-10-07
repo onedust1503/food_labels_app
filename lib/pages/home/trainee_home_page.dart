@@ -1,13 +1,13 @@
 // lib/pages/home/trainee_home_page.dart
-// 🎯 在現有基礎上增強學員主頁功能
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../components/page_wrapper_with_navigation.dart';
 import '../nutrition/food_search_page.dart';
-import '../nutrition/nutrition_log_list_page.dart'; // 🔥 新增
+import '../nutrition/nutrition_log_list_page.dart';
+import '../water/water_log_page.dart';
+import '../../services/water_service.dart';
 
 class TraineeHomePage extends StatefulWidget {
   const TraineeHomePage({super.key});
@@ -19,6 +19,7 @@ class TraineeHomePage extends StatefulWidget {
 class _TraineeHomePageState extends State<TraineeHomePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final WaterService _waterService = WaterService();
   
   User? firebaseUser;
   String realUserName = '';
@@ -33,10 +34,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   String carbsAmount = '0/178g';
   String proteinAmount = '0/52g';
   String fatAmount = '0/122g';
-  
-  // 喝水追蹤
-  int waterIntake = 0;
-  int waterTarget = 2000;
 
   @override
   void initState() {
@@ -70,7 +67,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           realUserName = firebaseUser!.displayName ?? '學員';
         }
         
-        // 🔥 載入今日營養數據
+        // 載入今日營養數據
         await _loadTodayNutrition();
       }
       
@@ -83,13 +80,11 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     }
   }
 
-  // 🔥 新增方法：載入今日營養數據
   Future<void> _loadTodayNutrition() async {
     try {
       String userId = firebaseUser!.uid;
       String today = DateTime.now().toIso8601String().split('T')[0];
       
-      // 讀取今日總計
       DocumentSnapshot summaryDoc = await _firestore
           .collection('users')
           .doc(userId)
@@ -112,18 +107,15 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           double targetCarbs = (data['targetCarbs'] ?? 178).toDouble();
           double targetFat = (data['targetFat'] ?? 122).toDouble();
           
-          // 計算百分比（避免除以零）
           proteinPercent = targetProtein > 0 ? (totalProtein / targetProtein).clamp(0.0, 1.0) : 0.0;
           carbsPercent = targetCarbs > 0 ? (totalCarbs / targetCarbs).clamp(0.0, 1.0) : 0.0;
           fatPercent = targetFat > 0 ? (totalFat / targetFat).clamp(0.0, 1.0) : 0.0;
           
-          // 更新顯示文字
           proteinAmount = '${totalProtein.toStringAsFixed(1)}/${targetProtein.toStringAsFixed(0)}g';
           carbsAmount = '${totalCarbs.toStringAsFixed(1)}/${targetCarbs.toStringAsFixed(0)}g';
           fatAmount = '${totalFat.toStringAsFixed(1)}/${targetFat.toStringAsFixed(0)}g';
         });
       } else {
-        // 沒有今日數據，使用預設值（已經在初始化時設定為 0）
         if (kDebugMode) {
           debugPrint('今日尚無營養記錄');
         }
@@ -198,7 +190,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                   IconButton(
                     icon: const Icon(Icons.refresh),
                     onPressed: () {
-                      // 🔥 新增：手動刷新數據
                       _loadTodayNutrition();
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -227,10 +218,10 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               _buildCalorieCard(),
               const SizedBox(height: 20),
               
-              _buildNutritionCard(), // 🔥 已修改為可點擊
+              _buildNutritionCard(),
               const SizedBox(height: 20),
               
-              _buildWaterIntakeCard(),
+              _buildWaterIntakeCard(), // 🔥 使用 StreamBuilder 即時監聽
               const SizedBox(height: 20),
               
               _buildQuickActions(),
@@ -314,7 +305,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       child: CircularProgressIndicator(
                         value: percentage,
                         strokeWidth: 12,
-                        backgroundColor: Colors.white.withValues(alpha: 0.3),
+                        backgroundColor: Colors.white.withOpacity(0.3),
                         valueColor: const AlwaysStoppedAnimation<Color>(
                           Color(0xFF7FD957),
                         ),
@@ -349,18 +340,15 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
-  // 🔥 修改：營養素卡片改為可點擊
   Widget _buildNutritionCard() {
     return InkWell(
       onTap: () async {
-        // 導航到飲食記錄列表
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => const NutritionLogListPage(),
           ),
         );
-        // 返回後刷新數據
         _loadTodayNutrition();
       },
       borderRadius: BorderRadius.circular(20),
@@ -371,7 +359,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.1),
+              color: Colors.grey.withOpacity(0.1),
               spreadRadius: 1,
               blurRadius: 10,
             ),
@@ -449,9 +437,122 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // 🔥 喝水卡片 - 使用 StreamBuilder 即時監聽
   Widget _buildWaterIntakeCard() {
-    double waterPercentage = waterTarget > 0 ? (waterIntake / waterTarget).clamp(0.0, 1.0) : 0.0;
-    
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: _waterService.getTodayWaterStream(),
+      initialData: {
+        'totalWater': 0,
+        'targetWater': 2000,
+        'logs': [],
+      },
+      builder: (context, snapshot) {
+        // 處理連接狀態
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          return _buildWaterCardSkeleton();
+        }
+
+        // 從 Stream 獲取數據
+        final data = snapshot.data ?? {
+          'totalWater': 0,
+          'targetWater': 2000,
+          'logs': [],
+        };
+        
+        final waterIntake = (data['totalWater'] ?? 0) as int;
+        final waterTarget = (data['targetWater'] ?? 2000) as int;
+        final waterPercentage = waterTarget > 0 
+            ? (waterIntake / waterTarget).clamp(0.0, 1.0) 
+            : 0.0;
+
+        return InkWell(
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const WaterLogPage(),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.blue[100]!),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[100],
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.water_drop, color: Colors.blue, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '今日飲水量',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey[400]),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$waterIntake / $waterTarget ml',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: LinearProgressIndicator(
+                          value: waterPercentage,
+                          backgroundColor: Colors.white,
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                          minHeight: 6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _showQuickAddWaterDialog,
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.add, color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 🔥 加載骨架屏
+  Widget _buildWaterCardSkeleton() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -462,63 +563,163 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-              color: Colors.blue[100],
+              color: Colors.grey[300],
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.water_drop, color: Colors.blue, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '今日飲水量',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$waterIntake / $waterTarget ml',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                Container(
+                  width: 100,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(
-                    value: waterPercentage,
-                    backgroundColor: Colors.white,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                    minHeight: 6,
+                Container(
+                  width: 150,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ],
             ),
           ),
-          IconButton(
-            onPressed: () {
-              setState(() {
-                waterIntake += 200;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('已添加 200ml 水'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            icon: const Icon(Icons.add_circle, color: Colors.blue, size: 32),
-          ),
         ],
       ),
     );
+  }
+
+  // 🔥 快速添加喝水對話框
+  void _showQuickAddWaterDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '快速記錄喝水',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              children: [100, 200, 300, 400, 500, 600].map((amount) {
+                return InkWell(
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _quickAddWater(amount);
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.water_drop, color: Colors.blue, size: 32),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${amount}ml',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const WaterLogPage(),
+                    ),
+                  );
+                },
+                child: const Text('查看詳細記錄'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🔥 快速添加喝水
+  Future<void> _quickAddWater(int amount) async {
+    try {
+      await _waterService.addWaterLog(amount: amount);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('已記錄 ${amount}ml 💧'),
+              ],
+            ),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('記錄失敗: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildQuickActions() {
@@ -530,14 +731,12 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
             label: '記錄飲食',
             color: Colors.orange,
             onTap: () async {
-              // 導航到食物搜尋頁面
               await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => const FoodSearchPage(),
                 ),
               );
-              // 返回後自動刷新數據
               _loadTodayNutrition();
             },
           ),
@@ -571,9 +770,9 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
+          color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
+          border: Border.all(color: color.withOpacity(0.3)),
         ),
         child: Column(
           children: [

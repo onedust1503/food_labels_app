@@ -8,6 +8,7 @@ import '../nutrition/food_search_page.dart';
 import '../nutrition/nutrition_log_list_page.dart';
 import '../water/water_log_page.dart';
 import '../../services/water_service.dart';
+import '../../components/weekly_summary_card.dart';
 
 class TraineeHomePage extends StatefulWidget {
   const TraineeHomePage({super.key});
@@ -127,6 +128,31 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     }
   }
 
+  Future<Map<String, dynamic>> _loadWeeklyStats() async {
+    try {
+      final waterStats = await _waterService.getWeeklyStats();
+      
+      return {
+        'daysCompleted': waterStats['daysCompleted'] ?? 0,
+        'totalDays': 7,
+        'avgCalories': todayCalories.toDouble(),
+        'avgWater': (waterStats['avgDaily'] ?? 0).toDouble(),
+        'workoutDays': 0,
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('載入本週統計失敗: $e');
+      }
+      return {
+        'daysCompleted': 0,
+        'totalDays': 7,
+        'avgCalories': 0.0,
+        'avgWater': 0.0,
+        'workoutDays': 0,
+      };
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -213,6 +239,26 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               const SizedBox(height: 16),
               
               _buildPeriodSelector(),
+              const SizedBox(height: 20),
+
+              // 🔥 新增本週統計卡片
+              FutureBuilder<Map<String, dynamic>>(
+                future: _loadWeeklyStats(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const SizedBox.shrink();
+                  }
+                  
+                  final stats = snapshot.data!;
+                  return WeeklySummaryCard(
+                    daysCompleted: stats['daysCompleted'],
+                    totalDays: stats['totalDays'],
+                    avgCalories: stats['avgCalories'],
+                    avgWater: stats['avgWater'],
+                    workoutDays: stats['workoutDays'],
+                  );
+                },
+              ),
               const SizedBox(height: 20),
               
               _buildCalorieCard(),

@@ -12,6 +12,9 @@ import '../pages/coach_search_page.dart';
 import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
 import '../services/food_database_service.dart'; // 🔥 新增
+import '../pages/workout/workout_log_page.dart';
+import '../pages/workout/workout_plan_list_page.dart';
+import '../pages/workout/create_workout_plan_page.dart';
 
 class PageWrapperWithNavigation extends StatefulWidget {
   final bool isCoach;
@@ -153,8 +156,11 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               subtitle: const Text('為學員建立新的訓練課程'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('新增訓練計畫功能 (開發中)')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CreateWorkoutPlanPage(),
+                  ),
                 );
               },
             ),
@@ -242,11 +248,35 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               subtitle: const Text('手動記錄訓練成果'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('記錄訓練功能 (開發中)')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const WorkoutLogPage(),
+                  ),
                 );
               },
             ),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.calendar_month, color: Colors.orange),
+              ),
+              title: const Text('訓練計畫'),
+              subtitle: const Text('查看教練分配的訓練計畫'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const WorkoutPlanListPage(),
+                  ),
+                );
+              },
+            ),          
             const SizedBox(height: 20),
           ],
         ),

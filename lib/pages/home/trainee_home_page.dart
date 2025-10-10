@@ -9,6 +9,7 @@ import '../nutrition/nutrition_log_list_page.dart';
 import '../water/water_log_page.dart';
 import '../../services/water_service.dart';
 import '../../components/weekly_summary_card.dart';
+import '../../services/workout_service.dart';
 
 class TraineeHomePage extends StatefulWidget {
   const TraineeHomePage({super.key});
@@ -131,13 +132,14 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   Future<Map<String, dynamic>> _loadWeeklyStats() async {
     try {
       final waterStats = await _waterService.getWeeklyStats();
+      final workoutStats = await WorkoutService().getWeeklyWorkoutStats(); // 🔥 新增
       
       return {
         'daysCompleted': waterStats['daysCompleted'] ?? 0,
         'totalDays': 7,
         'avgCalories': todayCalories.toDouble(),
         'avgWater': (waterStats['avgDaily'] ?? 0).toDouble(),
-        'workoutDays': 0,
+        'workoutDays': workoutStats['workoutDays'] ?? 0, // 🔥 使用真實數據
       };
     } catch (e) {
       if (kDebugMode) {

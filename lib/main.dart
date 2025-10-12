@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'login.dart';
 import 'pages/home/trainee_home_page.dart';
 import 'pages/home/coach_home_page.dart';
+import 'services/notification_service.dart'; // 🆕 匯入通知服務
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,13 @@ void main() async {
     if (kDebugMode) {
       debugPrint('[init] Firebase initialized successfully');
     }
+
+    // 初始化通知服務
+    await NotificationService().initialize();
+    if (kDebugMode) {
+      debugPrint('[init] Notification Service initialized successfully');
+    }
+
   } catch (e) {
     // *** 修復：使用 debugPrint 替代 print ***
     if (kDebugMode) {

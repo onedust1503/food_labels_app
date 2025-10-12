@@ -9,9 +9,14 @@ import 'login.dart';
 import 'pages/home/trainee_home_page.dart';
 import 'pages/home/coach_home_page.dart';
 import 'services/notification_service.dart'; // 🆕 匯入通知服務
+import 'package:intl/date_symbol_data_local.dart'; // 🆕 匯入國際化日期格式
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 🆕 初始化國際化日期格式
+  await initializeDateFormatting('zh_TW', null);
+  
   // *** 修復：使用 debugPrint 替代 print ***
   if (kDebugMode) {
     debugPrint('[init] start');

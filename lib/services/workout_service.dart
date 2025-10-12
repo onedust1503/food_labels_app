@@ -82,17 +82,18 @@ class WorkoutService {
     });
   }
 
-  // 🔥 獲取今日運動記錄
+  // 🔥 獲取今日運動記錄 - 修正排序
   Future<List<WorkoutModel>> getTodayWorkouts() async {
     if (_currentUserId == null) return [];
 
     String today = DateTime.now().toIso8601String().split('T')[0];
 
+    // ✅ 修正：改用 date 排序，不用 createdAt
     QuerySnapshot snapshot = await _firestore
         .collection('workoutLogs')
         .where('userId', isEqualTo: _currentUserId)
         .where('date', isEqualTo: today)
-        .orderBy('createdAt', descending: true)
+        .orderBy('date', descending: true)  // ✅ 改用 date
         .get();
 
     return snapshot.docs

@@ -1,4 +1,6 @@
 // lib/services/stats_service.dart
+// 🔥 修正：使用字符串格式查詢日期，而不是 Timestamp
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -16,20 +18,18 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    startOfWeek = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
 
     List<DailyWorkoutStats> weekStats = [];
 
     for (int i = 0; i < 7; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
-      DateTime startOfDay = DateTime(date.year, date.month, date.day);
-      DateTime endOfDay = startOfDay.add(const Duration(days: 1));
+      // ✅ 使用字符串格式的日期
+      String dateStr = date.toIso8601String().split('T')[0];
 
       QuerySnapshot snapshot = await _firestore
           .collection('workoutLogs')
           .where('userId', isEqualTo: currentUserId)
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('date', isLessThan: Timestamp.fromDate(endOfDay))
+          .where('date', isEqualTo: dateStr)  // ✅ 直接比對字符串
           .get();
 
       int totalDuration = 0;
@@ -58,11 +58,13 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfMonth = DateTime(now.year, now.month, 1);
+    // ✅ 使用字符串格式
+    String startDateStr = startOfMonth.toIso8601String().split('T')[0];
 
     QuerySnapshot snapshot = await _firestore
         .collection('workoutLogs')
         .where('userId', isEqualTo: currentUserId)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth))
+        .where('date', isGreaterThanOrEqualTo: startDateStr)  // ✅ 字符串比較
         .get();
 
     Map<String, int> distribution = {};
@@ -89,11 +91,13 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfMonth = DateTime(now.year, now.month, 1);
+    // ✅ 使用字符串格式
+    String startDateStr = startOfMonth.toIso8601String().split('T')[0];
 
     QuerySnapshot snapshot = await _firestore
         .collection('workoutLogs')
         .where('userId', isEqualTo: currentUserId)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth))
+        .where('date', isGreaterThanOrEqualTo: startDateStr)  // ✅ 字符串比較
         .get();
 
     int totalWorkouts = snapshot.docs.length;
@@ -122,20 +126,18 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    startOfWeek = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
 
     List<DailyNutritionStats> weekStats = [];
 
     for (int i = 0; i < 7; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
-      DateTime startOfDay = DateTime(date.year, date.month, date.day);
-      DateTime endOfDay = startOfDay.add(const Duration(days: 1));
+      // ✅ 使用字符串格式的日期
+      String dateStr = date.toIso8601String().split('T')[0];
 
       QuerySnapshot snapshot = await _firestore
           .collection('foodLogs')
           .where('userId', isEqualTo: currentUserId)
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('date', isLessThan: Timestamp.fromDate(endOfDay))
+          .where('date', isEqualTo: dateStr)  // ✅ 直接比對字符串
           .get();
 
       double totalCalories = 0;
@@ -170,20 +172,18 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    startOfWeek = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
 
     List<DailyWaterStats> weekStats = [];
 
     for (int i = 0; i < 7; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
-      DateTime startOfDay = DateTime(date.year, date.month, date.day);
-      DateTime endOfDay = startOfDay.add(const Duration(days: 1));
+      // ✅ 使用字符串格式的日期
+      String dateStr = date.toIso8601String().split('T')[0];
 
       QuerySnapshot snapshot = await _firestore
           .collection('waterLogs')
           .where('userId', isEqualTo: currentUserId)
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('date', isLessThan: Timestamp.fromDate(endOfDay))
+          .where('date', isEqualTo: dateStr)  // ✅ 直接比對字符串
           .get();
 
       double totalAmount = 0;

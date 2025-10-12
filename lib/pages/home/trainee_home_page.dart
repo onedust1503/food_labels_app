@@ -1,4 +1,6 @@
 // lib/pages/home/trainee_home_page.dart
+// 🔥 只添加漢堡選單按鈕，保留所有原有功能
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -132,14 +134,14 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   Future<Map<String, dynamic>> _loadWeeklyStats() async {
     try {
       final waterStats = await _waterService.getWeeklyStats();
-      final workoutStats = await WorkoutService().getWeeklyWorkoutStats(); // 🔥 新增
+      final workoutStats = await WorkoutService().getWeeklyWorkoutStats();
       
       return {
         'daysCompleted': waterStats['daysCompleted'] ?? 0,
         'totalDays': 7,
         'avgCalories': todayCalories.toDouble(),
         'avgWater': (waterStats['avgDaily'] ?? 0).toDouble(),
-        'workoutDays': workoutStats['workoutDays'] ?? 0, // 🔥 使用真實數據
+        'workoutDays': workoutStats['workoutDays'] ?? 0,
       };
     } catch (e) {
       if (kDebugMode) {
@@ -178,9 +180,20 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 頂部用戶資訊
+              // 🔥 頂部用戶資訊 - 只添加漢堡選單按鈕
               Row(
                 children: [
+                  // 🔥 新增：漢堡選單按鈕
+                  Builder(
+                    builder: (context) => IconButton(
+                      icon: const Icon(Icons.menu, size: 28),
+                      onPressed: () {
+                        Scaffold.of(context).openDrawer();
+                      },
+                      tooltip: '打開選單',
+                    ),
+                  ),
+                  // 原有的頭像
                   CircleAvatar(
                     radius: 25,
                     backgroundColor: const Color(0xFF3B82F6),
@@ -194,6 +207,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // 原有的用戶名稱
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,6 +229,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       ],
                     ),
                   ),
+                  // 原有的刷新按鈕
                   IconButton(
                     icon: const Icon(Icons.refresh),
                     onPressed: () {
@@ -231,6 +246,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               ),
               const SizedBox(height: 24),
               
+              // 以下完全保持原樣
               const Text(
                 '追蹤你的卡路里',
                 style: TextStyle(
@@ -243,7 +259,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               _buildPeriodSelector(),
               const SizedBox(height: 20),
 
-              // 🔥 新增本週統計卡片
+              // 本週統計卡片
               FutureBuilder<Map<String, dynamic>>(
                 future: _loadWeeklyStats(),
                 builder: (context, snapshot) {
@@ -269,7 +285,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               _buildNutritionCard(),
               const SizedBox(height: 20),
               
-              _buildWaterIntakeCard(), // 🔥 使用 StreamBuilder 即時監聽
+              _buildWaterIntakeCard(),
               const SizedBox(height: 20),
               
               _buildQuickActions(),
@@ -485,7 +501,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
-  // 🔥 喝水卡片 - 使用 StreamBuilder 即時監聽
   Widget _buildWaterIntakeCard() {
     return StreamBuilder<Map<String, dynamic>>(
       stream: _waterService.getTodayWaterStream(),
@@ -495,12 +510,10 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
         'logs': [],
       },
       builder: (context, snapshot) {
-        // 處理連接狀態
         if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return _buildWaterCardSkeleton();
         }
 
-        // 從 Stream 獲取數據
         final data = snapshot.data ?? {
           'totalWater': 0,
           'targetWater': 2000,
@@ -599,7 +612,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
-  // 🔥 加載骨架屏
   Widget _buildWaterCardSkeleton() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -648,7 +660,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
-  // 🔥 快速添加喝水對話框
   void _showQuickAddWaterDialog() {
     showModalBottomSheet(
       context: context,
@@ -735,7 +746,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
-  // 🔥 快速添加喝水
   Future<void> _quickAddWater(int amount) async {
     try {
       await _waterService.addWaterLog(amount: amount);

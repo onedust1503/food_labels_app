@@ -1,5 +1,5 @@
 // lib/components/page_wrapper_with_navigation.dart
-// 🔥 已修改：支援自定義首頁功能
+// 🔥 只添加側邊欄功能，保持原有排版和功能不變
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -11,19 +11,25 @@ import '../chat_service_test_page.dart';
 import '../pages/coach_search_page.dart';
 import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
-import '../services/food_database_service.dart'; // 🔥 新增
+import '../services/food_database_service.dart';
 import '../pages/workout/workout_log_page.dart';
 import '../pages/workout/workout_plan_list_page.dart';
 import '../pages/workout/create_workout_plan_page.dart';
 
+// 🔥 新增：統計和設定頁面
+import '../pages/stats/dashboard_page.dart';
+import '../pages/stats/workout_stats_page.dart';
+import '../pages/stats/nutrition_stats_page.dart';
+import '../pages/settings/notification_settings_page.dart';
+
 class PageWrapperWithNavigation extends StatefulWidget {
   final bool isCoach;
-  final Widget? customHomePage; // 🔥 新增：可選的自定義首頁
+  final Widget? customHomePage;
 
   const PageWrapperWithNavigation({
     super.key,
     required this.isCoach,
-    this.customHomePage, // 🔥 新增參數
+    this.customHomePage,
   });
 
   @override
@@ -284,6 +290,178 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
+  // 🔥 新增：側邊欄內容
+  Widget _buildDrawer() {
+    return Drawer(
+      child: Column(
+        children: [
+          // 側邊欄頂部
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: widget.isCoach 
+                    ? [Colors.green[500]!, Colors.green[600]!]
+                    : [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 35,
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  userName,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  userEmail,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 側邊欄選項列表
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                // 📊 統計相關選項
+                _buildDrawerHeader('📊 數據統計'),
+                _buildDrawerItem(
+                  icon: Icons.dashboard,
+                  title: '數據儀表板',
+                  subtitle: '查看整體數據總覽',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const DashboardPage(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.fitness_center,
+                  title: '運動統計',
+                  subtitle: '查看訓練數據分析',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const WorkoutStatsPage(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.restaurant,
+                  title: '營養統計',
+                  subtitle: '查看飲食數據分析',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NutritionStatsPage(),
+                      ),
+                    );
+                  },
+                ),
+
+                const Divider(),
+
+                // ⚙️ 設定相關選項
+                _buildDrawerHeader('⚙️ 設定'),
+                _buildDrawerItem(
+                  icon: Icons.notifications,
+                  title: '通知設定',
+                  subtitle: '管理提醒通知',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 側邊欄分組標題
+  Widget _buildDrawerHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey[600],
+        ),
+      ),
+    );
+  }
+
+  // 側邊欄選項項目
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6)),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -294,6 +472,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
+      // 🔥 新增：側邊欄
+      drawer: _buildDrawer(),
       body: Stack(
         children: [
           // 主要內容頁面
@@ -305,7 +485,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               });
             },
             children: [
-              _buildHomePage(), // 🔥 修改：支援自定義首頁
+              _buildHomePage(),
               _buildSecondPage(),
               _buildChatPage(),
               _buildProfilePage(),
@@ -329,14 +509,12 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 修改：首頁內容 - 支援自定義首頁
+  // 🔥 保持原有的首頁內容 - 完全不變
   Widget _buildHomePage() {
-    // 如果有傳入自定義首頁，就使用它
     if (widget.customHomePage != null) {
       return widget.customHomePage!;
     }
     
-    // 否則使用預設首頁
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.only(bottom: 110),
@@ -417,7 +595,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 第二頁內容
+  // 🔥 保持原有的第二頁內容 - 完全不變
   Widget _buildSecondPage() {
     if (widget.isCoach) {
       return const StudentManagementPage();
@@ -426,7 +604,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 聊天頁面
+  // 🔥 保持原有的聊天頁面 - 完全不變
   Widget _buildChatPage() {
     return SafeArea(
       child: Padding(
@@ -491,7 +669,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     );
                   }
 
-                  // 🔥 在本地排序聊天室（按最後訊息時間）
+                  // 在本地排序聊天室（按最後訊息時間）
                   List<QueryDocumentSnapshot> chatRooms = snapshot.data!.docs.toList();
                   chatRooms.sort((a, b) {
                     var aData = a.data() as Map<String, dynamic>;
@@ -503,7 +681,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     if (aTime == null) return 1;
                     if (bTime == null) return -1;
                     
-                    return bTime.compareTo(aTime); // 降序排列（最新的在前）
+                    return bTime.compareTo(aTime);
                   });
 
                   return ListView.builder(
@@ -639,11 +817,11 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) => ChatDetailPage(
-                                      chatId: chatRoomDoc.id,           // ✅ 修正參數名稱
-                                      chatName: otherUserName,          // ✅ 修正參數名稱
-                                      lastMessage: lastMessage.isNotEmpty ? lastMessage : '開始對話...', // ✅ 正確
-                                      avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff', // ✅ 使用 UI Avatars 生成頭像
-                                      isOnline: true,                   // ✅ 預設在線
+                                      chatId: chatRoomDoc.id,
+                                      chatName: otherUserName,
+                                      lastMessage: lastMessage.isNotEmpty ? lastMessage : '開始對話...',
+                                      avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
+                                      isOnline: true,
                                     ),
                                   ),
                                 );
@@ -663,7 +841,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 個人頁面
+  // 🔥 保持原有的個人頁面 - 完全不變
   Widget _buildProfilePage() {
     return SafeArea(
       child: Padding(
@@ -784,7 +962,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                       );
                     },
                   ),
-                  // 🔥 新增：初始化食物資料庫（開發/管理用）
                   _buildProfileOption(
                     icon: Icons.restaurant_menu,
                     title: '初始化食物資料庫',
@@ -809,7 +986,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 個人中心選項
+  // 🔥 保持原有的個人中心選項 - 完全不變
   Widget _buildProfileOption({
     required IconData icon,
     required String title,
@@ -863,7 +1040,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 登出功能
+  // 🔥 保持原有的登出功能 - 完全不變
   void _handleSignOut() async {
     bool? shouldSignOut = await showDialog<bool>(
       context: context,
@@ -916,9 +1093,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 🔥 新增：初始化食物資料庫
+  // 🔥 保持原有的初始化資料庫功能 - 完全不變
   void _initializeDatabase() async {
-    // 顯示確認對話框
     bool? shouldInit = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -957,7 +1133,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
 
     if (shouldInit != true) return;
 
-    // 顯示載入對話框
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -982,10 +1157,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       FoodDatabaseService foodService = FoodDatabaseService();
       await foodService.initializeFoodDatabase();
       
-      // 關閉載入對話框
       if (mounted) Navigator.of(context).pop();
       
-      // 顯示成功訊息
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -996,10 +1169,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
         );
       }
     } catch (e) {
-      // 關閉載入對話框
       if (mounted) Navigator.of(context).pop();
       
-      // 顯示錯誤訊息
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

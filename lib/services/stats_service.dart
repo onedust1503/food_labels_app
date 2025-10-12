@@ -1,5 +1,5 @@
 // lib/services/stats_service.dart
-// 🔥 修正：使用字符串格式查詢日期，而不是 Timestamp
+// 🔥 修正：使用正確的集合名稱 nutritionLogs
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,13 +23,12 @@ class StatsService {
 
     for (int i = 0; i < 7; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
-      // ✅ 使用字符串格式的日期
       String dateStr = date.toIso8601String().split('T')[0];
 
       QuerySnapshot snapshot = await _firestore
           .collection('workoutLogs')
           .where('userId', isEqualTo: currentUserId)
-          .where('date', isEqualTo: dateStr)  // ✅ 直接比對字符串
+          .where('date', isEqualTo: dateStr)
           .get();
 
       int totalDuration = 0;
@@ -58,13 +57,12 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfMonth = DateTime(now.year, now.month, 1);
-    // ✅ 使用字符串格式
     String startDateStr = startOfMonth.toIso8601String().split('T')[0];
 
     QuerySnapshot snapshot = await _firestore
         .collection('workoutLogs')
         .where('userId', isEqualTo: currentUserId)
-        .where('date', isGreaterThanOrEqualTo: startDateStr)  // ✅ 字符串比較
+        .where('date', isGreaterThanOrEqualTo: startDateStr)
         .get();
 
     Map<String, int> distribution = {};
@@ -91,13 +89,12 @@ class StatsService {
 
     DateTime now = DateTime.now();
     DateTime startOfMonth = DateTime(now.year, now.month, 1);
-    // ✅ 使用字符串格式
     String startDateStr = startOfMonth.toIso8601String().split('T')[0];
 
     QuerySnapshot snapshot = await _firestore
         .collection('workoutLogs')
         .where('userId', isEqualTo: currentUserId)
-        .where('date', isGreaterThanOrEqualTo: startDateStr)  // ✅ 字符串比較
+        .where('date', isGreaterThanOrEqualTo: startDateStr)
         .get();
 
     int totalWorkouts = snapshot.docs.length;
@@ -120,7 +117,7 @@ class StatsService {
 
   // ========== 營養統計 ==========
 
-  /// 獲取本週營養數據（7天）
+  /// 🔥 修正：獲取本週營養數據 - 改用正確的集合名稱 nutritionLogs
   Future<List<DailyNutritionStats>> getWeeklyNutritionStats() async {
     if (currentUserId == null) return [];
 
@@ -131,13 +128,12 @@ class StatsService {
 
     for (int i = 0; i < 7; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
-      // ✅ 使用字符串格式的日期
       String dateStr = date.toIso8601String().split('T')[0];
 
       QuerySnapshot snapshot = await _firestore
-          .collection('foodLogs')
+          .collection('nutritionLogs')
           .where('userId', isEqualTo: currentUserId)
-          .where('date', isEqualTo: dateStr)  // ✅ 直接比對字符串
+          .where('date', isEqualTo: dateStr)
           .get();
 
       double totalCalories = 0;
@@ -166,7 +162,7 @@ class StatsService {
     return weekStats;
   }
 
-  /// 獲取喝水統計（本週）
+  /// 🔥 修正：獲取喝水統計（本週）- 使用正確的資料路徑
   Future<List<DailyWaterStats>> getWeeklyWaterStats() async {
     if (currentUserId == null) return [];
 
@@ -177,26 +173,29 @@ class StatsService {
 
     for (int i = 0; i < 7; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
-      // ✅ 使用字符串格式的日期
       String dateStr = date.toIso8601String().split('T')[0];
 
-      QuerySnapshot snapshot = await _firestore
+      // ✅ 修正：使用正確的路徑 users/{userId}/waterLogs/{date}
+      DocumentSnapshot doc = await _firestore
+          .collection('users')
+          .doc(currentUserId)
           .collection('waterLogs')
-          .where('userId', isEqualTo: currentUserId)
-          .where('date', isEqualTo: dateStr)  // ✅ 直接比對字符串
+          .doc(dateStr)
           .get();
 
       double totalAmount = 0;
+      double goal = 2000;
 
-      for (var doc in snapshot.docs) {
+      if (doc.exists) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        totalAmount += ((data['amount'] ?? 0) as num).toDouble();
+        totalAmount = ((data['totalWater'] ?? 0) as num).toDouble();
+        goal = ((data['targetWater'] ?? 2000) as num).toDouble();
       }
 
       weekStats.add(DailyWaterStats(
         date: date,
         amount: totalAmount,
-        goal: 2000, // 預設目標 2000ml
+        goal: goal,
       ));
     }
 

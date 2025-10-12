@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../services/stats_service.dart';
-import 'package:intl/intl.dart';
 
 class WorkoutStatsPage extends StatefulWidget {
   const WorkoutStatsPage({super.key});
@@ -68,23 +67,16 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 本月總覽卡片
                     _buildMonthlyOverview(),
                     const SizedBox(height: 24),
-
-                    // 本週運動時長折線圖
                     _buildSectionTitle('📈 本週運動時長'),
                     const SizedBox(height: 12),
                     _buildDurationLineChart(),
                     const SizedBox(height: 24),
-
-                    // 卡路里消耗柱狀圖
                     _buildSectionTitle('🔥 每日卡路里消耗'),
                     const SizedBox(height: 12),
                     _buildCaloriesBarChart(),
                     const SizedBox(height: 24),
-
-                    // 運動類型分布圓餅圖
                     _buildSectionTitle('🥧 運動類型分布'),
                     const SizedBox(height: 12),
                     _buildTypePieChart(),
@@ -191,6 +183,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       return _buildEmptyChart('本週還沒有運動記錄');
     }
 
+    // 計算最大值，用於設定 Y 軸範圍
+    double maxDuration = _weeklyStats
+        .map((e) => e.duration.toDouble())
+        .reduce((a, b) => a > b ? a : b);
+    double yMax = (maxDuration * 1.2).ceilToDouble();
+
     return Container(
       height: 250,
       padding: const EdgeInsets.all(16),
@@ -207,10 +205,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       ),
       child: LineChart(
         LineChartData(
+          minY: 0,
+          maxY: yMax > 0 ? yMax : 60,
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: 20,
+            horizontalInterval: yMax > 0 ? yMax / 5 : 10,
             getDrawingHorizontalLine: (value) {
               return FlLine(
                 color: Colors.grey.shade200,
@@ -223,10 +223,17 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 40,
+                interval: yMax > 0 ? yMax / 5 : 10,
                 getTitlesWidget: (value, meta) {
-                  return Text(
-                    '${value.toInt()}分',
-                    style: const TextStyle(fontSize: 10),
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      '${value.toInt()}分',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -234,15 +241,25 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 30,
+                reservedSize: 32,
                 getTitlesWidget: (value, meta) {
-                  if (value.toInt() >= _weeklyStats.length) {
+                  if (value.toInt() < 0 || value.toInt() >= _weeklyStats.length) {
                     return const SizedBox.shrink();
                   }
                   final date = _weeklyStats[value.toInt()].date;
-                  return Text(
-                    DateFormat('E', 'zh_TW').format(date).substring(0, 1),
-                    style: const TextStyle(fontSize: 12),
+                  // ✅ 修正：直接使用中文星期簡稱
+                  final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+                  final weekdayIndex = date.weekday - 1;
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '週${weekdays[weekdayIndex]}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -267,10 +284,27 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
               isCurved: true,
               color: Colors.orange,
               barWidth: 3,
-              dotData: const FlDotData(show: true),
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) {
+                  return FlDotCirclePainter(
+                    radius: 4,
+                    color: Colors.orange,
+                    strokeWidth: 2,
+                    strokeColor: Colors.white,
+                  );
+                },
+              ),
               belowBarData: BarAreaData(
                 show: true,
-                color: Colors.orange.withOpacity(0.1),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.orange.withOpacity(0.3),
+                    Colors.orange.withOpacity(0.05),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
               ),
             ),
           ],
@@ -284,6 +318,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
     if (_weeklyStats.isEmpty) {
       return _buildEmptyChart('本週還沒有運動記錄');
     }
+
+    // 計算最大值
+    double maxCalories = _weeklyStats
+        .map((e) => e.calories)
+        .reduce((a, b) => a > b ? a : b);
+    double yMax = (maxCalories * 1.2).ceilToDouble();
 
     return Container(
       height: 250,
@@ -301,10 +341,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       ),
       child: BarChart(
         BarChartData(
+          minY: 0,
+          maxY: yMax > 0 ? yMax : 300,
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: 100,
+            horizontalInterval: yMax > 0 ? yMax / 5 : 50,
             getDrawingHorizontalLine: (value) {
               return FlLine(
                 color: Colors.grey.shade200,
@@ -317,10 +359,17 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 40,
+                interval: yMax > 0 ? yMax / 5 : 50,
                 getTitlesWidget: (value, meta) {
-                  return Text(
-                    '${value.toInt()}',
-                    style: const TextStyle(fontSize: 10),
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      '${value.toInt()}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -328,15 +377,25 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 30,
+                reservedSize: 32,
                 getTitlesWidget: (value, meta) {
-                  if (value.toInt() >= _weeklyStats.length) {
+                  if (value.toInt() < 0 || value.toInt() >= _weeklyStats.length) {
                     return const SizedBox.shrink();
                   }
                   final date = _weeklyStats[value.toInt()].date;
-                  return Text(
-                    DateFormat('E', 'zh_TW').format(date).substring(0, 1),
-                    style: const TextStyle(fontSize: 12),
+                  // ✅ 修正：直接使用中文星期簡稱
+                  final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+                  final weekdayIndex = date.weekday - 1;
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '週${weekdays[weekdayIndex]}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -356,8 +415,15 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
               barRods: [
                 BarChartRodData(
                   toY: _weeklyStats[index].calories,
-                  color: Colors.deepOrange,
-                  width: 20,
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.deepOrange,
+                      Colors.orange.shade300,
+                    ],
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  ),
+                  width: 24,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(4),
                   ),
@@ -389,12 +455,31 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       Colors.blue,
       Colors.green,
       Colors.purple,
-      Colors.grey,
+      Colors.pink,
     ];
 
-    int total = _typeDistribution.values.reduce((a, b) => a + b);
+    int colorIndex = 0;
+    List<PieChartSectionData> sections = [];
+    
+    _typeDistribution.forEach((type, count) {
+      sections.add(
+        PieChartSectionData(
+          value: count.toDouble(),
+          title: '${typeNames[type] ?? type}\n$count次',
+          color: colors[colorIndex % colors.length],
+          radius: 100,
+          titleStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      );
+      colorIndex++;
+    });
 
     return Container(
+      height: 250,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -407,89 +492,40 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 200,
-            child: PieChart(
-              PieChartData(
-                sections: _typeDistribution.entries.toList().asMap().entries.map((entry) {
-                  int idx = entry.key;
-                  var typeEntry = entry.value;
-                  String type = typeEntry.key;
-                  int count = typeEntry.value;
-                  double percentage = (count / total * 100);
-
-                  return PieChartSectionData(
-                    value: count.toDouble(),
-                    title: '${percentage.toStringAsFixed(0)}%',
-                    color: colors[idx % colors.length],
-                    radius: 80,
-                    titleStyle: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  );
-                }).toList(),
-                sectionsSpace: 2,
-                centerSpaceRadius: 40,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            children: _typeDistribution.entries.toList().asMap().entries.map((entry) {
-              int idx = entry.key;
-              var typeEntry = entry.value;
-              String type = typeEntry.key;
-              int count = typeEntry.value;
-
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: colors[idx % colors.length],
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${typeNames[type] ?? type} ($count次)',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
-        ],
+      child: PieChart(
+        PieChartData(
+          sections: sections,
+          centerSpaceRadius: 40,
+          sectionsSpace: 2,
+        ),
       ),
     );
   }
 
+  // 空資料提示卡片
   Widget _buildEmptyChart(String message) {
     return Container(
       height: 200,
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bar_chart, size: 48, color: Colors.grey.shade400),
-            const SizedBox(height: 8),
+            Icon(
+              Icons.bar_chart_outlined,
+              size: 48,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 12),
             Text(
               message,
               style: TextStyle(
-                color: Colors.grey.shade600,
                 fontSize: 14,
+                color: Colors.grey.shade600,
               ),
             ),
           ],

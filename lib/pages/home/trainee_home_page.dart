@@ -1,5 +1,5 @@
 // lib/pages/home/trainee_home_page.dart
-// 🔥 只添加漢堡選單按鈕，保留所有原有功能
+// 🔥 保留所有原有功能，只添加實時監聽營養資料
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -12,6 +12,7 @@ import '../water/water_log_page.dart';
 import '../../services/water_service.dart';
 import '../../components/weekly_summary_card.dart';
 import '../../services/workout_service.dart';
+import 'dart:async'; // ✅ 新增
 
 class TraineeHomePage extends StatefulWidget {
   const TraineeHomePage({super.key});
@@ -39,10 +40,20 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   String proteinAmount = '0/52g';
   String fatAmount = '0/122g';
 
+  // ✅ 新增：Stream 訂閱
+  StreamSubscription<DocumentSnapshot>? _nutritionStreamSubscription;
+
   @override
   void initState() {
     super.initState();
     _initializeData();
+  }
+
+  // ✅ 新增：取消訂閱
+  @override
+  void dispose() {
+    _nutritionStreamSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _initializeData() async {
@@ -71,8 +82,8 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           realUserName = firebaseUser!.displayName ?? '學員';
         }
         
-        // 載入今日營養數據
-        await _loadTodayNutrition();
+        // ✅ 修改：改用實時監聽
+        _listenToTodayNutrition();
       }
       
       setState(() => isLoading = false);
@@ -84,32 +95,32 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     }
   }
 
-  Future<void> _loadTodayNutrition() async {
-    try {
-      String userId = firebaseUser!.uid;
-      String today = DateTime.now().toIso8601String().split('T')[0];
-      
-      DocumentSnapshot summaryDoc = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('dailySummary')
-          .doc(today)
-          .get();
-      
-      if (summaryDoc.exists) {
-        Map<String, dynamic> data = summaryDoc.data() as Map<String, dynamic>;
+  // ✅ 新增：實時監聽今日營養資料
+  void _listenToTodayNutrition() {
+    String userId = firebaseUser!.uid;
+    String today = DateTime.now().toIso8601String().split('T')[0];
+    
+    _nutritionStreamSubscription = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('dailySummary')
+        .doc(today)
+        .snapshots()
+        .listen((DocumentSnapshot doc) {
+      if (doc.exists && mounted) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         
         setState(() {
-          todayCalories = (data['totalCalories'] ?? 0).toInt();
-          targetCalories = (data['targetCalories'] ?? 1850).toInt();
+          todayCalories = ((data['totalCalories'] ?? 0) as num).toInt();
+          targetCalories = ((data['targetCalories'] ?? 1850) as num).toInt();
           
-          double totalProtein = (data['totalProtein'] ?? 0).toDouble();
-          double totalCarbs = (data['totalCarbs'] ?? 0).toDouble();
-          double totalFat = (data['totalFat'] ?? 0).toDouble();
+          double totalProtein = ((data['totalProtein'] ?? 0) as num).toDouble();
+          double totalCarbs = ((data['totalCarbs'] ?? 0) as num).toDouble();
+          double totalFat = ((data['totalFat'] ?? 0) as num).toDouble();
           
-          double targetProtein = (data['targetProtein'] ?? 52).toDouble();
-          double targetCarbs = (data['targetCarbs'] ?? 178).toDouble();
-          double targetFat = (data['targetFat'] ?? 122).toDouble();
+          double targetProtein = ((data['targetProtein'] ?? 52) as num).toDouble();
+          double targetCarbs = ((data['targetCarbs'] ?? 178) as num).toDouble();
+          double targetFat = ((data['targetFat'] ?? 122) as num).toDouble();
           
           proteinPercent = targetProtein > 0 ? (totalProtein / targetProtein).clamp(0.0, 1.0) : 0.0;
           carbsPercent = targetCarbs > 0 ? (totalCarbs / targetCarbs).clamp(0.0, 1.0) : 0.0;
@@ -119,15 +130,34 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           carbsAmount = '${totalCarbs.toStringAsFixed(1)}/${targetCarbs.toStringAsFixed(0)}g';
           fatAmount = '${totalFat.toStringAsFixed(1)}/${targetFat.toStringAsFixed(0)}g';
         });
-      } else {
+        
         if (kDebugMode) {
-          debugPrint('今日尚無營養記錄');
+          debugPrint('✅ 營養資料已更新: 卡路里=$todayCalories');
         }
+      } else if (mounted) {
+        setState(() {
+          todayCalories = 0;
+          carbsPercent = 0.0;
+          proteinPercent = 0.0;
+          fatPercent = 0.0;
+          carbsAmount = '0/178g';
+          proteinAmount = '0/52g';
+          fatAmount = '0/122g';
+        });
       }
-    } catch (e) {
+    }, onError: (e) {
       if (kDebugMode) {
-        debugPrint('載入營養數據失敗: $e');
+        debugPrint('監聽營養資料失敗: $e');
       }
+    });
+  }
+
+  // ✅ 保留：手動刷新功能
+  Future<void> _loadTodayNutrition() async {
+    // 這個函數保留給刷新按鈕使用
+    // 實際資料已經透過 Stream 自動更新，這裡只顯示提示
+    if (kDebugMode) {
+      debugPrint('手動刷新（資料已自動同步）');
     }
   }
 
@@ -180,10 +210,10 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 🔥 頂部用戶資訊 - 只添加漢堡選單按鈕
+              // 頂部用戶資訊 + 漢堡選單
               Row(
                 children: [
-                  // 🔥 新增：漢堡選單按鈕
+                  // 漢堡選單按鈕
                   Builder(
                     builder: (context) => IconButton(
                       icon: const Icon(Icons.menu, size: 28),
@@ -193,7 +223,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       tooltip: '打開選單',
                     ),
                   ),
-                  // 原有的頭像
+                  // 頭像
                   CircleAvatar(
                     radius: 25,
                     backgroundColor: const Color(0xFF3B82F6),
@@ -207,7 +237,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // 原有的用戶名稱
+                  // 用戶名稱
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +259,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       ],
                     ),
                   ),
-                  // 原有的刷新按鈕
+                  // 刷新按鈕
                   IconButton(
                     icon: const Icon(Icons.refresh),
                     onPressed: () {
@@ -246,7 +276,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               ),
               const SizedBox(height: 24),
               
-              // 以下完全保持原樣
+              // 標題
               const Text(
                 '追蹤你的卡路里',
                 style: TextStyle(
@@ -256,6 +286,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               ),
               const SizedBox(height: 16),
               
+              // 期間選擇器
               _buildPeriodSelector(),
               const SizedBox(height: 20),
 
@@ -279,15 +310,19 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               ),
               const SizedBox(height: 20),
               
+              // 卡路里卡片
               _buildCalorieCard(),
               const SizedBox(height: 20),
               
+              // 營養素卡片
               _buildNutritionCard(),
               const SizedBox(height: 20),
               
+              // 喝水卡片
               _buildWaterIntakeCard(),
               const SizedBox(height: 20),
               
+              // 快速操作按鈕
               _buildQuickActions(),
             ],
           ),
@@ -406,14 +441,13 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
 
   Widget _buildNutritionCard() {
     return InkWell(
-      onTap: () async {
-        await Navigator.push(
+      onTap: () {
+        Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => const NutritionLogListPage(),
           ),
         );
-        _loadTodayNutrition();
       },
       borderRadius: BorderRadius.circular(20),
       child: Container(
@@ -527,8 +561,8 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
             : 0.0;
 
         return InkWell(
-          onTap: () async {
-            await Navigator.push(
+          onTap: () {
+            Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => const WaterLogPage(),
@@ -788,14 +822,13 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
             icon: Icons.restaurant_menu,
             label: '記錄飲食',
             color: Colors.orange,
-            onTap: () async {
-              await Navigator.push(
+            onTap: () {
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => const FoodSearchPage(),
                 ),
               );
-              _loadTodayNutrition();
             },
           ),
         ),

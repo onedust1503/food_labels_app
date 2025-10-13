@@ -1,5 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
+
+// ✅ 新增：訊息類型枚舉
+enum MessageType {
+  text,
+  image,
+}
 
 class ChatMessage {
   final String id;
@@ -7,6 +15,10 @@ class ChatMessage {
   final String senderId;
   final DateTime timestamp;
   final bool isRead;
+  // ✅ 新增：圖片相關欄位（使用預設值保持向後兼容）
+  final MessageType type;
+  final String? imageUrl;
+  final int? fileSize;
 
   ChatMessage({
     required this.id,
@@ -14,16 +26,37 @@ class ChatMessage {
     required this.senderId,
     required this.timestamp,
     this.isRead = false,
+    this.type = MessageType.text,  // 預設為文字訊息
+    this.imageUrl,
+    this.fileSize,
   });
 
+  // ✅ 更新：從 Firestore 讀取時支援圖片欄位
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    
+    // 讀取訊息類型，如果沒有則預設為 text
+    MessageType messageType = MessageType.text;
+    if (data['type'] != null) {
+      try {
+        messageType = MessageType.values.firstWhere(
+          (e) => e.toString() == 'MessageType.${data['type']}',
+          orElse: () => MessageType.text,
+        );
+      } catch (e) {
+        messageType = MessageType.text;
+      }
+    }
+    
     return ChatMessage(
       id: doc.id,
       text: data['text'] ?? '',
       senderId: data['senderId'] ?? '',
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isRead: data['isRead'] ?? false,
+      type: messageType,
+      imageUrl: data['imageUrl'],
+      fileSize: data['fileSize'],
     );
   }
 
@@ -33,8 +66,11 @@ class ChatMessage {
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   String? get currentUserId => _auth.currentUser?.uid;
+
+  // ========== 原有功能保持不變 ==========
 
   // 創建或獲取聊天室（防止重複）
   Future<String> createOrGetChatRoom(String otherUserId) async {
@@ -48,19 +84,16 @@ class ChatService {
         throw Exception('不能與自己創建聊天室');
       }
 
-      // 生成一致的聊天室ID（按字母順序排列用戶ID）
       final participants = [currentUserId, otherUserId];
       participants.sort();
       final chatRoomId = '${participants[0]}_${participants[1]}';
 
-      // 檢查聊天室是否已存在
       final existingChatRoom = await _firestore
           .collection('chatRooms')
           .doc(chatRoomId)
           .get();
 
       if (existingChatRoom.exists) {
-        // 聊天室已存在，更新活躍狀態
         await _firestore.collection('chatRooms').doc(chatRoomId).update({
           'isActive': true,
           'lastMessageTime': FieldValue.serverTimestamp(),
@@ -68,7 +101,6 @@ class ChatService {
         return chatRoomId;
       }
 
-      // 創建新聊天室
       await _firestore.collection('chatRooms').doc(chatRoomId).set({
         'participants': participants,
         'createdAt': FieldValue.serverTimestamp(),
@@ -88,7 +120,7 @@ class ChatService {
     }
   }
 
-  // 發送訊息（更新：增加對方的未讀計數）
+  // 發送訊息（保持原功能）
   Future<void> sendMessage({
     required String chatRoomId,
     required String text,
@@ -103,7 +135,6 @@ class ChatService {
         throw Exception('訊息內容不能為空');
       }
 
-      // 獲取聊天室信息以找到對方的 ID
       final chatRoomDoc = await _firestore
           .collection('chatRooms')
           .doc(chatRoomId)
@@ -113,13 +144,12 @@ class ChatService {
         chatRoomDoc.data()?['participants'] ?? []
       );
       
-      // 找出對方的 ID
       final otherUserId = participants.firstWhere(
         (id) => id != currentUserId,
         orElse: () => '',
       );
 
-      // 添加訊息到子集合
+      // ✅ 加入 type 欄位，但保持向後兼容
       await _firestore
           .collection('chatRooms')
           .doc(chatRoomId)
@@ -129,9 +159,9 @@ class ChatService {
         'senderId': currentUserId,
         'timestamp': FieldValue.serverTimestamp(),
         'isRead': false,
+        'type': 'text',  // ✅ 新增但不影響舊訊息
       });
 
-      // 更新聊天室資訊和未讀計數
       final updates = {
         'lastMessage': text.trim(),
         'lastMessageTime': FieldValue.serverTimestamp(),
@@ -139,7 +169,6 @@ class ChatService {
         'isActive': true,
       };
 
-      // 增加對方的未讀計數
       if (otherUserId.isNotEmpty) {
         updates['unreadCount.$otherUserId'] = FieldValue.increment(1);
       }
@@ -150,7 +179,7 @@ class ChatService {
     }
   }
 
-  // 獲取訊息流
+  // 獲取訊息流（保持原功能）
   Stream<List<ChatMessage>> getMessagesStream(String chatRoomId) {
     return _firestore
         .collection('chatRooms')
@@ -163,13 +192,12 @@ class ChatService {
             .toList());
   }
 
-  // 標記聊天室為已讀（新增方法）
+  // 標記聊天室為已讀（保持原功能）
   Future<void> markAsRead(String chatRoomId) async {
     try {
       final currentUserId = this.currentUserId;
       if (currentUserId == null) return;
 
-      // 重置當前用戶的未讀計數
       await _firestore.collection('chatRooms').doc(chatRoomId).update({
         'unreadCount.$currentUserId': 0,
       });
@@ -180,12 +208,10 @@ class ChatService {
     }
   }
 
-  // 標記聊天室為已讀（舊方法，保持向後兼容）
   Future<void> markChatRoomAsRead(String chatRoomId) async {
     await markAsRead(chatRoomId);
   }
 
-  // 新增：獲取當前用戶的總未讀訊息數
   Stream<int> getTotalUnreadCountStream() {
     final currentUserId = this.currentUserId;
     if (currentUserId == null) {
@@ -211,7 +237,6 @@ class ChatService {
         });
   }
 
-  // 獲取聊天室列表
   Stream<QuerySnapshot> getChatRoomsStream() {
     final currentUserId = this.currentUserId;
     if (currentUserId == null) {
@@ -226,10 +251,8 @@ class ChatService {
         .snapshots();
   }
 
-  // 刪除聊天室
   Future<void> deleteChatRoom(String chatRoomId) async {
     try {
-      // 軟刪除：標記為非活躍狀態
       await _firestore.collection('chatRooms').doc(chatRoomId).update({
         'isActive': false,
         'deletedAt': FieldValue.serverTimestamp(),
@@ -239,7 +262,6 @@ class ChatService {
     }
   }
 
-  // 獲取聊天室資訊
   Future<DocumentSnapshot?> getChatRoomInfo(String chatRoomId) async {
     try {
       final doc = await _firestore
@@ -250,6 +272,91 @@ class ChatService {
       return doc.exists ? doc : null;
     } catch (e) {
       return null;
+    }
+  }
+
+  // ========== ✅ 新增：圖片上傳功能 ==========
+
+  /// 上傳圖片到 Firebase Storage
+  Future<String> uploadImage(File imageFile, String chatRoomId) async {
+    try {
+      final currentUserId = this.currentUserId;
+      if (currentUserId == null) {
+        throw Exception('用戶未登入');
+      }
+
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$currentUserId.jpg';
+      final storageRef = _storage.ref().child('chats/$chatRoomId/$fileName');
+
+      final uploadTask = await storageRef.putFile(imageFile);
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      
+      return downloadUrl;
+    } catch (e) {
+      throw Exception('上傳圖片失敗: $e');
+    }
+  }
+
+  /// 發送圖片訊息
+  Future<void> sendImageMessage({
+    required String chatRoomId,
+    required File imageFile,
+  }) async {
+    try {
+      final currentUserId = this.currentUserId;
+      if (currentUserId == null) {
+        throw Exception('用戶未登入');
+      }
+
+      // 上傳圖片
+      final imageUrl = await uploadImage(imageFile, chatRoomId);
+      
+      // 獲取檔案大小
+      final fileSize = await imageFile.length();
+
+      final chatRoomDoc = await _firestore
+          .collection('chatRooms')
+          .doc(chatRoomId)
+          .get();
+      
+      final participants = List<String>.from(
+        chatRoomDoc.data()?['participants'] ?? []
+      );
+      final otherUserId = participants.firstWhere(
+        (id) => id != currentUserId,
+        orElse: () => '',
+      );
+
+      // 創建圖片訊息
+      await _firestore
+          .collection('chatRooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .add({
+        'text': '[圖片]',
+        'senderId': currentUserId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'type': 'image',
+        'imageUrl': imageUrl,
+        'fileSize': fileSize,
+      });
+
+      // 更新聊天室資訊
+      final updates = {
+        'lastMessage': '[圖片]',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSender': currentUserId,
+        'isActive': true,
+      };
+
+      if (otherUserId.isNotEmpty) {
+        updates['unreadCount.$otherUserId'] = FieldValue.increment(1);
+      }
+
+      await _firestore.collection('chatRooms').doc(chatRoomId).update(updates);
+    } catch (e) {
+      throw Exception('發送圖片失敗: $e');
     }
   }
 }

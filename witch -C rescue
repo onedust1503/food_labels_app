@@ -1,0 +1,20 @@
+[33m2ac85cd[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{0}: checkout: moving from clean-main to main
+[33m2ac85cd[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{1}: commit: Stop tracking build artifacts and large binaries
+[33m90c1a1b[m HEAD@{2}: commit: feat: Implement notification features and project cleanup
+[33m2da0041[m[33m ([m[1;31morigin/main[m[33m)[m HEAD@{3}: reset: moving to HEAD~5
+[33m38bd585[m HEAD@{4}: commit: 訊息通知
+[33m2b9dec3[m HEAD@{5}: commit: 通知設定
+[33mcfdaeb6[m HEAD@{6}: commit: 頭動畫
+[33m0f91f0c[m HEAD@{7}: commit: feat: 天室刪除訊息功能
+[33m0a3732f[m HEAD@{8}: commit: 天室更新
+[33m2da0041[m[33m ([m[1;31morigin/main[m[33m)[m HEAD@{9}: commit: 更改聊天室介面、新增傳送照片功能
+[33m83eb20d[m HEAD@{10}: commit: 完善圖表功能
+[33md1030ea[m HEAD@{11}: commit: 側邊圖表
+[33m32bb473[m HEAD@{12}: commit: 統計與通知功能整合
+[33me1df67d[m HEAD@{13}: commit: 新增訓練功能
+[33m22a56ab[m HEAD@{14}: commit: 更新卡牌
+[33m86c906f[m HEAD@{15}: commit: 增加喝水記錄功能
+[33md89b71a[m HEAD@{16}: commit: 設計主頁
+[33me3e1b78[m HEAD@{17}: commit: 增加聊天未讀紅點標示
+[33m6a67863[m HEAD@{18}: commit: 配對功能改善
+[33mf9296a4[m HEAD@{19}: commit: 修復功能功能

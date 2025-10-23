@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Food Labels App</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>food_labels_app</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	
+	<!-- ========================================== -->
+	<!-- 權限說明（App 上架審核必須）               -->
+	<!-- ========================================== -->
+	
+	<!-- ✅ 相機權限 - 用於拍攝食物照片和聊天圖片 -->
+	<key>NSCameraUsageDescription</key>
+	<string>我們需要使用您的相機來拍攝食物照片以進行營養分析，以及在聊天中發送圖片。</string>
+	
+	<!-- ✅ 相簿讀取權限 - 用於選擇照片 -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>我們需要存取您的相簿以選擇食物照片進行營養分析，以及在聊天中分享圖片。</string>
+	
+	<!-- ✅ 相簿新增權限 - 用於儲存照片 -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>允許將拍攝的照片儲存到您的相簿中。</string>
+	
+	<!-- ✅ 麥克風權限 - 用於語音訊息 -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>我們需要使用您的麥克風來錄製和發送語音訊息給您的教練或學員。</string>
+	
+	<!-- ========================================== -->
+	<!-- 可選：未來功能可能需要的權限（暫時註解）  -->
+	<!-- ========================================== -->
+	
+	<!-- 📍 位置權限（如需要位置分享功能時取消註解）
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>我們需要您的位置來記錄運動軌跡和尋找附近的健身場所。</string>
+	
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>即使在後台也需要存取位置以追蹤運動記錄。</string>
+	-->
+	
+	<!-- 🏃 運動與健身權限（如需要整合 HealthKit 時取消註解）
+	<key>NSHealthShareUsageDescription</key>
+	<string>我們需要讀取您的健康數據來追蹤運動進度和分析健身效果。</string>
+	
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>我們需要將您的運動數據同步到 Apple Health。</string>
+	-->
+	
+	<!-- 📅 日曆權限（如需要運動排程功能時取消註解）
+	<key>NSCalendarsUsageDescription</key>
+	<string>我們需要存取您的日曆來設定運動提醒和訓練計畫。</string>
+	-->
+	
+	<!-- 📱 通知權限說明（本地通知）-->
+	<!-- iOS 會自動處理通知權限，無需在 Info.plist 中配置 -->
+	
+</dict>
+</plist>

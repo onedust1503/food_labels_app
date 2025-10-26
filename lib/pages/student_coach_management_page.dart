@@ -98,7 +98,11 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
     final coachEmail = coachData['email'] ?? '';
     final coachBio = coachData['bio'] ?? '';
     final specialties = List<String>.from(coachData['specialties'] ?? []);
-    final experience = coachData['experience'] ?? '';
+    // ✅ 修復: 安全讀取 experience,支援 int 和 String
+    final experienceRaw = coachData['experience'];
+    final int experienceYears = experienceRaw is int 
+        ? experienceRaw 
+        : (experienceRaw is String ? int.tryParse(experienceRaw) ?? 0 : 0);
     
     showDialog(
       context: context,
@@ -174,7 +178,7 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
                 const SizedBox(height: 12),
               ],
               
-              if (experience.isNotEmpty) ...[
+              if (experienceYears > 0) ...[
                 const Text(
                   '教學經驗：',
                   style: TextStyle(
@@ -184,7 +188,7 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  experience,
+                  '$experienceYears年教學經驗',
                   style: const TextStyle(
                     fontSize: 14,
                     color: Colors.grey,
@@ -562,7 +566,11 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
     final coachData = coachDoc.data() as Map<String, dynamic>;
     final coachName = coachData['displayName'] ?? '教練';
     final coachBio = coachData['bio'] ?? '';
-    final experience = coachData['experience'] ?? '';
+    // ✅ 修復: 安全讀取 experience,支援 int 和 String
+    final experienceRaw = coachData['experience'];
+    final int experienceYears = experienceRaw is int 
+        ? experienceRaw 
+        : (experienceRaw is String ? int.tryParse(experienceRaw) ?? 0 : 0);
     final specialties = List<String>.from(coachData['specialties'] ?? []);
     
     return Container(
@@ -625,10 +633,10 @@ class _StudentCoachManagementPageState extends State<StudentCoachManagementPage>
                             ),
                           ),
                         ),
-                        if (experience.isNotEmpty) ...[
+                        if (experienceYears > 0) ...[
                           const SizedBox(height: 4),
                           Text(
-                            experience,
+                            '$experienceYears年教學經驗',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey.shade600,

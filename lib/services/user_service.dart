@@ -171,9 +171,13 @@ class UserService {
         // 只檢查 coachId 欄位
         if (data['coachId'] == coachId && data['status'] == 'active') {
           final studentId = data['traineeId'];
-          if (studentId != null && studentId.isNotEmpty) {
-            studentIds.add(studentId as String);
-            print('找到學員ID: $studentId');
+          // ✅ 修復: 先轉為字串再檢查,避免 int.isNotEmpty 錯誤
+          if (studentId != null) {
+            final studentIdStr = studentId.toString();
+            if (studentIdStr.isNotEmpty) {
+              studentIds.add(studentIdStr);
+              print('找到學員ID: $studentIdStr');
+            }
           }
         }
       }
@@ -226,8 +230,12 @@ class UserService {
         // 只檢查 traineeId 欄位
         if (data['traineeId'] == studentId && data['status'] == 'active') {
           final coachId = data['coachId'];
-          if (coachId != null && coachId.isNotEmpty) {
-            coachIds.add(coachId as String);
+          // ✅ 修復: 先轉為字串再檢查,避免 int.isNotEmpty 錯誤
+          if (coachId != null) {
+            final coachIdStr = coachId.toString();
+            if (coachIdStr.isNotEmpty) {
+              coachIds.add(coachIdStr);
+            }
           }
         }
       }

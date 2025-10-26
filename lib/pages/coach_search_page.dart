@@ -422,7 +422,13 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     final coachData = coachDoc.data() as Map<String, dynamic>;
     final coachName = coachData['displayName'] ?? '教練';
     final coachBio = coachData['bio'] ?? '';
-    final experience = coachData['experience'] ?? '';
+    
+    // ✅ 修正：安全處理 experience 欄位（支援數字和字串格式）
+    final experienceRaw = coachData['experience'];
+    final int experienceYears = experienceRaw is int 
+        ? experienceRaw 
+        : (experienceRaw is String ? int.tryParse(experienceRaw) ?? 0 : 0);
+    
     final specialties = List<String>.from(coachData['specialties'] ?? []);
     final certifications = List<String>.from(coachData['certifications'] ?? []);
     
@@ -486,10 +492,10 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
                             ),
                           ),
                         ),
-                        if (experience.isNotEmpty) ...[
+                        if (experienceYears > 0) ...[
                           const SizedBox(height: 4),
                           Text(
-                            experience,
+                            '$experienceYears年教學經驗',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey.shade600,

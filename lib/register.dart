@@ -37,6 +37,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final List<String> roleOptions = ['學員', '教練']; // 身分選項
   String get selectedRole => roleOptions[selectedRoleIndex]; // 取得目前選擇的身分
 
+  // ⭐ 新增：教練專業選項
+  final List<String> specialtyOptions = ['重量訓練', '有氧運動', '瑜伽', '皮拉提斯'];
+  List<String> selectedSpecialties = [];
+
   @override
   void dispose() {
     // 釋放控制器資源，避免記憶體洩漏
@@ -51,6 +55,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _onRoleChanged(int newIndex) {
     setState(() {
       selectedRoleIndex = newIndex; // 更新選擇的身分
+      // ⭐ 切換身分時清空專業選擇
+      selectedSpecialties.clear();
     });
     _triggerHapticFeedback(); // 觸覺回饋
 
@@ -142,7 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return selectedRole == '教練' ? 'coach' : 'trainee';
   }
 
-  // *** 新增：創建用戶資料到 Firestore ***
+  // *** 修復：創建用戶資料到 Firestore ***
   Future<void> _createUserProfile(User user, String role) async {
     try {
       // 確保角色值正確
@@ -150,17 +156,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
         throw Exception('無效的角色值: $role');
       }
 
-      await _firestore.collection('users').doc(user.uid).set({
+      // 基本用戶資料
+      Map<String, dynamic> userData = {
         'uid': user.uid,
         'email': user.email,
-        'role': role, // 只存 'coach' 或 'trainee'
-        'displayName': _nameController.text.trim(), // *** 修改：使用用戶輸入的姓名 ***
+        'role': role,
+        'displayName': _nameController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
         'lastLoginAt': FieldValue.serverTimestamp(),
-        'profileSetupCompleted': false, // ✅ 設為 false，首次登入需要設定
-      }, SetOptions(merge: true));
+        'profileSetupCompleted': false, // 設為 false，首次登入需要設定
+      };
+
+      // ⭐ 重點修復：如果是教練，添加專業欄位
+      if (role == 'coach') {
+        userData['bio'] = '專業健身教練，提供專業訓練指導';
+        userData['experience'] = 0; // 預設經驗年數
+        // ✅ 關鍵：初始化為空陣列或用戶選擇的專業
+        userData['specialties'] = selectedSpecialties.isNotEmpty 
+            ? selectedSpecialties 
+            : [];
+        userData['certifications'] = [];
+      }
+
+      await _firestore.collection('users').doc(user.uid).set(
+        userData,
+        SetOptions(merge: true)
+      );
       
       print('用戶資料創建成功，角色: $role');
+      if (role == 'coach') {
+        print('教練專業: ${userData['specialties']}');
+      }
     } catch (e) {
       print('創建用戶資料失敗: $e');
       throw e; // 重新拋出錯誤，讓上層處理
@@ -240,13 +266,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _handleRegisterSuccess();
       }
 
-      // *** 刪除：移除以下模擬邏輯 ***
-      // await Future.delayed(const Duration(seconds: 2));
-      // if (DateTime.now().millisecond % 5 == 0) {
-      //   throw Exception('註冊失敗：此 Email 已被使用');
-      // }
-      // Map<String, dynamic> registerData = {...};
-
     } on FirebaseAuthException catch (e) {
       // *** 新增：Firebase 認證失敗處理 ***
       _handleFirebaseAuthError(e);
@@ -295,6 +314,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.clear();
     _passwordController.clear();
     _confirmPasswordController.clear();
+    // ⭐ 新增：清空專業選擇
+    setState(() {
+      selectedSpecialties.clear();
+    });
   }
 
   // 檢查網路連接狀態
@@ -309,22 +332,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _showSnackBar(String message, [Color? backgroundColor]) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              backgroundColor == Colors.green ? Icons.check_circle : Icons.error,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
+        content: Text(
+          message,
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: backgroundColor ?? Colors.deepOrange,
+        backgroundColor: backgroundColor ?? Colors.blue,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
@@ -334,36 +346,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // Email 驗證器
-  String? _validateEmail(String? value) {
-    if (value == null || value.isEmpty) {
-      return '請輸入 Email';
+  // 驗證姓名格式
+  String? _validateName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return '請輸入您的姓名';
     }
-    // 簡單的 Email 格式驗證
-    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-      return '請輸入有效的 Email 格式';
+    if (value.trim().length < 2) {
+      return '姓名至少需要 2 個字元';
     }
     return null;
   }
 
-  // 密碼驗證器
+  // 驗證 Email 格式
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return '請輸入電子郵件';
+    }
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
+      return '請輸入有效的電子郵件格式';
+    }
+    return null;
+  }
+
+  // 驗證密碼格式
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return '請輸入密碼';
     }
     if (value.length < 6) {
-      return '密碼至少需要 6 個字符';
+      return '密碼長度至少需要 6 個字元';
     }
     return null;
   }
 
-  // 姓名驗證器
-  String? _validateName(String? value) {
+  // 驗證確認密碼
+  String? _validateConfirmPassword(String? value) {
     if (value == null || value.isEmpty) {
-      return '請輸入姓名';
+      return '請再次輸入密碼';
     }
-    if (value.length < 2) {
-      return '姓名至少需要 2 個字符';
+    if (value != _passwordController.text) {
+      return '兩次輸入的密碼不一致';
     }
     return null;
   }
@@ -371,445 +393,429 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 背景顏色設定 (修改為與登入頁面一致)
-      backgroundColor: const Color(0xFFE8F4FD),
-      // 自訂 AppBar (修改為與登入頁面一致的深藍色)
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('註冊帳號'),
-        backgroundColor: const Color(0xFF173C56),
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF173C56)),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView( // 可滾動，避免鍵盤彈出時溢出
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              
-              // Logo 區域（修改為與登入頁面相同的設計）
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.blue, Colors.purple],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, 5),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 標題和副標題
+                  const Text(
+                    '建立帳號',
+                    style: TextStyle(
+                      fontSize: 38,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF173C56),
+                      height: 1.2,
                     ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/anim/Login_Food.gif',
-                    width: 110,
-                    height: 110,
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.none,
                   ),
-                ),
-              ),
-              
-              const SizedBox(height: 30),
-
-              // 身分選擇器 (新增)
-              _buildRoleSelector(),
-              
-              // 表單容器 (修改為與登入頁面相同的白色圓角設計)
-              Container(
-                width: double.infinity,  // 確保容器佔滿寬度
-                padding: const EdgeInsets.all(30),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(40),
-                    topRight: Radius.circular(40),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 20,
-                      offset: Offset(0, 10),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '開始你的健身旅程',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w400,
                     ),
-                  ],
-                ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 姓名輸入框 (修改樣式與登入頁面一致)
-                      Text(
-                        '姓名',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 8),
-                      TextFormField(
-                        controller: _nameController,
-                        validator: _validateName,
-                        decoration: InputDecoration(
-                          hintText: '請輸入您的姓名',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              Icons.person_outline,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: Colors.grey,
-                              width: 2,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: const Color(0xFF173C56),
-                              width: 2,
-                            ),
-                          ),
-                          errorBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: const BorderSide(color: Colors.red, width: 1.5),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF1F2F4),
+                  ),
+                  
+                  // 身分選擇器
+                  _buildRoleSelector(),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 姓名輸入框
+                  Text(
+                    '姓名',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  TextFormField(
+                    controller: _nameController,
+                    validator: _validateName,
+                    decoration: InputDecoration(
+                      hintText: '請輸入您的姓名',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      prefixIcon: Icon(Icons.person_outline, color: Colors.grey),
+                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: Colors.grey[300]!,
+                          width: 2,
                         ),
                       ),
-                      
-                      SizedBox(height: 16),
-                      
-                      // Email 輸入框 (修改樣式與登入頁面一致)
-                      Text(
-                        'Email',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 8),
-                      TextFormField(
-                        controller: _emailController,
-                        validator: _validateEmail,
-                        keyboardType: TextInputType.emailAddress, // 設定鍵盤類型為 Email
-                        decoration: InputDecoration(
-                          hintText: '請輸入您的Email',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              Icons.email_outlined,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: Colors.grey,
-                              width: 2,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: const Color(0xFF173C56),
-                              width: 2,
-                            ),
-                          ),
-                          errorBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: const BorderSide(color: Colors.red, width: 1.5),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF1F2F4),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: const Color(0xFF173C56),
+                          width: 2,
                         ),
                       ),
-                      
-                      SizedBox(height: 16),
-                      
-                      // 密碼輸入框 (修改樣式與登入頁面一致)
-                      Text(
-                        '密碼',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Colors.red, width: 1.5),
                       ),
-                      SizedBox(height: 8),
-                      TextFormField(
-                        controller: _passwordController,
-                        validator: _validatePassword,
-                        obscureText: !_isPasswordVisible, // 控制是否隱藏密碼
-                        decoration: InputDecoration(
-                          hintText: '請輸入您的密碼',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              Icons.lock_outline,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                              color: const Color.fromARGB(255, 65, 62, 62),
-                            ),
-                            onPressed: () {
-                              _triggerHapticFeedback(); // 觸覺回饋
-                              setState(() {
-                                _isPasswordVisible = !_isPasswordVisible;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: Colors.grey,
-                              width: 2,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: const Color(0xFF173C56),
-                              width: 2,
-                            ),
-                          ),
-                          errorBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: const BorderSide(color: Colors.red, width: 1.5),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF1F2F4),
+                      filled: true,
+                      fillColor: const Color(0xFFF1F2F4),
+                    ),
+                  ),
+                  
+                  SizedBox(height: 16),
+                  
+                  // Email 輸入框
+                  Text(
+                    '電子郵件',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  TextFormField(
+                    controller: _emailController,
+                    validator: _validateEmail,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      hintText: '請輸入您的電子郵件',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      prefixIcon: Icon(Icons.email_outlined, color: Colors.grey),
+                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: Colors.grey[300]!,
+                          width: 2,
                         ),
                       ),
-                      
-                      SizedBox(height: 16),
-                      
-                      // 確認密碼輸入框 (修改樣式與登入頁面一致)
-                      Text(
-                        '確認密碼',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: const Color(0xFF173C56),
+                          width: 2,
+                        ),
                       ),
-                      SizedBox(height: 8),
-                      TextFormField(
-                        controller: _confirmPasswordController,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return '請再次輸入密碼';
-                          }
-                          return null;
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF1F2F4),
+                    ),
+                  ),
+                  
+                  SizedBox(height: 16),
+                  
+                  // 密碼輸入框
+                  Text(
+                    '密碼',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  TextFormField(
+                    controller: _passwordController,
+                    validator: _validatePassword,
+                    obscureText: !_isPasswordVisible,
+                    decoration: InputDecoration(
+                      hintText: '請輸入您的密碼',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      prefixIcon: Icon(Icons.lock_outline, color: Colors.grey),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                          color: Colors.grey,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isPasswordVisible = !_isPasswordVisible;
+                          });
                         },
-                        obscureText: !_isConfirmPasswordVisible,
-                        decoration: InputDecoration(
-                          hintText: '請再次輸入密碼',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              Icons.lock_outline,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                              color: const Color.fromARGB(255, 65, 62, 62),
-                            ),
-                            onPressed: () {
-                              _triggerHapticFeedback(); // 觸覺回饋
-                              setState(() {
-                                _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: Colors.grey,
-                              width: 2,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide(
-                              color: const Color(0xFF173C56),
-                              width: 2,
-                            ),
-                          ),
-                          errorBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: const BorderSide(color: Colors.red, width: 1.5),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF1F2F4),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: Colors.grey[300]!,
+                          width: 2,
                         ),
                       ),
-                      
-                      const SizedBox(height: 32),
-                      
-                      // 註冊按鈕 (修改：添加載入狀態)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleRegister, // 載入中禁用按鈕
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(54),
-                            backgroundColor: _isLoading 
-                                ? Colors.grey[400] // 載入中變灰色
-                                : const Color(0xFF173C56),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                            elevation: _isLoading ? 0 : 2, // 載入中去除陰影
-                            shadowColor: const Color(0xFF173C56),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: const Color(0xFF173C56),
+                          width: 2,
+                        ),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF1F2F4),
+                    ),
+                  ),
+                  
+                  SizedBox(height: 16),
+                  
+                  // 確認密碼輸入框
+                  Text(
+                    '確認密碼',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    validator: _validateConfirmPassword,
+                    obscureText: !_isConfirmPasswordVisible,
+                    decoration: InputDecoration(
+                      hintText: '請再次輸入密碼',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      prefixIcon: Icon(Icons.lock_outline, color: Colors.grey),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                          color: Colors.grey,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+                          });
+                        },
+                      ),
+                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: Colors.grey[300]!,
+                          width: 2,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(
+                          color: const Color(0xFF173C56),
+                          width: 2,
+                        ),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF1F2F4),
+                    ),
+                  ),
+                  
+                  // ⭐ 新增：教練專業選擇 (僅教練身分時顯示)
+                  if (selectedRole == '教練') ...[
+                    const SizedBox(height: 20),
+                    const Text(
+                      '專業領域 (可多選)',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: specialtyOptions.map((specialty) {
+                        final isSelected = selectedSpecialties.contains(specialty);
+                        return FilterChip(
+                          label: Text(specialty),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) {
+                                selectedSpecialties.add(specialty);
+                              } else {
+                                selectedSpecialties.remove(specialty);
+                              }
+                            });
+                            _triggerHapticFeedback(); // 震動回饋
+                          },
+                          selectedColor: Colors.green.withOpacity(0.3),
+                          backgroundColor: Colors.grey[200],
+                          checkmarkColor: Colors.green,
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.green[700] : Colors.grey[700],
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 14,
                           ),
-                          child: _isLoading
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    const Text('註冊中...'),
-                                  ],
-                                )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(Icons.person_add, size: 20),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      '註冊',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '提示：選擇專業領域可以讓學員更容易找到您',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                  
+                  const SizedBox(height: 30),
+                  
+                  // 註冊按鈕
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleRegister,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isLoading 
+                            ? Colors.grey[400]
+                            : const Color(0xFF173C56),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        elevation: _isLoading ? 0 : 2,
+                        shadowColor: const Color(0xFF173C56),
+                      ),
+                      child: _isLoading
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
                                 ),
+                                const SizedBox(width: 10),
+                                const Text('註冊中...'),
+                              ],
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.person_add, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  '註冊',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 返回登入連結
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '已有帳號？',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 14,
                         ),
                       ),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // 返回登入連結
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            '已有帳號？',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
-                            ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        child: const Text(
+                          '立即登入',
+                          style: TextStyle(
+                            color: Color(0xFF2C5F7C),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context); // 返回登入頁面
-                            },
-                            child: const Text(
-                              '立即登入',
-                              style: TextStyle(
-                                color: Color(0xFF2C5F7C),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // 分隔線 (修改為與登入頁面一致)
-                      Row(
-                        children: [
-                          Expanded(child: Divider(color: Colors.black12)),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Text(
-                              '或以下方式註冊',
-                              style: TextStyle(
-                                color: Colors.black54,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Expanded(child: Divider(color: Colors.black12)),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // 第三方註冊按鈕 (修改為與登入頁面相同的設計)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          // Google 註冊
-                          _buildSocialButton(
-                            onPressed: () => socialRegister('Google'),
-                            child: Image.asset(
-                              'assets/icons/google_icon.png',
-                              width: 24,
-                              height: 24,
-                              filterQuality: FilterQuality.none,
-                            ),
-                          ),
-
-                          // Apple 註冊
-                          _buildSocialButton(
-                            onPressed: () => socialRegister('Apple'),
-                            child: Image.asset(
-                              'assets/icons/apple_icon.png',
-                              width: 24,
-                              height: 24,
-                              filterQuality: FilterQuality.none,
-                            ),
-                          ),
-
-                          // Facebook 註冊
-                          _buildSocialButton(
-                            onPressed: () => socialRegister('Facebook'),
-                            child: Image.asset(
-                              'assets/icons/facebook_icon.png', // *** 修正：應該是 facebook_icon.png ***
-                              width: 24,
-                              height: 24,
-                              filterQuality: FilterQuality.none,
-                            ),
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 30),
                     ],
                   ),
-                ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 分隔線
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.black12)),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          '或以下方式註冊',
+                          style: TextStyle(
+                            color: Colors.black54,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Colors.black12)),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // 第三方註冊按鈕
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildSocialButton(
+                        onPressed: () => socialRegister('Google'),
+                        child: Image.asset(
+                          'assets/icons/google_icon.png',
+                          width: 24,
+                          height: 24,
+                          filterQuality: FilterQuality.none,
+                        ),
+                      ),
+                      _buildSocialButton(
+                        onPressed: () => socialRegister('Apple'),
+                        child: Image.asset(
+                          'assets/icons/apple_icon.png',
+                          width: 24,
+                          height: 24,
+                          filterQuality: FilterQuality.none,
+                        ),
+                      ),
+                      _buildSocialButton(
+                        onPressed: () => socialRegister('Facebook'),
+                        child: Image.asset(
+                          'assets/icons/facebook_icon.png',
+                          width: 24,
+                          height: 24,
+                          filterQuality: FilterQuality.none,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 30),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // 社群帳號註冊功能 (新增)
+  // 社群帳號註冊功能
   void socialRegister(String platform) {
-    _triggerHapticFeedback(); // 觸覺回饋
+    _triggerHapticFeedback();
     
     showDialog(
       context: context,
@@ -840,7 +846,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // 取得社群平台圖標 (新增)
+  // 取得社群平台圖標
   IconData _getSocialIcon(String platform) {
     switch (platform) {
       case 'Google': return Icons.g_mobiledata;
@@ -850,7 +856,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // 取得社群平台顏色 (新增)
+  // 取得社群平台顏色
   Color _getSocialColor(String platform) {
     switch (platform) {
       case 'Google': return Colors.red;
@@ -860,7 +866,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // 建立第三方登入按鈕的輔助方法 (修改為與登入頁面相同)
+  // 建立第三方登入按鈕的輔助方法
   Widget _buildSocialButton({required VoidCallback onPressed, required Widget child}) {
     return Container(
       width: 64,

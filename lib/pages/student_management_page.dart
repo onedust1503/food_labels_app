@@ -5,6 +5,7 @@ import '../services/user_service.dart';
 import '../services/chat_service.dart';
 import '../services/pair_request_service.dart'; // 新增：導入配對請求服務
 import 'chat_detail_page.dart';
+import 'coach/trainee_detail_page.dart'; // ⭐ 新增：導入學員詳細頁面
 
 class StudentManagementPage extends StatefulWidget {
   const StudentManagementPage({super.key});
@@ -100,179 +101,20 @@ class _StudentManagementPageState extends State<StudentManagementPage>
     }
   }
 
-  // 查看學員詳情
+  // ⭐ 修改：查看學員詳情 - 導航到專業的詳細頁面
   void _viewStudentDetail(DocumentSnapshot studentDoc) {
     final studentData = studentDoc.data() as Map<String, dynamic>;
     final studentName = studentData['displayName'] ?? '學員';
-    final studentEmail = studentData['email'] ?? '';
-    final studentBio = studentData['bio'] ?? '';
-    final joinDate = studentData['createdAt'] as Timestamp?;
-    final stats = _studentStats[studentDoc.id] ?? {};
+    final studentId = studentDoc.id;
     
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+    // 導航到學員詳細資料頁面
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TraineeDetailPage(
+          traineeId: studentId,
+          traineeName: studentName,
         ),
-        title: Row(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: const BoxDecoration(
-                color: Color(0xFF3B82F6),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    studentName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    studentEmail,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (studentBio.isNotEmpty) ...[
-                const Text(
-                  '個人簡介：',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  studentBio,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              
-              if (joinDate != null) ...[
-                const Text(
-                  '配對日期：',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(joinDate.toDate()),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              
-              const Text(
-                '訓練統計：',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('總訓練次數：'),
-                        Text(
-                          '${stats['totalWorkouts'] ?? 0} 次',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('連續天數：'),
-                        Text(
-                          '${stats['streak'] ?? 0} 天',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('完成率：'),
-                        Text(
-                          '${stats['completionRate'] ?? 0}%',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('關閉'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _contactStudent(studentDoc);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('開始聊天'),
-          ),
-        ],
       ),
     );
   }

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+// ✅ 修改：導入分角色的編輯頁面
+import 'trainee_edit_page.dart';
+import 'coach_edit_page.dart';
 
 class ProfileTab extends StatefulWidget {
   final bool isCoach;
@@ -117,13 +120,28 @@ class _ProfileTabState extends State<ProfileTab> {
           Expanded(
             child: Column(
               children: [
+                // ✅ 修改：根據角色導向不同的編輯頁面
                 _buildProfileOption(
                   icon: Icons.edit_outlined,
                   title: '編輯個人資料',
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('編輯個人資料功能 (開發中)')),
-                    );
+                    if (widget.isCoach) {
+                      // 教練 → CoachEditPage（綠色）
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CoachEditPage(),
+                        ),
+                      );
+                    } else {
+                      // 學員 → TraineeEditPage（藍色）
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const TraineeEditPage(),
+                        ),
+                      );
+                    }
                   },
                 ),
                 _buildProfileOption(

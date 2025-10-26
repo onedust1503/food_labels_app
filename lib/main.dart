@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // *** 新增：用於 kDebugMode ***
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,23 +8,25 @@ import 'package:flutter/services.dart';
 import 'login.dart';
 import 'pages/home/trainee_home_page.dart';
 import 'pages/home/coach_home_page.dart';
-import 'services/notification_service.dart'; // 🆕 匯入通知服務
-import 'package:intl/date_symbol_data_local.dart'; // 🆕 匯入國際化日期格式
-import 'pages/splash_screen.dart'; // 🆕 匯入啟動畫面
-import 'package:provider/provider.dart'; // 🆕 Provider 狀態管理
-import 'providers/network_provider.dart'; // 🆕 網路狀態管理
-import 'components/network_banner.dart'; // 🆕 網路橫幅組件
+import 'services/notification_service.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'pages/splash_screen.dart';
+import 'package:provider/provider.dart';
+import 'providers/network_provider.dart';
+import 'components/network_banner.dart';
+// ✅ 新增：導入分角色的設定頁面
+import 'pages/profile/trainee_setup_page.dart';
+import 'pages/profile/coach_setup_page.dart';
 
-// 🆕 全域導航鍵（用於通知服務等需要 context 的地方）
+// 全域導航鍵
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🆕 初始化國際化日期格式
+  // 初始化國際化日期格式
   await initializeDateFormatting('zh_TW', null);
   
-  // *** 修復：使用 debugPrint 替代 print ***
   if (kDebugMode) {
     debugPrint('[init] start');
   }
@@ -42,7 +44,6 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    // *** 修復：使用 debugPrint 替代 print ***
     if (kDebugMode) {
       debugPrint('[init] Firebase initialized successfully');
     }
@@ -53,7 +54,7 @@ void main() async {
       debugPrint('[init] Notification Service initialized successfully');
     }
 
-    // 🆕 修正：先獲取 NetworkProvider 單例實例，再初始化
+    // 初始化網路監控
     final networkProvider = NetworkProvider();
     await networkProvider.initialize();
     if (kDebugMode) {
@@ -61,13 +62,11 @@ void main() async {
     }
 
   } catch (e) {
-    // *** 修復：使用 debugPrint 替代 print ***
     if (kDebugMode) {
       debugPrint('[init] Firebase initialization failed: $e');
     }
   }
   
-  // *** 修復：使用 debugPrint 替代 print ***
   if (kDebugMode) {
     debugPrint('[init] done');
   }
@@ -79,13 +78,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 🆕 修正：使用 .value 來提供已經在 main() 中初始化的 NetworkProvider 單例
-    // 這樣可以確保 Provider 使用的是同一個已經初始化並開始監聽網路變化的實例
     return ChangeNotifierProvider<NetworkProvider>.value(
-      value: NetworkProvider(), // 使用已初始化的單例實例
+      value: NetworkProvider(),
       child: MaterialApp(
-        navigatorKey: navigatorKey, // 🆕 設定導航鍵
-
+        navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
         title: 'Flutter Demo',
         theme: ThemeData(
@@ -95,10 +91,10 @@ class MyApp extends StatelessWidget {
         home: const SplashScreen(),
         routes: {
           '/login': (context) => const LoginScreen(),
-          '/studentHome': (context) => const TraineeHomePage(), // 確保路由名稱一致
+          '/studentHome': (context) => const TraineeHomePage(),
           '/coachHome': (context) => const CoachHomePage(),
+          '/home': (context) => const AuthWrapper(), // ✅ 加入 /home 路由
         },
-        // *** 新增：路由生成器處理未定義的路由 ***
         onGenerateRoute: (settings) {
           if (kDebugMode) {
             debugPrint('嘗試導航到: ${settings.name}');
@@ -109,12 +105,13 @@ class MyApp extends StatelessWidget {
               return MaterialPageRoute(builder: (context) => const AuthWrapper());
             case '/login':
               return MaterialPageRoute(builder: (context) => const LoginScreen());
+            case '/home':
+              return MaterialPageRoute(builder: (context) => const AuthWrapper()); // ✅ /home 導向 AuthWrapper
             case '/studentHome':
               return MaterialPageRoute(builder: (context) => const TraineeHomePage());
             case '/coachHome':
               return MaterialPageRoute(builder: (context) => const CoachHomePage());
             default:
-              // 未知路由，返回 AuthWrapper 重新檢查狀態
               if (kDebugMode) {
                 debugPrint('未知路由: ${settings.name}，返回 AuthWrapper');
               }
@@ -126,12 +123,12 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// *** 修復：改進認證包裝器，確保正確處理登出狀態 ***
+// ✅ 修改：支援分角色的 AuthWrapper
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
-  // 從 Firestore 獲取用戶角色
-  Future<String> _getUserRole(String uid) async {
+  // 從 Firestore 獲取用戶資料
+  Future<Map<String, dynamic>> _getUserData(String uid) async {
     try {
       DocumentSnapshot userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -139,25 +136,18 @@ class AuthWrapper extends StatelessWidget {
           .get();
       
       if (userDoc.exists) {
-        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-        String role = userData['role'] ?? '';
-        
-        if (role == 'coach' || role == 'trainee') {
-          return role;
-        }
+        return userDoc.data() as Map<String, dynamic>;
       }
-      return '';
+      return {};
     } catch (e) {
-      // *** 修復：使用 debugPrint 替代 print ***
       if (kDebugMode) {
-        debugPrint('獲取用戶角色失敗: $e');
+        debugPrint('獲取用戶資料失敗: $e');
       }
-      return '';
+      return {};
     }
   }
 
   // 根據角色返回對應頁面
-  // 🆕 修改：加入網路橫幅包裹
   Widget _getHomePageByRole(String role) {
     Widget homePage;
     
@@ -169,15 +159,87 @@ class AuthWrapper extends StatelessWidget {
         homePage = const TraineeHomePage();
         break;
       default:
-        // 如果角色不正確，返回登入頁面（不需要網路橫幅）
         return const LoginScreen();
     }
     
-    // 🆕 為首頁加上網路狀態橫幅
-    // 這樣當網路斷線時，用戶會在頁面頂部看到紅色提示
+    // 為首頁加上網路狀態橫幅
     return NetworkBanner(
       child: homePage,
     );
+  }
+
+  // ✅ 新增：根據角色返回對應的設定頁面
+  Widget _getSetupPageByRole(String role) {
+    if (kDebugMode) {
+      debugPrint('[AuthWrapper] 導向設定頁面，角色: $role');
+    }
+
+    switch (role) {
+      case 'coach':
+        return const CoachSetupPage();
+      case 'trainee':
+        return const TraineeSetupPage();
+      default:
+        if (kDebugMode) {
+          debugPrint('[AuthWrapper] 未知角色: $role，返回登入頁面');
+        }
+        return const LoginScreen();
+    }
+  }
+
+  // ✅ 新增：檢查是否需要完成設定（根據角色檢查不同欄位）
+  bool _needsProfileSetup(Map<String, dynamic> userData, String role) {
+    // 1. 檢查 profileSetupCompleted 欄位
+    final profileSetupCompleted = userData['profileSetupCompleted'] ?? false;
+    
+    if (kDebugMode) {
+      debugPrint('[AuthWrapper] profileSetupCompleted: $profileSetupCompleted');
+    }
+    
+    // 如果明確標記為未完成
+    if (!profileSetupCompleted) {
+      return true;
+    }
+
+    // 2. 檢查必要欄位是否存在（防止資料不完整）
+    final hasDisplayName = userData['displayName'] != null && 
+                          (userData['displayName'] as String).isNotEmpty;
+
+    if (kDebugMode) {
+      debugPrint('[AuthWrapper] hasDisplayName: $hasDisplayName');
+    }
+
+    // 根據角色檢查不同的必要欄位
+    if (role == 'trainee') {
+      // 學生必須有：姓名、身高、體重、目標
+      final hasHeight = userData['height'] != null;
+      final hasWeight = userData['weight'] != null;
+      final hasGoal = userData['goal'] != null;
+
+      if (kDebugMode) {
+        debugPrint('[AuthWrapper] 學生欄位檢查:');
+        debugPrint('  - height: $hasHeight');
+        debugPrint('  - weight: $hasWeight');
+        debugPrint('  - goal: $hasGoal');
+      }
+
+      return !hasDisplayName || !hasHeight || !hasWeight || !hasGoal;
+      
+    } else if (role == 'coach') {
+      // 教練必須有：姓名、專長
+      final hasSpecialties = userData['specialties'] != null && 
+                            (userData['specialties'] as List).isNotEmpty;
+
+      if (kDebugMode) {
+        debugPrint('[AuthWrapper] 教練欄位檢查:');
+        debugPrint('  - specialties: $hasSpecialties');
+      }
+
+      return !hasDisplayName || !hasSpecialties;
+    }
+
+    // 未知角色，需要設定
+    return true;
   }
 
   @override
@@ -196,33 +258,58 @@ class AuthWrapper extends StatelessWidget {
           return const LoadingScreen();
         }
         
-        // *** 修改：更嚴格的登出狀態檢查 ***
-        if (snapshot.hasData && snapshot.data != null && !snapshot.hasError) {
+        // 用戶未登入
+        if (!snapshot.hasData || snapshot.data == null || snapshot.hasError) {
           if (kDebugMode) {
-            debugPrint('[AuthWrapper] 用戶已登入: ${snapshot.data!.email}');
+            debugPrint('[AuthWrapper] 用戶未登入或已登出');
           }
-          
-          // 用戶已登入，獲取角色資訊
-          return FutureBuilder<String>(
-            future: _getUserRole(snapshot.data!.uid),
-            builder: (context, roleSnapshot) {
+          return const LoginScreen();
+        }
+
+        // 用戶已登入 - 獲取用戶資料
+        if (kDebugMode) {
+          debugPrint('[AuthWrapper] 用戶已登入: ${snapshot.data!.email}');
+        }
+        
+        return FutureBuilder<Map<String, dynamic>>(
+          future: _getUserData(snapshot.data!.uid),
+          builder: (context, userSnapshot) {
+            if (kDebugMode) {
+              debugPrint('[AuthWrapper] 資料獲取狀態: ${userSnapshot.connectionState}');
+            }
+            
+            if (userSnapshot.connectionState == ConnectionState.waiting) {
+              return const LoadingScreen();
+            }
+            
+            if (userSnapshot.hasData && userSnapshot.data!.isNotEmpty) {
+              final userData = userSnapshot.data!;
+              final role = userData['role'] ?? '';
+              
               if (kDebugMode) {
-                debugPrint('[AuthWrapper] 角色獲取狀態: ${roleSnapshot.connectionState}');
-                debugPrint('[AuthWrapper] 角色資料: ${roleSnapshot.data}');
+                debugPrint('[AuthWrapper] 角色: $role');
+                debugPrint('[AuthWrapper] 用戶資料: $userData');
               }
               
-              if (roleSnapshot.connectionState == ConnectionState.waiting) {
-                return const LoadingScreen();
+              // ✅ 使用新的檢查邏輯
+              final needsSetup = _needsProfileSetup(userData, role);
+              
+              if (kDebugMode) {
+                debugPrint('[AuthWrapper] 需要設定: $needsSetup');
               }
               
-              if (roleSnapshot.hasData && roleSnapshot.data!.isNotEmpty) {
-                // 有角色資料，導向對應頁面
-                String role = roleSnapshot.data!;
+              // ✅ 如果需要設定，根據角色導向對應設定頁面
+              if (needsSetup) {
+                return _getSetupPageByRole(role);
+              }
+              
+              // 已完成設定，根據角色導向主頁
+              if (role == 'coach' || role == 'trainee') {
                 if (kDebugMode) {
                   debugPrint('[AuthWrapper] 導向角色頁面: $role');
                 }
                 
-                // *** 修復：添加一個短暫延遲確保狀態正確更新 ***
+                // 添加短暫延遲確保狀態正確更新
                 return FutureBuilder(
                   future: Future.delayed(const Duration(milliseconds: 100)),
                   builder: (context, delaySnapshot) {
@@ -233,21 +320,21 @@ class AuthWrapper extends StatelessWidget {
                   },
                 );
               } else {
-                // 沒有角色資料，回到登入頁面重新設定
+                // 沒有有效角色，回到登入頁面
                 if (kDebugMode) {
-                  debugPrint('[AuthWrapper] 沒有角色資料，回到登入頁面');
+                  debugPrint('[AuthWrapper] 沒有有效角色，回到登入頁面');
                 }
                 return const LoginScreen();
               }
-            },
-          );
-        } else {
-          // *** 修改：用戶未登入或登出 ***
-          if (kDebugMode) {
-            debugPrint('[AuthWrapper] 用戶未登入或已登出');
-          }
-          return const LoginScreen();
-        }
+            } else {
+              // 沒有用戶資料，返回登入頁面
+              if (kDebugMode) {
+                debugPrint('[AuthWrapper] 沒有用戶資料，返回登入頁面');
+              }
+              return const LoginScreen();
+            }
+          },
+        );
       },
     );
   }

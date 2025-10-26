@@ -406,34 +406,23 @@ class _LoginScreenState extends State<LoginScreen>
                 //  登入成功：先顯示成功訊息
                 _showSuccessMessage();
 
-                // *** 修改：添加手動導航作為備用方案 ***
-                await Future.delayed(const Duration(milliseconds: 1500));
+                // ✅ 修改：導向 AuthWrapper 讓它自動判斷
+                // AuthWrapper 會根據 profileSetupCompleted 決定導向設定頁面或主頁
+                await Future.delayed(const Duration(milliseconds: 500));
                 if (mounted) {
                     ScaffoldMessenger.of(context).removeCurrentSnackBar();
                     
-                    // 手動導航到對應頁面（備用方案）
-                    String routeName;
-                    switch (userRole) {
-                        case 'coach':
-                            routeName = '/coachHome';
-                            break;
-                        case 'trainee':
-                            routeName = '/studentHome';
-                            break;
-                        default:
-                            routeName = '/login';
-                    }
-                    
                     if (kDebugMode) {
-                        print('手動導航到: $routeName');
+                        print('登入成功，導向 AuthWrapper');
                     }
                     
-                    // 使用 pushNamedAndRemoveUntil 確保清除所有之前的路由
+                    // 導向 AuthWrapper，讓它檢查並決定下一步
                     Navigator.of(context).pushNamedAndRemoveUntil(
-                        routeName,
+                        '/home', // 導向 AuthWrapper
                         (route) => false, // 清除所有路由
                     );
                 }
+
             }
         } on FirebaseAuthException catch (e) {
             //  Firebase 認證失敗處理

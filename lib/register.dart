@@ -157,6 +157,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'displayName': _nameController.text.trim(), // *** 修改：使用用戶輸入的姓名 ***
         'createdAt': FieldValue.serverTimestamp(),
         'lastLoginAt': FieldValue.serverTimestamp(),
+        'profileSetupCompleted': false, // ✅ 設為 false，首次登入需要設定
       }, SetOptions(merge: true));
       
       print('用戶資料創建成功，角色: $role');

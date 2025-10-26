@@ -15,9 +15,6 @@ import 'package:provider/provider.dart'; // 🆕 Provider 狀態管理
 import 'providers/network_provider.dart'; // 🆕 網路狀態管理
 import 'components/network_banner.dart'; // 🆕 網路橫幅組件
 
-// 🆕 全域導航鍵（用於通知服務等需要 context 的地方）
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -53,9 +50,8 @@ void main() async {
       debugPrint('[init] Notification Service initialized successfully');
     }
 
-    // 🆕 修正：先獲取 NetworkProvider 單例實例，再初始化
-    final networkProvider = NetworkProvider();
-    await networkProvider.initialize();
+    // 🆕 初始化網路監聽
+    await NetworkProvider().initialize();
     if (kDebugMode) {
       debugPrint('[init] Network Provider initialized successfully');
     }
@@ -79,49 +75,44 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 🆕 修正：使用 .value 來提供已經在 main() 中初始化的 NetworkProvider 單例
-    // 這樣可以確保 Provider 使用的是同一個已經初始化並開始監聽網路變化的實例
-    return ChangeNotifierProvider<NetworkProvider>.value(
-      value: NetworkProvider(), // 使用已初始化的單例實例
-      child: MaterialApp(
-        navigatorKey: navigatorKey, // 🆕 設定導航鍵
+    return MaterialApp(
+      navigatorKey: navigatorKey, // 🆕 設定導航鍵
 
-        debugShowCheckedModeBanner: false,
-        title: 'Flutter Demo',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
-        ),
-        home: const SplashScreen(),
-        routes: {
-          '/login': (context) => const LoginScreen(),
-          '/studentHome': (context) => const TraineeHomePage(), // 確保路由名稱一致
-          '/coachHome': (context) => const CoachHomePage(),
-        },
-        // *** 新增：路由生成器處理未定義的路由 ***
-        onGenerateRoute: (settings) {
-          if (kDebugMode) {
-            debugPrint('嘗試導航到: ${settings.name}');
-          }
-          
-          switch (settings.name) {
-            case '/':
-              return MaterialPageRoute(builder: (context) => const AuthWrapper());
-            case '/login':
-              return MaterialPageRoute(builder: (context) => const LoginScreen());
-            case '/studentHome':
-              return MaterialPageRoute(builder: (context) => const TraineeHomePage());
-            case '/coachHome':
-              return MaterialPageRoute(builder: (context) => const CoachHomePage());
-            default:
-              // 未知路由，返回 AuthWrapper 重新檢查狀態
-              if (kDebugMode) {
-                debugPrint('未知路由: ${settings.name}，返回 AuthWrapper');
-              }
-              return MaterialPageRoute(builder: (context) => const AuthWrapper());
-          }
-        },
+      debugShowCheckedModeBanner: false,
+      title: 'Flutter Demo',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
+      home: const SplashScreen(),
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/studentHome': (context) => const TraineeHomePage(), // 確保名稱一致
+        '/coachHome': (context) => const CoachHomePage(),
+      },
+      // *** 新增：路由生成器處理未定義的路由 ***
+      onGenerateRoute: (settings) {
+        if (kDebugMode) {
+          debugPrint('嘗試導航到: ${settings.name}');
+        }
+        
+        switch (settings.name) {
+          case '/':
+            return MaterialPageRoute(builder: (context) => const AuthWrapper());
+          case '/login':
+            return MaterialPageRoute(builder: (context) => const LoginScreen());
+          case '/studentHome':
+            return MaterialPageRoute(builder: (context) => const TraineeHomePage());
+          case '/coachHome':
+            return MaterialPageRoute(builder: (context) => const CoachHomePage());
+          default:
+            // 未知路由，返回 AuthWrapper 重新檢查狀態
+            if (kDebugMode) {
+              debugPrint('未知路由: ${settings.name}，返回 AuthWrapper');
+            }
+            return MaterialPageRoute(builder: (context) => const AuthWrapper());
+        }
+      },
     );
   }
 }
@@ -157,27 +148,15 @@ class AuthWrapper extends StatelessWidget {
   }
 
   // 根據角色返回對應頁面
-  // 🆕 修改：加入網路橫幅包裹
   Widget _getHomePageByRole(String role) {
-    Widget homePage;
-    
     switch (role) {
       case 'coach':
-        homePage = const CoachHomePage();
-        break;
+        return const CoachHomePage();
       case 'trainee':
-        homePage = const TraineeHomePage();
-        break;
+        return const TraineeHomePage();
       default:
-        // 如果角色不正確，返回登入頁面（不需要網路橫幅）
         return const LoginScreen();
     }
-    
-    // 🆕 為首頁加上網路狀態橫幅
-    // 這樣當網路斷線時，用戶會在頁面頂部看到紅色提示
-    return NetworkBanner(
-      child: homePage,
-    );
   }
 
   @override

@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart'; // 🆕 用於 debugPrint
+import '../utils/result.dart'; // 🆕 引入 Result 封裝
+import '../providers/network_provider.dart'; // 🆕 引入網路檢查
 
 // ========== 數據模型 ==========
 
@@ -72,7 +75,7 @@ class ChatService {
 
   String? get currentUserId => _auth.currentUser?.uid;
 
-  // ========== 聊天室管理 ==========
+  // ========== ✅ 原有方法 - 完全保留，一個字都不改 ==========
 
   /// 創建或獲取聊天室（防止重複）
   Future<String> createOrGetChatRoom(String otherUserId) async {
@@ -121,8 +124,6 @@ class ChatService {
       throw Exception('創建聊天室失敗: $e');
     }
   }
-
-  // ========== 發送訊息 ==========
 
   /// 🔔 發送文字訊息（已加入推播通知）
   Future<void> sendMessage({
@@ -329,8 +330,6 @@ class ChatService {
     }
   }
 
-  // ========== 圖片處理 ==========
-
   /// 上傳圖片到 Firebase Storage
   Future<String> uploadImage(File imageFile, String chatRoomId) async {
     try {
@@ -350,8 +349,6 @@ class ChatService {
       throw Exception('上傳圖片失敗: $e');
     }
   }
-
-  // ========== 訊息流與已讀 ==========
 
   /// 獲取訊息流
   Stream<List<ChatMessage>> getMessagesStream(String chatRoomId) {
@@ -412,8 +409,6 @@ class ChatService {
         });
   }
 
-  // ========== 聊天室列表 ==========
-
   /// 獲取聊天室列表流
   Stream<QuerySnapshot> getChatRoomsStream() {
     final currentUserId = this.currentUserId;
@@ -452,6 +447,312 @@ class ChatService {
       return doc.exists ? doc : null;
     } catch (e) {
       return null;
+    }
+  }
+
+  // ========== 🆕 新增 Safe 方法 - 完整錯誤處理 ==========
+
+  /// 🆕 創建或獲取聊天室（Safe 版本）
+  Future<Result<String>> createOrGetChatRoomSafe(String otherUserId) async {
+    try {
+      // 檢查網路狀態
+      if (!NetworkProvider().isOnline) {
+        return Result.failure(AppException.network());
+      }
+
+      // 檢查是否登入
+      final currentUserId = this.currentUserId;
+      if (currentUserId == null) {
+        return Result.failure(AppException.unauthorized(
+          message: '請先登入才能使用聊天功能',
+        ));
+      }
+
+      // 驗證參數
+      if (otherUserId.isEmpty) {
+        return Result.failure(AppException.validation(
+          message: '用戶 ID 不能為空',
+        ));
+      }
+
+      if (currentUserId == otherUserId) {
+        return Result.failure(AppException.validation(
+          message: '不能與自己創建聊天室',
+        ));
+      }
+
+      // 執行原有邏輯
+      final chatRoomId = await createOrGetChatRoom(otherUserId);
+      
+      debugPrint('✅ 聊天室創建/獲取成功: $chatRoomId');
+      return Result.success(chatRoomId);
+      
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase 錯誤: ${e.code} - ${e.message}');
+      return Result.failure(AppException.firebase(
+        message: _handleFirebaseError(e),
+        code: e.code,
+        originalError: e,
+      ));
+    } catch (e) {
+      debugPrint('❌ 創建聊天室失敗: $e');
+      return Result.failure(AppException.fromError(e));
+    }
+  }
+
+  /// 🆕 發送文字訊息（Safe 版本）
+  Future<Result<void>> sendMessageSafe({
+    required String chatRoomId,
+    required String text,
+  }) async {
+    try {
+      // 檢查網路狀態
+      if (!NetworkProvider().isOnline) {
+        return Result.failure(AppException.network(
+          message: '網路連接失敗，無法發送訊息',
+        ));
+      }
+
+      // 檢查是否登入
+      if (currentUserId == null) {
+        return Result.failure(AppException.unauthorized(
+          message: '請先登入才能發送訊息',
+        ));
+      }
+
+      // 驗證參數
+      if (chatRoomId.isEmpty) {
+        return Result.failure(AppException.validation(
+          message: '聊天室 ID 不能為空',
+        ));
+      }
+
+      if (text.trim().isEmpty) {
+        return Result.failure(AppException.validation(
+          message: '訊息內容不能為空',
+        ));
+      }
+
+      // 執行原有邏輯
+      await sendMessage(chatRoomId: chatRoomId, text: text);
+      
+      debugPrint('✅ 訊息發送成功');
+      return Result.success(null);
+      
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase 錯誤: ${e.code} - ${e.message}');
+      return Result.failure(AppException.firebase(
+        message: _handleFirebaseError(e),
+        code: e.code,
+        originalError: e,
+      ));
+    } catch (e) {
+      debugPrint('❌ 發送訊息失敗: $e');
+      return Result.failure(AppException.fromError(e));
+    }
+  }
+
+  /// 🆕 發送圖片訊息（Safe 版本）
+  Future<Result<void>> sendImageMessageSafe({
+    required String chatRoomId,
+    required File imageFile,
+  }) async {
+    try {
+      // 檢查網路狀態
+      if (!NetworkProvider().isOnline) {
+        return Result.failure(AppException.network(
+          message: '網路連接失敗，無法發送圖片',
+        ));
+      }
+
+      // 檢查是否登入
+      if (currentUserId == null) {
+        return Result.failure(AppException.unauthorized(
+          message: '請先登入才能發送圖片',
+        ));
+      }
+
+      // 驗證參數
+      if (chatRoomId.isEmpty) {
+        return Result.failure(AppException.validation(
+          message: '聊天室 ID 不能為空',
+        ));
+      }
+
+      // 驗證檔案
+      if (!await imageFile.exists()) {
+        return Result.failure(AppException.validation(
+          message: '圖片檔案不存在',
+        ));
+      }
+
+      final fileSize = await imageFile.length();
+      if (fileSize > 10 * 1024 * 1024) { // 10MB 限制
+        return Result.failure(AppException.validation(
+          message: '圖片大小不能超過 10MB',
+        ));
+      }
+
+      // 執行原有邏輯
+      await sendImageMessage(chatRoomId: chatRoomId, imageFile: imageFile);
+      
+      debugPrint('✅ 圖片發送成功');
+      return Result.success(null);
+      
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase 錯誤: ${e.code} - ${e.message}');
+      return Result.failure(AppException.firebase(
+        message: '圖片上傳失敗：${_handleFirebaseError(e)}',
+        code: e.code,
+        originalError: e,
+      ));
+    } catch (e) {
+      debugPrint('❌ 發送圖片失敗: $e');
+      return Result.failure(AppException.fromError(e));
+    }
+  }
+
+  /// 🆕 上傳圖片（Safe 版本）
+  Future<Result<String>> uploadImageSafe(File imageFile, String chatRoomId) async {
+    try {
+      // 檢查網路狀態
+      if (!NetworkProvider().isOnline) {
+        return Result.failure(AppException.network(
+          message: '網路連接失敗，無法上傳圖片',
+        ));
+      }
+
+      // 檢查是否登入
+      if (currentUserId == null) {
+        return Result.failure(AppException.unauthorized());
+      }
+
+      // 驗證檔案
+      if (!await imageFile.exists()) {
+        return Result.failure(AppException.validation(
+          message: '圖片檔案不存在',
+        ));
+      }
+
+      final fileSize = await imageFile.length();
+      if (fileSize > 10 * 1024 * 1024) {
+        return Result.failure(AppException.validation(
+          message: '圖片大小不能超過 10MB',
+        ));
+      }
+
+      // 執行原有邏輯
+      final imageUrl = await uploadImage(imageFile, chatRoomId);
+      
+      debugPrint('✅ 圖片上傳成功: $imageUrl');
+      return Result.success(imageUrl);
+      
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase Storage 錯誤: ${e.code} - ${e.message}');
+      return Result.failure(AppException.firebase(
+        message: '圖片上傳失敗：${_handleFirebaseError(e)}',
+        code: e.code,
+        originalError: e,
+      ));
+    } catch (e) {
+      debugPrint('❌ 上傳圖片失敗: $e');
+      return Result.failure(AppException.fromError(e));
+    }
+  }
+
+  /// 🆕 刪除聊天室（Safe 版本）
+  Future<Result<void>> deleteChatRoomSafe(String chatRoomId) async {
+    try {
+      // 檢查網路狀態
+      if (!NetworkProvider().isOnline) {
+        return Result.failure(AppException.network());
+      }
+
+      // 檢查是否登入
+      if (currentUserId == null) {
+        return Result.failure(AppException.unauthorized());
+      }
+
+      // 驗證參數
+      if (chatRoomId.isEmpty) {
+        return Result.failure(AppException.validation(
+          message: '聊天室 ID 不能為空',
+        ));
+      }
+
+      // 執行原有邏輯
+      await deleteChatRoom(chatRoomId);
+      
+      debugPrint('✅ 聊天室刪除成功');
+      return Result.success(null);
+      
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase 錯誤: ${e.code} - ${e.message}');
+      return Result.failure(AppException.firebase(
+        message: _handleFirebaseError(e),
+        code: e.code,
+        originalError: e,
+      ));
+    } catch (e) {
+      debugPrint('❌ 刪除聊天室失敗: $e');
+      return Result.failure(AppException.fromError(e));
+    }
+  }
+
+  /// 🆕 獲取聊天室資訊（Safe 版本）
+  Future<Result<DocumentSnapshot?>> getChatRoomInfoSafe(String chatRoomId) async {
+    try {
+      // 檢查網路狀態
+      if (!NetworkProvider().isOnline) {
+        return Result.failure(AppException.network());
+      }
+
+      // 驗證參數
+      if (chatRoomId.isEmpty) {
+        return Result.failure(AppException.validation(
+          message: '聊天室 ID 不能為空',
+        ));
+      }
+
+      // 執行原有邏輯
+      final doc = await getChatRoomInfo(chatRoomId);
+      
+      return Result.success(doc);
+      
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase 錯誤: ${e.code} - ${e.message}');
+      return Result.failure(AppException.firebase(
+        message: _handleFirebaseError(e),
+        code: e.code,
+        originalError: e,
+      ));
+    } catch (e) {
+      debugPrint('❌ 獲取聊天室資訊失敗: $e');
+      return Result.failure(AppException.fromError(e));
+    }
+  }
+
+  // ========== 輔助方法 ==========
+
+  /// 處理 Firebase 錯誤訊息
+  String _handleFirebaseError(FirebaseException e) {
+    switch (e.code) {
+      case 'permission-denied':
+        return '您沒有權限執行此操作';
+      case 'not-found':
+        return '找不到聊天室或訊息';
+      case 'already-exists':
+        return '聊天室已存在';
+      case 'unavailable':
+        return '服務暫時無法使用，請稍後再試';
+      case 'deadline-exceeded':
+        return '請求超時，請檢查網路連接';
+      case 'unauthenticated':
+        return '請先登入';
+      case 'resource-exhausted':
+        return '操作過於頻繁，請稍後再試';
+      default:
+        return '操作失敗，請稍後再試';
     }
   }
 }

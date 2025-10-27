@@ -1,5 +1,5 @@
 // lib/pages/coach/trainee_workout_tab.dart
-// 學員訓練日誌分頁
+// 學員訓練日誌分頁 - 修正型別錯誤版本
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,9 +16,8 @@ class TraineeWorkoutTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(traineeId)
-          .collection('workout_logs')
+          .collection('workoutLogs')
+          .where('userId', isEqualTo: traineeId)
           .orderBy('date', descending: true)
           .limit(30)
           .snapshots(),
@@ -50,6 +49,15 @@ class TraineeWorkoutTab extends StatelessWidget {
                     fontSize: 18,
                     color: Colors.grey[600],
                   ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  snapshot.error.toString(),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -96,11 +104,26 @@ class TraineeWorkoutTab extends StatelessWidget {
           itemBuilder: (context, index) {
             final log = logs[index].data() as Map<String, dynamic>;
             final logId = logs[index].id;
-            final date = (log['date'] as Timestamp?)?.toDate() ?? DateTime.now();
-            final planName = log['planName'] ?? '自由訓練';
+            
+            // ✅ 處理日期欄位
+            DateTime date;
+            if (log['date'] is Timestamp) {
+              date = (log['date'] as Timestamp).toDate();
+            } else if (log['date'] is String) {
+              try {
+                date = DateTime.parse(log['date'] as String);
+              } catch (e) {
+                date = DateTime.now();
+              }
+            } else {
+              date = DateTime.now();
+            }
+            
+            // ✅ 修正：明確處理數值型別轉換
+            final planName = log['planName']?.toString() ?? '自由訓練';
             final exercises = log['exercises'] as List<dynamic>? ?? [];
-            final duration = log['duration'] ?? 0;
-            final totalVolume = log['totalVolume'] ?? 0;
+            final duration = _toInt(log['duration']);
+            final totalVolume = _toDouble(log['totalVolume']);
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
@@ -180,7 +203,7 @@ class TraineeWorkoutTab extends StatelessWidget {
                             if (totalVolume > 0) ...[
                               const SizedBox(height: 4),
                               Text(
-                                '總訓練量：$totalVolume kg',
+                                '總訓練量：${totalVolume.toStringAsFixed(1)} kg',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],
@@ -205,6 +228,23 @@ class TraineeWorkoutTab extends StatelessWidget {
         );
       },
     );
+  }
+
+  // ✅ 修正：型別轉換輔助方法
+  static int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 
   // 建立資訊標籤
@@ -239,10 +279,10 @@ class TraineeWorkoutTab extends StatelessWidget {
     Map<String, dynamic> log,
     DateTime date,
   ) {
-    final planName = log['planName'] ?? '訓練詳情';
+    final planName = log['planName']?.toString() ?? '自由訓練';
     final exercises = log['exercises'] as List<dynamic>? ?? [];
-    final duration = log['duration'] ?? 0;
-    final notes = log['notes'] ?? '';
+    final duration = _toInt(log['duration']);
+    final notes = log['notes']?.toString() ?? '';
 
     showModalBottomSheet(
       context: context,
@@ -283,17 +323,10 @@ class TraineeWorkoutTab extends StatelessWidget {
                       // 標題
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.green[50],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.fitness_center,
-                              color: Colors.green,
-                              size: 28,
-                            ),
+                          const Icon(
+                            Icons.fitness_center,
+                            color: Colors.green,
+                            size: 28,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -432,10 +465,13 @@ class TraineeWorkoutTab extends StatelessWidget {
       children: exercises.asMap().entries.map((entry) {
         final index = entry.key;
         final exercise = entry.value as Map<String, dynamic>;
-        final exerciseName = exercise['exerciseName'] ?? '未命名動作';
-        final set = exercise['set'] ?? 0;
-        final reps = exercise['reps'] ?? 0;
-        final weight = exercise['weight'] ?? 0;
+        
+        // ✅ 修正：型別轉換
+        final exerciseName = exercise['exerciseName']?.toString() ?? 
+                            exercise['name']?.toString() ?? '未命名動作';
+        final sets = _toInt(exercise['sets'] ?? exercise['set']);
+        final reps = _toInt(exercise['reps']);
+        final weight = _toDouble(exercise['weight']);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -485,7 +521,7 @@ class TraineeWorkoutTab extends StatelessWidget {
                 children: [
                   _buildExerciseDetail(
                     Icons.repeat,
-                    '第 $set 組',
+                    '$sets 組',
                     Colors.blue,
                   ),
                   const SizedBox(width: 16),
@@ -497,7 +533,7 @@ class TraineeWorkoutTab extends StatelessWidget {
                   const SizedBox(width: 16),
                   _buildExerciseDetail(
                     Icons.monitor_weight,
-                    '$weight kg',
+                    '${weight.toStringAsFixed(1)} kg',
                     Colors.purple,
                   ),
                 ],

@@ -1,5 +1,5 @@
 // lib/pages/coach/trainee_nutrition_tab.dart
-// 學員飲食日誌分頁
+// 學員飲食日誌分頁 - 修正型別錯誤版本
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,9 +16,8 @@ class TraineeNutritionTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(traineeId)
-          .collection('nutrition_logs')
+          .collection('nutritionLogs')
+          .where('userId', isEqualTo: traineeId)
           .orderBy('date', descending: true)
           .limit(30)
           .snapshots(),
@@ -50,6 +49,15 @@ class TraineeNutritionTab extends StatelessWidget {
                     fontSize: 18,
                     color: Colors.grey[600],
                   ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  snapshot.error.toString(),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -96,13 +104,29 @@ class TraineeNutritionTab extends StatelessWidget {
           itemBuilder: (context, index) {
             final log = logs[index].data() as Map<String, dynamic>;
             final logId = logs[index].id;
-            final date = (log['date'] as Timestamp?)?.toDate() ?? DateTime.now();
-            final totalCalories = log['totalCalories'] ?? 0;
-            final protein = log['protein'] ?? 0;
-            final carbs = log['carbs'] ?? 0;
-            final fat = log['fat'] ?? 0;
-            final foods = log['foods'] as List<dynamic>? ?? [];
-
+            
+            // ✅ 處理日期欄位
+            DateTime date;
+            if (log['date'] is Timestamp) {
+              date = (log['date'] as Timestamp).toDate();
+            } else if (log['date'] is String) {
+              try {
+                date = DateTime.parse(log['date'] as String);
+              } catch (e) {
+                date = DateTime.now();
+              }
+            } else {
+              date = DateTime.now();
+            }
+            
+            // ✅ 修正：明確處理數值型別轉換
+            final calories = _toInt(log['calories']);
+            final protein = _toDouble(log['protein']);
+            final carbs = _toDouble(log['carbs']);
+            final fat = _toDouble(log['fat']);
+            final foodName = log['foodName']?.toString() ?? '未命名食物';
+            final mealType = log['mealType']?.toString() ?? '';
+            
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               elevation: 0,
@@ -122,7 +146,7 @@ class TraineeNutritionTab extends StatelessWidget {
                         width: 60,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: _getCalorieColor(totalCalories).withOpacity(0.1),
+                          color: _getCalorieColor(calories).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -133,14 +157,14 @@ class TraineeNutritionTab extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: _getCalorieColor(totalCalories),
+                                color: _getCalorieColor(calories),
                               ),
                             ),
                             Text(
                               '${date.month}月',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: _getCalorieColor(totalCalories),
+                                color: _getCalorieColor(calories),
                               ),
                             ),
                           ],
@@ -153,6 +177,28 @@ class TraineeNutritionTab extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // 食物名稱
+                            Text(
+                              foodName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            // 餐別（如果有）
+                            if (mealType.isNotEmpty) ...[
+                              Text(
+                                _getMealTypeText(mealType),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
                             Row(
                               children: [
                                 const Icon(
@@ -162,7 +208,7 @@ class TraineeNutritionTab extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '$totalCalories kcal',
+                                  '$calories kcal',
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -179,14 +225,6 @@ class TraineeNutritionTab extends StatelessWidget {
                                 const SizedBox(width: 8),
                                 _buildNutrientChip('脂肪', fat, Colors.orange),
                               ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${foods.length} 項食物',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
                             ),
                           ],
                         ),
@@ -208,8 +246,25 @@ class TraineeNutritionTab extends StatelessWidget {
     );
   }
 
+  // ✅ 修正：型別轉換輔助方法
+  static int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
+
   // 建立營養素標籤
-  Widget _buildNutrientChip(String label, dynamic value, Color color) {
+  Widget _buildNutrientChip(String label, double value, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -217,7 +272,7 @@ class TraineeNutritionTab extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        '$label ${value}g',
+        '$label ${value.toStringAsFixed(1)}g',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -229,12 +284,30 @@ class TraineeNutritionTab extends StatelessWidget {
 
   // 根據熱量取得顏色
   Color _getCalorieColor(int calories) {
-    if (calories < 1500) {
-      return Colors.orange; // 熱量過低
-    } else if (calories > 2500) {
-      return Colors.red; // 熱量過高
+    if (calories < 100) {
+      return Colors.green;
+    } else if (calories < 300) {
+      return Colors.blue;
+    } else if (calories < 500) {
+      return Colors.orange;
     } else {
-      return Colors.green; // 正常範圍
+      return Colors.red;
+    }
+  }
+
+  // 取得餐別文字
+  String _getMealTypeText(String mealType) {
+    switch (mealType) {
+      case 'breakfast':
+        return '早餐';
+      case 'lunch':
+        return '午餐';
+      case 'dinner':
+        return '晚餐';
+      case 'snack':
+        return '點心';
+      default:
+        return mealType;
     }
   }
 
@@ -244,11 +317,15 @@ class TraineeNutritionTab extends StatelessWidget {
     Map<String, dynamic> log,
     DateTime date,
   ) {
-    final totalCalories = log['totalCalories'] ?? 0;
-    final protein = log['protein'] ?? 0;
-    final carbs = log['carbs'] ?? 0;
-    final fat = log['fat'] ?? 0;
-    final foods = log['foods'] as List<dynamic>? ?? [];
+    // ✅ 修正：型別轉換
+    final calories = _toInt(log['calories']);
+    final protein = _toDouble(log['protein']);
+    final carbs = _toDouble(log['carbs']);
+    final fat = _toDouble(log['fat']);
+    final foodName = log['foodName']?.toString() ?? '未命名食物';
+    final mealType = log['mealType']?.toString() ?? '';
+    final servingSize = log['servingSize']?.toString() ?? '';
+    final servings = _toInt(log['servings']);
 
     showModalBottomSheet(
       context: context,
@@ -295,48 +372,98 @@ class TraineeNutritionTab extends StatelessWidget {
                             size: 28,
                           ),
                           const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                '飲食詳情',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  foodName,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                '${date.year}/${date.month}/${date.day}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
+                                Text(
+                                  '${date.year}/${date.month}/${date.day}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 24),
 
+                      // 餐別標籤
+                      if (mealType.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _getMealTypeText(mealType),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+
                       // 營養總覽
                       _buildNutritionSummary(
-                        totalCalories,
+                        calories,
                         protein,
                         carbs,
                         fat,
                       ),
                       const SizedBox(height: 24),
 
-                      // 食物列表
-                      const Text(
-                        '食物清單',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                      // 份量資訊
+                      if (servingSize.isNotEmpty || servings > 0) ...[
+                        const Text(
+                          '份量資訊',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildFoodList(foods),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (servingSize.isNotEmpty)
+                                Text(
+                                  '份量：$servingSize',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              if (servings > 0)
+                                Text(
+                                  '數量：$servings 份',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -350,10 +477,10 @@ class TraineeNutritionTab extends StatelessWidget {
 
   // 營養總覽卡片
   Widget _buildNutritionSummary(
-    int totalCalories,
-    dynamic protein,
-    dynamic carbs,
-    dynamic fat,
+    int calories,
+    double protein,
+    double carbs,
+    double fat,
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -366,13 +493,13 @@ class TraineeNutritionTab extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildNutritionItem('熱量', '$totalCalories', 'kcal'),
+          _buildNutritionItem('熱量', '$calories', 'kcal'),
           _buildDivider(),
-          _buildNutritionItem('蛋白質', '$protein', 'g'),
+          _buildNutritionItem('蛋白質', '${protein.toStringAsFixed(1)}', 'g'),
           _buildDivider(),
-          _buildNutritionItem('碳水', '$carbs', 'g'),
+          _buildNutritionItem('碳水', '${carbs.toStringAsFixed(1)}', 'g'),
           _buildDivider(),
-          _buildNutritionItem('脂肪', '$fat', 'g'),
+          _buildNutritionItem('脂肪', '${fat.toStringAsFixed(1)}', 'g'),
         ],
       ),
     );
@@ -413,91 +540,6 @@ class TraineeNutritionTab extends StatelessWidget {
       width: 1,
       height: 40,
       color: Colors.white30,
-    );
-  }
-
-  // 食物列表
-  Widget _buildFoodList(List<dynamic> foods) {
-    if (foods.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            '無食物資料',
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 14,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: foods.map((food) {
-        final foodMap = food as Map<String, dynamic>;
-        final name = foodMap['name'] ?? '未命名食物';
-        final calories = foodMap['calories'] ?? 0;
-        final amount = foodMap['amount'] ?? 1;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.orange[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.restaurant,
-                  color: Colors.orange,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$calories kcal',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '${amount}份',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 }

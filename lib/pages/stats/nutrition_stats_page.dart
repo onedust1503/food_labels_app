@@ -61,7 +61,25 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
         foregroundColor: Colors.white,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                    strokeWidth: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '載入統計數據中...',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : RefreshIndicator(
               onRefresh: _loadData,
               child: SingleChildScrollView(
@@ -70,13 +88,11 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildTodayProgress(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('📈 本週卡路里趨勢'),
+                    _buildSectionTitle('📊 本週卡路里攝取'),
                     const SizedBox(height: 12),
                     _buildCaloriesLineChart(),
                     const SizedBox(height: 24),
-                    _buildSectionTitle('🥗 三大營養素趨勢'),
+                    _buildSectionTitle('🥩 三大營養素趨勢'),
                     const SizedBox(height: 12),
                     _buildMacrosLineChart(),
                     const SizedBox(height: 24),
@@ -100,95 +116,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
     );
   }
 
-  // 今日營養達標率
-  Widget _buildTodayProgress() {
-    if (_weeklyNutrition.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final today = _weeklyNutrition.last;
-    final caloriesProgress = (today.calories / _caloriesGoal * 100).clamp(0, 100);
-    final proteinProgress = (today.protein / _proteinGoal * 100).clamp(0, 100);
-    final carbsProgress = (today.carbs / _carbsGoal * 100).clamp(0, 100);
-    final fatProgress = (today.fat / _fatGoal * 100).clamp(0, 100);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Colors.green, Colors.teal],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.green.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '今日營養達標率',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildProgressBar('熱量', caloriesProgress.toDouble(), '${today.calories.toInt()}/${_caloriesGoal.toInt()} 大卡'),
-          const SizedBox(height: 12),
-          _buildProgressBar('蛋白質', proteinProgress.toDouble(), '${today.protein.toInt()}/${_proteinGoal.toInt()} g'),
-          const SizedBox(height: 12),
-          _buildProgressBar('碳水', carbsProgress.toDouble(), '${today.carbs.toInt()}/${_carbsGoal.toInt()} g'),
-          const SizedBox(height: 12),
-          _buildProgressBar('脂肪', fatProgress.toDouble(), '${today.fat.toInt()}/${_fatGoal.toInt()} g'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressBar(String label, double progress, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: progress / 100,
-            backgroundColor: Colors.white24,
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-            minHeight: 8,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 卡路里趨勢圖
+  // 卡路里趨勢圖 - 優化版
   Widget _buildCaloriesLineChart() {
     if (_weeklyNutrition.isEmpty) {
       return _buildEmptyChart('本週還沒有飲食記錄');
@@ -197,21 +125,20 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
     double maxCalories = _weeklyNutrition
         .map((e) => e.calories)
         .reduce((a, b) => a > b ? a : b);
-    double yMax = maxCalories > _caloriesGoal 
-        ? (maxCalories * 1.2).ceilToDouble()
-        : (_caloriesGoal * 1.2).ceilToDouble();
+    maxCalories = maxCalories > _caloriesGoal ? maxCalories : _caloriesGoal;
+    double yMax = (maxCalories * 1.2).ceilToDouble();
 
     return Container(
       height: 250,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -259,7 +186,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                     return const SizedBox.shrink();
                   }
                   final date = _weeklyNutrition[value.toInt()].date;
-                  // ✅ 修正：直接使用中文星期簡稱
                   final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                   final weekdayIndex = date.weekday - 1;
                   
@@ -296,14 +222,15 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
               ),
               isCurved: true,
               color: Colors.green,
-              barWidth: 3,
+              barWidth: 3.5,
+              isStrokeCapRound: true,
               dotData: FlDotData(
                 show: true,
                 getDotPainter: (spot, percent, barData, index) {
                   return FlDotCirclePainter(
-                    radius: 4,
+                    radius: 5,
                     color: Colors.green,
-                    strokeWidth: 2,
+                    strokeWidth: 2.5,
                     strokeColor: Colors.white,
                   );
                 },
@@ -312,8 +239,8 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                 show: true,
                 gradient: LinearGradient(
                   colors: [
-                    Colors.green.withOpacity(0.3),
-                    Colors.green.withOpacity(0.05),
+                    Colors.green.withOpacity(0.4),
+                    Colors.green.withOpacity(0.08),
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -338,7 +265,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
     );
   }
 
-  // 三大營養素趨勢圖
+  // 三大營養素趨勢圖 - 優化版
   Widget _buildMacrosLineChart() {
     if (_weeklyNutrition.isEmpty) {
       return _buildEmptyChart('本週還沒有飲食記錄');
@@ -357,12 +284,12 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -406,7 +333,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: Text(
-                            '${value.toInt()}g',
+                            '${value.toInt()}',
                             style: const TextStyle(
                               fontSize: 11,
                               color: Colors.grey,
@@ -425,7 +352,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                           return const SizedBox.shrink();
                         }
                         final date = _weeklyNutrition[value.toInt()].date;
-                        // ✅ 修正：直接使用中文星期簡稱
                         final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                         final weekdayIndex = date.weekday - 1;
                         
@@ -462,7 +388,8 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                     ),
                     isCurved: true,
                     color: Colors.red,
-                    barWidth: 2.5,
+                    barWidth: 2.8,
+                    isStrokeCapRound: true,
                     dotData: const FlDotData(show: false),
                   ),
                   // 碳水
@@ -476,7 +403,8 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                     ),
                     isCurved: true,
                     color: Colors.blue,
-                    barWidth: 2.5,
+                    barWidth: 2.8,
+                    isStrokeCapRound: true,
                     dotData: const FlDotData(show: false),
                   ),
                   // 脂肪
@@ -490,7 +418,8 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                     ),
                     isCurved: true,
                     color: Colors.orange,
-                    barWidth: 2.5,
+                    barWidth: 2.8,
+                    isStrokeCapRound: true,
                     dotData: const FlDotData(show: false),
                   ),
                 ],
@@ -506,26 +435,34 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
     return Row(
       children: [
         Container(
-          width: 12,
-          height: 12,
+          width: 14,
+          height: 14,
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.4),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
         Text(
           label,
           style: const TextStyle(
-            fontSize: 12,
+            fontSize: 13,
             color: Colors.grey,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
     );
   }
 
-  // 喝水統計柱狀圖
+  // 喝水統計柱狀圖 - 優化版
   Widget _buildWaterBarChart() {
     if (_weeklyWater.isEmpty) {
       return _buildEmptyChart('本週還沒有喝水記錄');
@@ -541,12 +478,12 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -575,9 +512,9 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Text(
-                      '${value.toInt()}ml',
+                      '${value.toInt()}',
                       style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 11,
                         color: Colors.grey,
                       ),
                     ),
@@ -594,7 +531,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
                     return const SizedBox.shrink();
                   }
                   final date = _weeklyWater[value.toInt()].date;
-                  // ✅ 修正：直接使用中文星期簡稱
                   final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                   final weekdayIndex = date.weekday - 1;
                   
@@ -622,24 +558,21 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
           barGroups: List.generate(
             _weeklyWater.length,
             (index) {
-              final progress = _weeklyWater[index].progress;
-              final isCompleted = progress >= 100;
-              
               return BarChartGroupData(
                 x: index,
                 barRods: [
                   BarChartRodData(
                     toY: _weeklyWater[index].amount,
                     gradient: LinearGradient(
-                      colors: isCompleted
+                      colors: _weeklyWater[index].amount >= 2000
                           ? [Colors.blue, Colors.lightBlue.shade300]
                           : [Colors.grey.shade400, Colors.grey.shade300],
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
                     ),
-                    width: 24,
+                    width: 26,
                     borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(4),
+                      top: Radius.circular(6),
                     ),
                   ),
                 ],
@@ -653,11 +586,14 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
 
   Widget _buildEmptyChart(String message) {
     return Container(
-      height: 200,
+      height: 220,
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1.5,
+        ),
       ),
       child: Center(
         child: Column(
@@ -665,15 +601,24 @@ class _NutritionStatsPageState extends State<NutritionStatsPage> {
           children: [
             Icon(
               Icons.restaurant_outlined,
-              size: 48,
+              size: 56,
               color: Colors.grey.shade400,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
               message,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '開始記錄以查看統計',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade500,
               ),
             ),
           ],

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../chat_service_test_page.dart';
 
 class TraineeHomeTab extends StatefulWidget {
   const TraineeHomeTab({super.key});
@@ -80,7 +79,7 @@ class _TraineeHomeTabState extends State<TraineeHomeTab> {
               children: [
                 const SizedBox(height: 20),
                 Text(
-                  '嗨，$userName！',
+                  '嗨,$userName!',
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -175,24 +174,6 @@ class _TraineeHomeTabState extends State<TraineeHomeTab> {
                     style: TextStyle(
                       color: Colors.grey[600],
                       height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Center(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ChatServiceTestPage()),
-                        );
-                      },
-                      icon: const Icon(Icons.bug_report),
-                      label: const Text('測試 ChatService'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF3B82F6),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      ),
                     ),
                   ),
                 ],

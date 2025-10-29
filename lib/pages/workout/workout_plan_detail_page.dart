@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../models/workout_model.dart';
 import '../../services/workout_service.dart';
+import 'workout_execution_page.dart'; // ✅ 新增: 訓練執行頁面
 
 class WorkoutPlanDetailPage extends StatefulWidget {
   final WorkoutPlanModel plan;
@@ -200,6 +201,36 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
               PlannedExercise exercise = entry.value;
               return _buildExerciseItem(exercise, index + 1);
             }),
+            
+            // ✅ 新增: 開始訓練按鈕
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => WorkoutExecutionPage(
+                        workoutPlan: widget.plan,
+                        selectedDay: day,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('開始訓練'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ),
           ],
         ),
       ),

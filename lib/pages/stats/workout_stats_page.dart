@@ -58,7 +58,25 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
         foregroundColor: Colors.white,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                    strokeWidth: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '載入統計數據中...',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : RefreshIndicator(
               onRefresh: _loadData,
               child: SingleChildScrollView(
@@ -111,8 +129,9 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
         boxShadow: [
           BoxShadow(
             color: Colors.orange.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+            spreadRadius: 1,
           ),
         ],
       ),
@@ -177,13 +196,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
     );
   }
 
-  // 運動時長折線圖
+  // 運動時長折線圖 - 優化版
   Widget _buildDurationLineChart() {
     if (_weeklyStats.isEmpty) {
       return _buildEmptyChart('本週還沒有運動記錄');
     }
 
-    // 計算最大值，用於設定 Y 軸範圍
     double maxDuration = _weeklyStats
         .map((e) => e.duration.toDouble())
         .reduce((a, b) => a > b ? a : b);
@@ -194,12 +212,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -228,7 +246,7 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Text(
-                      '${value.toInt()}分',
+                      '${value.toInt()}',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Colors.grey,
@@ -247,7 +265,6 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
                     return const SizedBox.shrink();
                   }
                   final date = _weeklyStats[value.toInt()].date;
-                  // ✅ 修正：直接使用中文星期簡稱
                   final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                   final weekdayIndex = date.weekday - 1;
                   
@@ -284,6 +301,8 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
               isCurved: true,
               color: Colors.orange,
               barWidth: 3,
+              isStrokeCapRound: true,
+              isStrokeJoinRound: true,
               dotData: FlDotData(
                 show: true,
                 getDotPainter: (spot, percent, barData, index) {
@@ -313,13 +332,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
     );
   }
 
-  // 卡路里消耗柱狀圖
+  // 卡路里消耗柱狀圖 - 優化版
   Widget _buildCaloriesBarChart() {
     if (_weeklyStats.isEmpty) {
       return _buildEmptyChart('本週還沒有運動記錄');
     }
 
-    // 計算最大值
     double maxCalories = _weeklyStats
         .map((e) => e.calories)
         .reduce((a, b) => a > b ? a : b);
@@ -330,12 +348,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -383,7 +401,6 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
                     return const SizedBox.shrink();
                   }
                   final date = _weeklyStats[value.toInt()].date;
-                  // ✅ 修正：直接使用中文星期簡稱
                   final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                   final weekdayIndex = date.weekday - 1;
                   
@@ -425,7 +442,7 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
                   ),
                   width: 24,
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(4),
+                    top: Radius.circular(6),
                   ),
                 ),
               ],
@@ -436,7 +453,7 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
     );
   }
 
-  // 運動類型分布圓餅圖
+  // 運動類型分布圓餅圖 - 優化版
   Widget _buildTypePieChart() {
     if (_typeDistribution.isEmpty) {
       return _buildEmptyChart('本月還沒有運動記錄');
@@ -467,12 +484,20 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
           value: count.toDouble(),
           title: '${typeNames[type] ?? type}\n$count次',
           color: colors[colorIndex % colors.length],
-          radius: 100,
+          radius: 110,
           titleStyle: const TextStyle(
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.bold,
             color: Colors.white,
+            shadows: [
+              Shadow(
+                color: Colors.black26,
+                offset: Offset(1, 1),
+                blurRadius: 2,
+              ),
+            ],
           ),
+          titlePositionPercentageOffset: 0.55,
         ),
       );
       colorIndex++;
@@ -483,12 +508,12 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -502,14 +527,17 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
     );
   }
 
-  // 空資料提示卡片
+  // 空資料提示卡片 - 優化版
   Widget _buildEmptyChart(String message) {
     return Container(
-      height: 200,
+      height: 220,
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1.5,
+        ),
       ),
       child: Center(
         child: Column(
@@ -517,15 +545,24 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage> {
           children: [
             Icon(
               Icons.bar_chart_outlined,
-              size: 48,
+              size: 56,
               color: Colors.grey.shade400,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
               message,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '開始記錄以查看統計',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade500,
               ),
             ),
           ],

@@ -1,6 +1,61 @@
 // lib/models/workout_model.dart
+// 🔧 完全修正版 - 包含所有必要屬性
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// ========== 運動記錄模型 (WorkoutLog) ==========
+class WorkoutLog {
+  final String? id;
+  final String userId;
+  final String exerciseName;
+  final int sets;
+  final int reps;
+  final int? duration; // 分鐘
+  final double? caloriesBurned;
+  final String? notes;
+  final DateTime createdAt;
+
+  WorkoutLog({
+    this.id,
+    required this.userId,
+    required this.exerciseName,
+    required this.sets,
+    required this.reps,
+    this.duration,
+    this.caloriesBurned,
+    this.notes,
+    required this.createdAt,
+  });
+
+  factory WorkoutLog.fromFirestore(Map<String, dynamic> data, String docId) {
+    return WorkoutLog(
+      id: docId,
+      userId: data['userId'] ?? '',
+      exerciseName: data['exerciseName'] ?? '',
+      sets: data['sets'] ?? 0,
+      reps: data['reps'] ?? 0,
+      duration: data['duration'],
+      caloriesBurned: data['caloriesBurned']?.toDouble(),
+      notes: data['notes'],
+      createdAt: (data['createdAt'] as Timestamp).toDate(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'userId': userId,
+      'exerciseName': exerciseName,
+      'sets': sets,
+      'reps': reps,
+      if (duration != null) 'duration': duration,
+      if (caloriesBurned != null) 'caloriesBurned': caloriesBurned,
+      if (notes != null) 'notes': notes,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+  }
+}
+
+// ========== 運動記錄模型 (WorkoutModel) - 兼容舊版 ==========
 class WorkoutModel {
   final String? id;
   final String userId;
@@ -34,7 +89,6 @@ class WorkoutModel {
     required this.createdAt,
   });
 
-  // 從 Firestore 轉換
   factory WorkoutModel.fromFirestore(Map<String, dynamic> data, String docId) {
     return WorkoutModel(
       id: docId,
@@ -54,7 +108,6 @@ class WorkoutModel {
     );
   }
 
-  // 轉為 Firestore 格式
   Map<String, dynamic> toFirestore() {
     return {
       'userId': userId,
@@ -74,17 +127,17 @@ class WorkoutModel {
   }
 }
 
-// 訓練計畫模型
+// ========== 訓練計畫模型 ==========
 class WorkoutPlanModel {
   final String? id;
-  final String coachId; // 教練 ID
-  final String traineeId; // 學員 ID
-  final String planName; // 計畫名稱
-  final String? description; // 說明
+  final String coachId;
+  final String traineeId;
+  final String planName;
+  final String? description;
   final DateTime startDate;
   final DateTime? endDate;
-  final List<WorkoutPlanDay> days; // 每日訓練
-  final String status; // active, completed, cancelled
+  final List<WorkoutPlanDay> days;
+  final String status; // active, completed, cancelled, template
   final DateTime createdAt;
 
   WorkoutPlanModel({
@@ -126,16 +179,16 @@ class WorkoutPlanModel {
       if (description != null) 'description': description,
       'startDate': Timestamp.fromDate(startDate),
       if (endDate != null) 'endDate': Timestamp.fromDate(endDate!),
-      'days': days.map((day) => day.toMap()).toList(),
+      'days': days.map((day) => day.toFirestore()).toList(),
       'status': status,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
 }
 
-// 訓練計畫的每日項目
+// ========== 訓練計畫的每日項目 ==========
 class WorkoutPlanDay {
-  final String dayOfWeek; // monday, tuesday, etc.
+  final String dayOfWeek;
   final List<PlannedExercise> exercises;
 
   WorkoutPlanDay({
@@ -159,12 +212,14 @@ class WorkoutPlanDay {
       'exercises': exercises.map((ex) => ex.toMap()).toList(),
     };
   }
+
+  Map<String, dynamic> toFirestore() => toMap();
 }
 
-// 計畫中的運動項目
+// ========== 計畫中的運動項目 ==========
 class PlannedExercise {
   final String name;
-  final String type;
+  final String type; // 🔥 新增: weight_training, cardio, yoga, stretching
   final int? sets;
   final int? reps;
   final int? duration; // 分鐘
@@ -172,7 +227,7 @@ class PlannedExercise {
 
   PlannedExercise({
     required this.name,
-    required this.type,
+    this.type = 'weight_training', // 🔥 預設值
     this.sets,
     this.reps,
     this.duration,
@@ -182,7 +237,7 @@ class PlannedExercise {
   factory PlannedExercise.fromMap(Map<String, dynamic> data) {
     return PlannedExercise(
       name: data['name'] ?? '',
-      type: data['type'] ?? '',
+      type: data['type'] ?? 'weight_training', // 🔥 新增
       sets: data['sets'],
       reps: data['reps'],
       duration: data['duration'],
@@ -193,7 +248,7 @@ class PlannedExercise {
   Map<String, dynamic> toMap() {
     return {
       'name': name,
-      'type': type,
+      'type': type, // 🔥 新增
       if (sets != null) 'sets': sets,
       if (reps != null) 'reps': reps,
       if (duration != null) 'duration': duration,

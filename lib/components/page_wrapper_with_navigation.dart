@@ -7,7 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../components/modern_bottom_navigation.dart';
 import '../pages/chat_detail_page.dart';
-import '../chat_service_test_page.dart';
 import '../pages/coach_search_page.dart';
 import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
@@ -21,6 +20,10 @@ import '../pages/stats/dashboard_page.dart';
 import '../pages/stats/workout_stats_page.dart';
 import '../pages/stats/nutrition_stats_page.dart';
 import '../pages/settings/notification_settings_page.dart';
+
+// 🔥 新增：個人資料編輯頁面
+import '../pages/profile/coach_edit_page.dart';
+import '../pages/profile/trainee_edit_page.dart';
 
 class PageWrapperWithNavigation extends StatefulWidget {
   final bool isCoach;
@@ -948,9 +951,29 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     icon: Icons.edit_outlined,
                     title: '編輯個人資料',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('編輯個人資料功能 (開發中)')),
-                      );
+                      if (widget.isCoach) {
+                        // 教練 → CoachEditPage
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CoachEditPage(),
+                          ),
+                        ).then((_) {
+                          // 返回後重新載入用戶資料
+                          _initializeUserData();
+                        });
+                      } else {
+                        // 學員 → TraineeEditPage
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const TraineeEditPage(),
+                          ),
+                        ).then((_) {
+                          // 返回後重新載入用戶資料
+                          _initializeUserData();
+                        });
+                      }
                     },
                   ),
                   _buildProfileOption(

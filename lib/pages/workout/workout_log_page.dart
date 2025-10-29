@@ -1,4 +1,6 @@
 // lib/pages/workout/workout_log_page.dart
+// 🔧 修正版 - 修復類型錯誤和棄用警告
+
 import 'package:flutter/material.dart';
 import '../../services/workout_service.dart';
 import '../../models/workout_model.dart';
@@ -12,6 +14,8 @@ class WorkoutLogPage extends StatefulWidget {
 
 class _WorkoutLogPageState extends State<WorkoutLogPage> {
   final WorkoutService _workoutService = WorkoutService();
+  
+  // 🔥 修正: 使用正確的類型
   List<WorkoutModel> _todayWorkouts = [];
   Map<String, dynamic> _todaySummary = {};
   bool _isLoading = true;
@@ -25,7 +29,8 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   Future<void> _loadTodayWorkouts() async {
     setState(() => _isLoading = true);
     try {
-      final workouts = await _workoutService.getTodayWorkouts();
+      // 🔥 修正: 使用返回 WorkoutModel 的方法
+      final workouts = await _workoutService.getTodayWorkoutModels();
       final summary = await _workoutService.getTodayWorkoutSummary();
 
       setState(() {
@@ -79,7 +84,6 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  // 今日統計卡片
   Widget _buildTodaySummaryCard() {
     int totalDuration = _todaySummary['totalDuration'] ?? 0;
     double totalCalories = (_todaySummary['totalCalories'] ?? 0).toDouble();
@@ -94,7 +98,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.orange.withOpacity(0.3),
+            color: Colors.orange.withValues(alpha: 0.3), // 🔥 修正
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -116,7 +120,11 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildStatItem(Icons.timer, '$totalDuration', '分鐘'),
-              _buildStatItem(Icons.local_fire_department, '${totalCalories.toInt()}', '大卡'),
+              _buildStatItem(
+                Icons.local_fire_department,
+                '${totalCalories.toInt()}',
+                '大卡',
+              ),
               _buildStatItem(Icons.fitness_center, '$workoutCount', '次'),
             ],
           ),
@@ -149,7 +157,6 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  // 運動列表
   Widget _buildWorkoutList() {
     if (_todayWorkouts.isEmpty) {
       return Center(
@@ -162,16 +169,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
               '今天還沒有運動記錄',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _showAddWorkoutDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('新增運動'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
+            const SizedBox(height: 8),
+            Text(
+              '點擊右上角 + 新增運動',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -213,75 +214,63 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         typeColor = Colors.orange;
     }
 
-    return Container(
+    return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: typeColor.withValues(alpha: 0.1), // 🔥 修正
+            borderRadius: BorderRadius.circular(10),
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: typeColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
+          child: Icon(typeIcon, color: typeColor, size: 28),
+        ),
+        title: Text(
+          workout.name,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              '${workout.duration} 分鐘',
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
-            child: Icon(typeIcon, color: typeColor, size: 28),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  workout.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${workout.duration} 分鐘',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                ),
-                if (workout.sets != null && workout.reps != null)
-                  Text(
-                    '${workout.sets} 組 × ${workout.reps} 次',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                  ),
-              ],
-            ),
-          ),
-          if (workout.caloriesBurned != null)
-            Column(
-              children: [
-                const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
-                Text(
-                  '${workout.caloriesBurned!.toInt()}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+            if (workout.sets != null && workout.reps != null)
+              Text(
+                '${workout.sets} 組 × ${workout.reps} 次',
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+          ],
+        ),
+        trailing: workout.caloriesBurned != null
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.local_fire_department,
                     color: Colors.orange,
+                    size: 20,
                   ),
-                ),
-              ],
-            ),
-        ],
+                  Text(
+                    '${workout.caloriesBurned!.toInt()}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
 
-  // 新增運動對話框
   void _showAddWorkoutDialog() {
     showModalBottomSheet(
       context: context,
@@ -309,7 +298,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   }
 }
 
-// 新增運動對話框
+// ========== 新增運動對話框 ==========
 class AddWorkoutDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;
 
@@ -361,7 +350,10 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                 border: OutlineInputBorder(),
               ),
               items: _workoutTypes.entries
-                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .map((e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value),
+                      ))
                   .toList(),
               onChanged: (value) => setState(() => _selectedType = value!),
             ),
@@ -432,7 +424,8 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  if (_nameController.text.isEmpty || _durationController.text.isEmpty) {
+                  if (_nameController.text.isEmpty ||
+                      _durationController.text.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('請填寫必填欄位')),
                     );
@@ -463,7 +456,10 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: const Text('保存', style: TextStyle(fontSize: 16)),
+                child: const Text(
+                  '儲存',
+                  style: TextStyle(fontSize: 16),
+                ),
               ),
             ),
             const SizedBox(height: 16),

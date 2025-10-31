@@ -1,5 +1,5 @@
 // lib/components/page_wrapper_with_navigation.dart
-// 🔥 只添加側邊欄功能，保持原有排版和功能不變
+// ✅ 已整合新的訓練記錄功能 + 保持原有排版和功能不變
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -11,17 +11,19 @@ import '../pages/coach_search_page.dart';
 import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
 import '../services/food_database_service.dart';
-import '../pages/workout/workout_log_page.dart';
+
+// ✅ 修改：使用新的訓練記錄頁面
+import '../pages/improved_workout_log_page.dart';
 import '../pages/workout/workout_plan_list_page.dart';
 import '../pages/workout/create_workout_plan_page.dart';
 
-// 🔥 新增：統計和設定頁面
+// 統計和設定頁面
 import '../pages/stats/dashboard_page.dart';
 import '../pages/stats/workout_stats_page.dart';
 import '../pages/stats/nutrition_stats_page.dart';
 import '../pages/settings/notification_settings_page.dart';
 
-// 🔥 新增：個人資料編輯頁面
+// 個人資料編輯頁面
 import '../pages/profile/coach_edit_page.dart';
 import '../pages/profile/trainee_edit_page.dart';
 
@@ -244,6 +246,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 );
               },
             ),
+            // ✅ 修改：使用新的訓練記錄頁面
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -254,13 +257,16 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 child: const Icon(Icons.fitness_center, color: Colors.green),
               ),
               title: const Text('記錄訓練'),
-              subtitle: const Text('手動記錄訓練成果'),
+              subtitle: const Text('記錄今日訓練成果'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const WorkoutLogPage(),
+                    builder: (context) => const ImprovedWorkoutLogPage(
+                      isCoach: false,
+                      traineeId: null,
+                    ),
                   ),
                 );
               },
@@ -293,7 +299,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 新增：側邊欄內容
+  // 側邊欄內容
   Widget _buildDrawer() {
     return Drawer(
       child: Column(
@@ -475,7 +481,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      // 🔥 新增：側邊欄
       drawer: _buildDrawer(),
       body: Stack(
         children: [
@@ -512,7 +517,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 保持原有的首頁內容 - 完全不變
+  // 保持原有的首頁內容 - 完全不變
   Widget _buildHomePage() {
     if (widget.customHomePage != null) {
       return widget.customHomePage!;
@@ -598,7 +603,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 保持原有的第二頁內容 - 完全不變
+  // 保持原有的第二頁內容 - 完全不變
   Widget _buildSecondPage() {
     if (widget.isCoach) {
       return const StudentManagementPage();
@@ -607,7 +612,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 🔥 保持原有的聊天頁面 - 完全不變
+  // 保持原有的聊天頁面 - 完全不變
   Widget _buildChatPage() {
     return SafeArea(
       child: Padding(
@@ -844,7 +849,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 保持原有的個人頁面 - 完全不變
+  // 保持原有的個人頁面 - 完全不變
   Widget _buildProfilePage() {
     return SafeArea(
       child: Padding(
@@ -952,25 +957,21 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     title: '編輯個人資料',
                     onTap: () {
                       if (widget.isCoach) {
-                        // 教練 → CoachEditPage
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const CoachEditPage(),
                           ),
                         ).then((_) {
-                          // 返回後重新載入用戶資料
                           _initializeUserData();
                         });
                       } else {
-                        // 學員 → TraineeEditPage
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const TraineeEditPage(),
                           ),
                         ).then((_) {
-                          // 返回後重新載入用戶資料
                           _initializeUserData();
                         });
                       }
@@ -1009,7 +1010,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 保持原有的個人中心選項 - 完全不變
   Widget _buildProfileOption({
     required IconData icon,
     required String title,
@@ -1063,7 +1063,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 🔥 保持原有的登出功能 - 完全不變
   void _handleSignOut() async {
     bool? shouldSignOut = await showDialog<bool>(
       context: context,
@@ -1116,7 +1115,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 🔥 保持原有的初始化資料庫功能 - 完全不變
   void _initializeDatabase() async {
     bool? shouldInit = await showDialog<bool>(
       context: context,

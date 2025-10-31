@@ -72,6 +72,9 @@ dependencies:
   shared_preferences: ^2.2.2
   connectivity_plus: ^7.0.0
 
+  # HTTP 請求
+  http: ^1.2.0
+
 
 
 dev_dependencies:

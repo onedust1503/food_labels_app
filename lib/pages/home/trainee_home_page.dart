@@ -1,5 +1,5 @@
 // lib/pages/home/trainee_home_page.dart
-// 🔥 保留所有原有功能，只添加實時監聽營養資料
+// ✅ 已整合新的訓練記錄功能 + 保留所有原有功能
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -12,7 +12,10 @@ import '../water/water_log_page.dart';
 import '../../services/water_service.dart';
 import '../../components/weekly_summary_card.dart';
 import '../../services/workout_service.dart';
-import 'dart:async'; // ✅ 新增
+import 'dart:async';
+
+// ✅ 新增：導入新的訓練記錄頁面
+import '../improved_workout_log_page.dart';
 
 class TraineeHomePage extends StatefulWidget {
   const TraineeHomePage({super.key});
@@ -40,7 +43,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   String proteinAmount = '0/52g';
   String fatAmount = '0/122g';
 
-  // ✅ 新增：Stream 訂閱
+  // Stream 訂閱
   StreamSubscription<DocumentSnapshot>? _nutritionStreamSubscription;
 
   @override
@@ -49,7 +52,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     _initializeData();
   }
 
-  // ✅ 新增：取消訂閱
   @override
   void dispose() {
     _nutritionStreamSubscription?.cancel();
@@ -82,7 +84,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           realUserName = firebaseUser!.displayName ?? '學員';
         }
         
-        // ✅ 修改：改用實時監聽
+        // 實時監聽營養資料
         _listenToTodayNutrition();
       }
       
@@ -95,7 +97,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     }
   }
 
-  // ✅ 新增：實時監聽今日營養資料
   void _listenToTodayNutrition() {
     String userId = firebaseUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -152,10 +153,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     });
   }
 
-  // ✅ 保留：手動刷新功能
   Future<void> _loadTodayNutrition() async {
-    // 這個函數保留給刷新按鈕使用
-    // 實際資料已經透過 Stream 自動更新，這裡只顯示提示
     if (kDebugMode) {
       debugPrint('手動刷新（資料已自動同步）');
     }
@@ -833,15 +831,22 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           ),
         ),
         const SizedBox(width: 12),
+        // ✅ 修改：改用新的訓練記錄頁面
         Expanded(
           child: _buildActionButton(
             icon: Icons.fitness_center,
             label: '開始訓練',
             color: Colors.green,
             onTap: () {
-              if (kDebugMode) {
-                debugPrint('導航到訓練頁面');
-              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ImprovedWorkoutLogPage(
+                    isCoach: false,
+                    traineeId: null,
+                  ),
+                ),
+              );
             },
           ),
         ),

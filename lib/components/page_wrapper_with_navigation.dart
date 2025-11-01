@@ -1,5 +1,5 @@
 // lib/components/page_wrapper_with_navigation.dart
-// ✅ 已整合新的訓練記錄功能 + 保持原有排版和功能不變
+// ✅ 已整合新的訓練記錄功能 + 新增訓練計畫管理 + 保持原有排版和功能不變
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -12,10 +12,11 @@ import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
 import '../services/food_database_service.dart';
 
-// ✅ 修改：使用新的訓練記錄頁面
+// ✅ 修改：使用新的訓練記錄頁面和訓練計畫頁面
 import '../pages/improved_workout_log_page.dart';
 import '../pages/workout/workout_plan_list_page.dart';
 import '../pages/workout/create_workout_plan_page.dart';
+import '../pages/workout/coach_plans_management_page.dart';
 
 // 統計和設定頁面
 import '../pages/stats/dashboard_page.dart';
@@ -161,9 +162,9 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.fitness_center, color: Colors.green),
+                child: const Icon(Icons.add_chart, color: Colors.green),
               ),
-              title: const Text('新增訓練計畫'),
+              title: const Text('創建訓練計畫'),
               subtitle: const Text('為學員建立新的訓練課程'),
               onTap: () {
                 Navigator.pop(context);
@@ -182,14 +183,17 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.group_add, color: Colors.blue),
+                child: const Icon(Icons.list_alt, color: Colors.blue),
               ),
-              title: const Text('邀請學員'),
-              subtitle: const Text('邀請新學員加入課程'),
+              title: const Text('管理訓練計畫'),
+              subtitle: const Text('查看和管理所有訓練計畫'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('邀請學員功能 (開發中)')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CoachPlansManagementPage(),
+                  ),
                 );
               },
             ),
@@ -358,6 +362,40 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
+                // ✅ 新增：教練專屬訓練管理選項
+                if (widget.isCoach) ...[
+                  _buildDrawerHeader('💪 訓練管理'),
+                  _buildDrawerItem(
+                    icon: Icons.add_chart,
+                    title: '創建訓練計畫',
+                    subtitle: '為學員安排訓練',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CreateWorkoutPlanPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.list_alt,
+                    title: '管理訓練計畫',
+                    subtitle: '查看和管理所有計畫',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CoachPlansManagementPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(),
+                ],
+
                 // 📊 統計相關選項
                 _buildDrawerHeader('📊 數據統計'),
                 _buildDrawerItem(

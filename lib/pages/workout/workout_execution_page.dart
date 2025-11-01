@@ -1,19 +1,25 @@
 // lib/pages/workout/workout_execution_page.dart
-import 'package:flutter/material.dart';
-import 'dart:async';
-import '../../models/workout_model.dart';
-import '../../services/workout_service.dart';
+// 🎯 訓練執行頁面 - 計時器 + 組數記錄 + 保存訓練
+// ✅ 新增 planId 支援，用於追蹤訓練計畫
 
-/// 訓練執行頁面 - 互動式訓練模式
-/// 提供即時記錄、組間計時、自動日誌生成
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../../services/wger_api_service.dart';
+import '../../services/unified_workout_service.dart';
+
 class WorkoutExecutionPage extends StatefulWidget {
-  final WorkoutPlanModel workoutPlan;
-  final WorkoutPlanDay selectedDay;
+  final Exercise exercise;
+  final bool isCoach;
+  final String? traineeId;
+  final String? planId;  // ✅ 新增：訓練計畫 ID
 
   const WorkoutExecutionPage({
     super.key,
-    required this.workoutPlan,
-    required this.selectedDay,
+    required this.exercise,
+    required this.isCoach,
+    this.traineeId,
+    this.planId,  // ✅ 新增
   });
 
   @override
@@ -21,597 +27,751 @@ class WorkoutExecutionPage extends StatefulWidget {
 }
 
 class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
-  final WorkoutService _workoutService = WorkoutService();
-  final PageController _pageController = PageController();
-  
-  int _currentExerciseIndex = 0;
-  bool _isWorkoutStarted = false;
-  bool _isRestMode = false;
-  int _restSecondsRemaining = 0;
-  Timer? _restTimer;
-  
-  // 記錄每個動作的完成數據
-  late List<ExerciseProgress> _exerciseProgressList;
-  
-  DateTime? _workoutStartTime;
-  DateTime? _workoutEndTime;
+  final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
+
+  // 計時器相關
+  Timer? _timer;
+  int _seconds = 0;
+  bool _isRunning = false;
+
+  // 訓練記錄
+  final List<WorkoutSet> _sets = [];
+  final TextEditingController _repsController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
+
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeProgressTracking();
-  }
-
-  void _initializeProgressTracking() {
-    _exerciseProgressList = widget.selectedDay.exercises.map((exercise) {
-      int totalSets = exercise.sets ?? 3;
-      return ExerciseProgress(
-        exercise: exercise,
-        completedSets: List.generate(totalSets, (index) => SetData()),
-      );
-    }).toList();
+    
+    // ✅ 調試：顯示是否為計畫訓練
+    if (kDebugMode && widget.planId != null) {
+      debugPrint('📋 訓練執行（計畫模式）: planId = ${widget.planId}');
+    }
   }
 
   @override
   void dispose() {
-    _restTimer?.cancel();
-    _pageController.dispose();
+    _timer?.cancel();
+    _repsController.dispose();
+    _weightController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
-  void _startWorkout() {
+  /// 開始/暫停計時器
+  void _toggleTimer() {
+    if (_isRunning) {
+      _timer?.cancel();
+      setState(() => _isRunning = false);
+    } else {
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() => _seconds++);
+      });
+      setState(() => _isRunning = true);
+    }
+  }
+
+  /// 重置計時器
+  void _resetTimer() {
+    _timer?.cancel();
     setState(() {
-      _isWorkoutStarted = true;
-      _workoutStartTime = DateTime.now();
+      _seconds = 0;
+      _isRunning = false;
     });
   }
 
-  void _finishWorkout() async {
-    setState(() {
-      _workoutEndTime = DateTime.now();
-    });
+  /// 添加組數
+  void _addSet() {
+    final reps = int.tryParse(_repsController.text);
+    final weight = double.tryParse(_weightController.text);
 
-    // 顯示總結並儲存
-    await _showWorkoutSummary();
-  }
-
-  Future<void> _showWorkoutSummary() async {
-    int totalSets = 0;
-    int totalReps = 0;
-    double totalVolume = 0;
-
-    for (var progress in _exerciseProgressList) {
-      for (var set in progress.completedSets) {
-        if (set.isCompleted) {
-          totalSets++;
-          totalReps += set.reps ?? 0;
-          totalVolume += (set.weight ?? 0) * (set.reps ?? 0);
-        }
-      }
+    if (reps == null || reps <= 0) {
+      _showSnackBar('請輸入有效的次數');
+      return;
     }
 
-    int durationMinutes = _workoutEndTime!.difference(_workoutStartTime!).inMinutes;
+    setState(() {
+      _sets.add(WorkoutSet(
+        setNumber: _sets.length + 1,
+        reps: reps,
+        weight: weight,
+      ));
+      _repsController.clear();
+      _weightController.clear();
+    });
 
-    showDialog(
+    _showSnackBar('已新增第 ${_sets.length} 組');
+  }
+
+  /// 刪除組數
+  void _removeSet(int index) {
+    setState(() {
+      _sets.removeAt(index);
+      // 重新編號
+      for (int i = 0; i < _sets.length; i++) {
+        _sets[i] = _sets[i].copyWith(setNumber: i + 1);
+      }
+    });
+    _showSnackBar('已刪除組數');
+  }
+
+  /// 完成訓練
+  Future<void> _completeWorkout() async {
+    if (_sets.isEmpty && _seconds == 0) {
+      _showSnackBar('請至少記錄一組或使用計時器');
+      return;
+    }
+
+    // 確認對話框
+    final confirmed = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text(
-          '🎉 訓練完成！',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            const Text('完成訓練'),
+          ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSummaryRow('訓練時長', '$durationMinutes 分鐘'),
-            _buildSummaryRow('完成組數', '$totalSets 組'),
-            _buildSummaryRow('總次數', '$totalReps 次'),
-            _buildSummaryRow('總訓練量', '${totalVolume.toStringAsFixed(1)} kg'),
-            const SizedBox(height: 16),
-            const Text(
-              '繼續保持，你做得很棒！💪',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
+            Text(
+              '確定要完成「${widget.exercise.nameZhTw}」的訓練嗎？',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_sets.isNotEmpty)
+                    Text('📊 共 ${_sets.length} 組'),
+                  Text('⏱️ 訓練時長：${_formatDuration(_seconds)}'),
+                  // ✅ 新增：顯示是否為計畫訓練
+                  if (widget.planId != null)
+                    const Text(
+                      '📋 此訓練將計入計畫進度',
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              // TODO: 儲存訓練記錄到 Firebase
-              await _saveWorkoutLog();
-              if (mounted) {
-                Navigator.of(context).pop(); // 關閉對話框
-                Navigator.of(context).pop(); // 返回上一頁
-              }
-            },
-            child: const Text('完成', style: TextStyle(fontSize: 16)),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('確定'),
           ),
         ],
       ),
     );
-  }
 
-  Widget _buildSummaryRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 15,
-              color: Colors.grey,
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.orange,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+    if (confirmed != true) return;
+    if (!mounted) return;
 
-  Future<void> _saveWorkoutLog() async {
-    // TODO: 實作儲存到 Firebase
-    // 將 _exerciseProgressList 的數據儲存到 workoutLogs collection
-  }
+    setState(() => _isSaving = true);
 
-  void _startRestTimer(int seconds) {
-    setState(() {
-      _isRestMode = true;
-      _restSecondsRemaining = seconds;
-    });
+    try {
+      // 計算平均重量和總次數
+      double? avgWeight;
+      int totalReps = 0;
 
-    _restTimer?.cancel();
-    _restTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_restSecondsRemaining > 0) {
-          _restSecondsRemaining--;
-        } else {
-          _isRestMode = false;
-          timer.cancel();
+      if (_sets.isNotEmpty) {
+        final weights =
+            _sets.where((s) => s.weight != null).map((s) => s.weight!).toList();
+        if (weights.isNotEmpty) {
+          avgWeight = weights.reduce((a, b) => a + b) / weights.length;
         }
-      });
-    });
+        totalReps = _sets.map((s) => s.reps).reduce((a, b) => a + b);
+      }
+
+      // 計算平均次數
+      final avgReps = _sets.isNotEmpty 
+          ? (totalReps / _sets.length).round() 
+          : 0;
+
+      // ✅ 關鍵修改：保存訓練記錄時加上 planId
+      if (kDebugMode) {
+        debugPrint('💾 保存訓練記錄:');
+        debugPrint('   運動: ${widget.exercise.nameZhTw}');
+        debugPrint('   組數: ${_sets.length}');
+        debugPrint('   時長: ${(_seconds / 60).ceil()} 分鐘');
+        debugPrint('   planId: ${widget.planId ?? "null (自由訓練)"}');
+      }
+
+      await _workoutService.addWorkoutLog(
+        type: _mapCategoryToType(widget.exercise.category),
+        name: widget.exercise.nameZhTw,
+        duration: (_seconds / 60).ceil(), // 轉換為分鐘
+        sets: _sets.length,
+        reps: avgReps,
+        weight: avgWeight,
+        notes: _notesController.text.trim().isNotEmpty
+            ? _notesController.text.trim()
+            : null,
+        planId: widget.planId,  // ✅ 新增：傳入 planId（如果是從計畫開始的訓練）
+      );
+
+      if (kDebugMode) {
+        debugPrint('✅ 訓練記錄已保存');
+      }
+
+      if (!mounted) return;
+      
+      // ✅ 根據是否為計畫訓練顯示不同訊息
+      final message = widget.planId != null 
+          ? '訓練記錄已保存並計入計畫進度' 
+          : '訓練記錄已保存';
+      _showSnackBar(message);
+      
+      Navigator.pop(context, true); // 返回並標記完成
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 保存訓練失敗: $e');
+      }
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      _showSnackBar('保存失敗，請重試');
+    }
   }
 
-  void _skipRest() {
-    _restTimer?.cancel();
-    setState(() {
-      _isRestMode = false;
-      _restSecondsRemaining = 0;
-    });
+  /// 映射分類到類型
+  String _mapCategoryToType(String category) {
+    switch (category) {
+      case '有氧':
+        return 'cardio';
+      case '瑜伽':
+        return 'yoga';
+      case '伸展':
+        return 'stretching';
+      default:
+        return 'weight_training';
+    }
   }
 
-  void _moveToNextExercise() {
-    if (_currentExerciseIndex < widget.selectedDay.exercises.length - 1) {
-      setState(() {
-        _currentExerciseIndex++;
-        _pageController.animateToPage(
-          _currentExerciseIndex,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      });
-    } else {
-      _finishWorkout();
+  /// 格式化時長
+  String _formatDuration(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final secs = seconds % 60;
+
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isWorkoutStarted) {
-      return _buildPreWorkoutScreen();
-    }
-
-    if (_isRestMode) {
-      return _buildRestScreen();
-    }
-
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text(
-          '${_currentExerciseIndex + 1}/${widget.selectedDay.exercises.length}',
-          style: const TextStyle(fontSize: 18),
-        ),
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.stop),
-            onPressed: () {
-              showDialog(
+        backgroundColor: Colors.green,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () async {
+            if (_sets.isNotEmpty || _seconds > 0) {
+              final shouldExit = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('結束訓練？'),
-                  content: const Text('確定要結束今天的訓練嗎？'),
+                  title: const Text('確認離開'),
+                  content: const Text('你有未保存的訓練記錄，確定要離開嗎？'),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('繼續訓練'),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('取消'),
                     ),
                     TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                      },
-                      child: const Text('結束'),
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      child: const Text('離開'),
                     ),
                   ],
                 ),
               );
-            },
-          ),
-        ],
-      ),
-      body: PageView.builder(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: widget.selectedDay.exercises.length,
-        onPageChanged: (index) {
-          setState(() {
-            _currentExerciseIndex = index;
-          });
-        },
-        itemBuilder: (context, index) {
-          return _buildExerciseCard(_exerciseProgressList[index]);
-        },
-      ),
-    );
-  }
-
-  Widget _buildPreWorkoutScreen() {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.workoutPlan.planName),
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
+              
+              if (!mounted) return;
+              if (shouldExit == true) {
+                Navigator.pop(context);
+              }
+            } else {
+              Navigator.pop(context);
+            }
+          },
+        ),
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '今日訓練',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
             Text(
-              '共 ${widget.selectedDay.exercises.length} 個動作',
+              widget.exercise.nameZhTw,
               style: const TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: ListView.builder(
-                itemCount: widget.selectedDay.exercises.length,
-                itemBuilder: (context, index) {
-                  final exercise = widget.selectedDay.exercises[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.orange.withOpacity(0.2),
-                        child: Text(
-                          '${index + 1}',
-                          style: const TextStyle(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      title: Text(
-                        exercise.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        '${exercise.sets} 組 × ${exercise.reps} 次',
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: _startWorkout,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  '開始訓練',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRestScreen() {
-    return Scaffold(
-      backgroundColor: Colors.orange.shade50,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              '休息時間',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.orange,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
                 color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.orange.withOpacity(0.3),
-                    blurRadius: 20,
-                    spreadRadius: 5,
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  '$_restSecondsRemaining',
-                  style: const TextStyle(
-                    fontSize: 72,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange,
-                  ),
-                ),
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
               ),
             ),
-            const SizedBox(height: 48),
-            ElevatedButton(
-              onPressed: _skipRest,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 48,
-                  vertical: 16,
+            // ✅ 新增：顯示是否為計畫訓練
+            if (widget.planId != null)
+              Text(
+                '📋 計畫訓練',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 12,
                 ),
               ),
-              child: const Text(
-                '跳過休息',
-                style: TextStyle(fontSize: 16),
-              ),
-            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildExerciseCard(ExerciseProgress progress) {
-    PlannedExercise exercise = progress.exercise;
-    int currentSet = progress.currentSetIndex();
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 動作名稱
-          Text(
-            exercise.name,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            exercise.type,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[600],
-            ),
-          ),
-          if (exercise.notes != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
+      body: _isSaving
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
               ),
-              child: Row(
+            )
+          : SingleChildScrollView(
+              child: Column(
                 children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      exercise.notes!,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
+                  // ✅ 新增：計畫訓練提示橫幅
+                  if (widget.planId != null) _buildPlanModeBanner(),
+
+                  // 運動資訊卡片
+                  _buildExerciseInfoCard(),
+
+                  // 計時器卡片
+                  _buildTimerCard(),
+
+                  // 組數記錄卡片
+                  _buildSetsCard(),
+
+                  // 備註卡片
+                  _buildNotesCard(),
+
+                  // 完成按鈕
+                  _buildCompleteButton(),
+
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
-          ],
-          const SizedBox(height: 32),
-
-          // 組數進度
-          const Text(
-            '完成進度',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 組數列表
-          ...List.generate(progress.completedSets.length, (setIndex) {
-            return _buildSetRow(
-              progress,
-              setIndex,
-              currentSet == setIndex,
-            );
-          }),
-
-          const SizedBox(height: 32),
-
-          // 完成按鈕
-          if (currentSet < progress.completedSets.length)
-            _buildActionButton(progress, currentSet)
-          else
-            _buildNextExerciseButton(),
-        ],
-      ),
     );
   }
 
-  Widget _buildSetRow(ExerciseProgress progress, int setIndex, bool isCurrent) {
-    SetData setData = progress.completedSets[setIndex];
-    bool isCompleted = setData.isCompleted;
-
+  /// ✅ 新增：計畫訓練提示橫幅
+  Widget _buildPlanModeBanner() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isCompleted
-            ? Colors.green.shade50
-            : (isCurrent ? Colors.orange.shade50 : Colors.grey.shade50),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isCompleted
-              ? Colors.green
-              : (isCurrent ? Colors.orange : Colors.grey.shade300),
-          width: 2,
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade500],
         ),
       ),
       child: Row(
         children: [
-          // 組數標記
           Container(
-            width: 36,
-            height: 36,
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: isCompleted ? Colors.green : Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isCompleted ? Colors.green : Colors.grey.shade400,
-                width: 2,
-              ),
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(6),
             ),
-            child: Center(
-              child: isCompleted
-                  ? const Icon(Icons.check, color: Colors.white, size: 20)
-                  : Text(
-                      '${setIndex + 1}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 16),
-
-          // 重量輸入
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '重量 (kg)',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                if (!isCompleted && isCurrent)
-                  TextField(
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      hintText: '0',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    onChanged: (value) {
-                      setData.weight = double.tryParse(value);
-                    },
-                  )
-                else
-                  Text(
-                    setData.weight?.toString() ?? '-',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-              ],
+            child: const Icon(
+              Icons.event_note,
+              color: Colors.white,
+              size: 18,
             ),
           ),
           const SizedBox(width: 12),
-
-          // 次數輸入
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '次數',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+            child: Text(
+              '此次訓練將計入計畫進度',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.95),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const Icon(
+            Icons.check_circle,
+            color: Colors.white,
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 運動資訊卡片
+  Widget _buildExerciseInfoCard() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                if (!isCompleted && isCurrent)
-                  TextField(
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      hintText: '0',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
+                child: const Icon(
+                  Icons.fitness_center,
+                  color: Colors.green,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.exercise.nameZhTw,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    onChanged: (value) {
-                      setData.reps = int.tryParse(value);
-                    },
-                  )
-                else
-                  Text(
-                    setData.reps?.toString() ?? '-',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        widget.exercise.category,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.green,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (widget.exercise.muscles.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.accessibility_new,
+                    size: 16, color: Colors.grey.shade600),
+                const SizedBox(width: 8),
+                Text(
+                  '目標肌群：',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.exercise.muscles.join(', '),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
                     ),
                   ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 計時器卡片
+  Widget _buildTimerCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withValues(alpha: 0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.timer, color: Colors.white, size: 24),
+              const SizedBox(width: 8),
+              const Text(
+                '訓練計時',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text(
+            _formatDuration(_seconds),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 48,
+              fontWeight: FontWeight.bold,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _toggleTimer,
+                icon: Icon(_isRunning ? Icons.pause : Icons.play_arrow),
+                label: Text(_isRunning ? '暫停' : '開始'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.blue.shade600,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: _resetTimer,
+                icon: const Icon(Icons.refresh),
+                label: const Text('重置'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white, width: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 組數記錄卡片
+  Widget _buildSetsCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.format_list_numbered,
+                    color: Colors.green.shade700, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  '組數記錄',
+                  style: TextStyle(
+                    color: Colors.green.shade700,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '共 ${_sets.length} 組',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          
+          // 組數列表
+          if (_sets.isNotEmpty) ...[
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _sets.length,
+              separatorBuilder: (context, index) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final set = _sets[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.green.withValues(alpha: 0.1),
+                    child: Text(
+                      '${set.setNumber}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    '${set.reps} 次${set.weight != null ? ' @ ${set.weight}kg' : ''}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _removeSet(index),
+                  ),
+                );
+              },
+            ),
+            const Divider(height: 1),
+          ],
+
+          // 新增組數表單
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _repsController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: '次數 *',
+                          hintText: '例：10',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _weightController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: '重量 (kg)',
+                          hintText: '例：20',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _addSet,
+                    icon: const Icon(Icons.add),
+                    label: const Text('新增組數'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -620,112 +780,105 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
     );
   }
 
-  Widget _buildActionButton(ExerciseProgress progress, int currentSet) {
-    SetData currentSetData = progress.completedSets[currentSet];
-
-    return SizedBox(
-      width: double.infinity,
-      height: 54,
-      child: ElevatedButton(
-        onPressed: () {
-          if (currentSetData.weight == null || currentSetData.reps == null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('請輸入重量和次數')),
-            );
-            return;
-          }
-
-          setState(() {
-            currentSetData.isCompleted = true;
-          });
-
-          // 如果還有下一組，開始休息計時
-          if (currentSet < progress.completedSets.length - 1) {
-            _startRestTimer(90); // 預設休息 90 秒
-          } else {
-            // 本動作已完成所有組數
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('本動作已完成！'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.orange,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+  /// 備註卡片
+  Widget _buildNotesCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
           ),
-        ),
-        child: Text(
-          currentSet < progress.completedSets.length - 1
-              ? '完成第 ${currentSet + 1} 組'
-              : '完成動作',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.note_alt, color: Colors.green.shade700, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  '備註',
+                  style: TextStyle(
+                    color: Colors.green.shade700,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: '記錄今日訓練的感受或特殊情況...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                contentPadding: const EdgeInsets.all(16),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildNextExerciseButton() {
-    return SizedBox(
+  /// 完成按鈕
+  Widget _buildCompleteButton() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       width: double.infinity,
-      height: 54,
-      child: ElevatedButton(
-        onPressed: _moveToNextExercise,
+      child: ElevatedButton.icon(
+        onPressed: _isSaving ? null : _completeWorkout,
+        icon: const Icon(Icons.check_circle, size: 24),
+        label: const Text(
+          '完成訓練',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green,
           foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
-        child: Text(
-          _currentExerciseIndex == widget.selectedDay.exercises.length - 1
-              ? '完成訓練'
-              : '下一個動作',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          elevation: 5,
         ),
       ),
     );
   }
 }
 
-// ========== 數據模型 ==========
+/// 組數記錄模型
+class WorkoutSet {
+  final int setNumber;
+  final int reps;
+  final double? weight;
 
-class ExerciseProgress {
-  final PlannedExercise exercise;
-  final List<SetData> completedSets;
-
-  ExerciseProgress({
-    required this.exercise,
-    required this.completedSets,
-  });
-
-  int currentSetIndex() {
-    for (int i = 0; i < completedSets.length; i++) {
-      if (!completedSets[i].isCompleted) {
-        return i;
-      }
-    }
-    return completedSets.length; // 全部完成
-  }
-
-  bool isFullyCompleted() {
-    return completedSets.every((set) => set.isCompleted);
-  }
-}
-
-class SetData {
-  double? weight;
-  int? reps;
-  bool isCompleted;
-
-  SetData({
+  WorkoutSet({
+    required this.setNumber,
+    required this.reps,
     this.weight,
-    this.reps,
-    this.isCompleted = false,
   });
+
+  WorkoutSet copyWith({
+    int? setNumber,
+    int? reps,
+    double? weight,
+  }) {
+    return WorkoutSet(
+      setNumber: setNumber ?? this.setNumber,
+      reps: reps ?? this.reps,
+      weight: weight ?? this.weight,
+    );
+  }
 }

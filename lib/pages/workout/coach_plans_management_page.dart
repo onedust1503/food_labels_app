@@ -1,9 +1,9 @@
 // lib/pages/workout/coach_plans_management_page.dart
-// 📊 教練端訓練計畫管理 - 完整修正版
-// ✅ 修正學員名稱載入邏輯
-// ✅ 改進詳情對話框樣式
-// ✅ 只顯示自己創建的計畫
-// ✅ 實時追蹤完成進度
+// 📊 教練端訓練計畫管理 - 完整適配你的 Firebase 資料結構
+// ✅ 只顯示自己創建的計畫（coachId 過濾）
+// ✅ 實時追蹤完成進度（從 workoutLogs 查詢 planId）
+// ✅ 正確顯示學員名稱（從 users 讀取）
+// ✅ 支援刪除、查看詳情
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,8 +15,7 @@ class CoachPlansManagementPage extends StatefulWidget {
   const CoachPlansManagementPage({super.key});
 
   @override
-  State<CoachPlansManagementPage> createState() =>
-      _CoachPlansManagementPageState();
+  State<CoachPlansManagementPage> createState() => _CoachPlansManagementPageState();
 }
 
 class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
@@ -56,6 +55,13 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
   Widget build(BuildContext context) {
     final currentCoachId = _auth.currentUser?.uid;
     
+    if (currentCoachId == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('訓練計畫管理')),
+        body: const Center(child: Text('請先登入')),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -83,15 +89,17 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildPlansList(isActive: true, coachId: currentCoachId!),
+                _buildPlansList(isActive: true, coachId: currentCoachId),
                 _buildPlansList(isActive: false, coachId: currentCoachId),
               ],
             ),
     );
   }
 
+  /// 📋 計畫列表
   Widget _buildPlansList({required bool isActive, required String coachId}) {
     return StreamBuilder<QuerySnapshot>(
+      // ✅ 關鍵：只查詢該教練創建的計畫
       stream: _firestore
           .collection('workoutPlans')
           .where('coachId', isEqualTo: coachId)
@@ -110,10 +118,12 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
           return _buildEmptyState(isActive);
         }
 
+        // 🔍 過濾：根據進行中/已完成狀態
         final plans = snapshot.data!.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final status = data['status'] ?? 'active';
           
+          // 判斷是否已過期
           DateTime? endDate;
           try {
             if (data['endDate'] != null) {
@@ -129,6 +139,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
           
           final isExpired = endDate != null && endDate.isBefore(DateTime.now());
           
+          // 根據 Tab 決定顯示哪些計畫
           if (isActive) {
             return status != 'completed' && !isExpired;
           } else {
@@ -151,6 +162,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     );
   }
 
+  /// 🎨 空狀態顯示
   Widget _buildEmptyState(bool isActive) {
     return Center(
       child: Column(
@@ -170,16 +182,29 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
               fontWeight: FontWeight.w500,
             ),
           ),
+          if (isActive) ...[
+            const SizedBox(height: 8),
+            Text(
+              '點擊右上角 + 創建新計畫',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade500,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
+  /// 🎴 計畫卡片
   Widget _buildPlanCard(DocumentSnapshot doc, {required bool isActive}) {
     final data = doc.data() as Map<String, dynamic>;
     final planName = data['planName'] ?? '未命名計畫';
     final traineeId = data['traineeId'] as String;
+    final description = data['description'] as String?;
     
+    // 🗓️ 解析日期
     DateTime startDate = DateTime.now();
     DateTime? endDate;
     
@@ -201,6 +226,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
       if (kDebugMode) debugPrint('解析日期失敗: $e');
     }
     
+    // 📊 計算訓練天數和動作數
     final days = (data['days'] as List<dynamic>?) ?? [];
     final totalExercises = days.fold<int>(
       0,
@@ -237,6 +263,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 🎯 標題列
                 Row(
                   children: [
                     Container(
@@ -266,7 +293,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                             ),
                           ),
                           const SizedBox(height: 4),
-                          // ✅ 使用 FutureBuilder 正確載入學員名稱
+                          // ✅ 學員名稱（使用 FutureBuilder）
                           FutureBuilder<DocumentSnapshot>(
                             future: _firestore.collection('users').doc(traineeId).get(),
                             builder: (context, snapshot) {
@@ -275,7 +302,8 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                                 final userData = snapshot.data!.data() as Map<String, dynamic>;
                                 traineeName = userData['displayName'] ?? '未命名學員';
                               } else if (snapshot.hasError || 
-                                        (snapshot.connectionState == ConnectionState.done && !snapshot.hasData)) {
+                                        (snapshot.connectionState == ConnectionState.done && 
+                                         !snapshot.hasData)) {
                                 traineeName = '未知學員';
                               }
 
@@ -331,8 +359,42 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                       ),
                   ],
                 ),
+                
+                // 📝 說明（如果有）
+                if (description != null && description.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            description,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue.shade700,
+                              height: 1.4,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                
                 const SizedBox(height: 16),
                 
+                // 📊 統計資訊
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -349,6 +411,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                 ),
                 const SizedBox(height: 12),
 
+                // 📅 日期範圍
                 Row(
                   children: [
                     Icon(Icons.event_available, size: 16, color: Colors.grey.shade600),
@@ -364,13 +427,15 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                   ],
                 ),
 
+                // ✅ 進度條（只在進行中顯示）
                 if (isActive) ...[
                   const SizedBox(height: 16),
+                  // 🔥 關鍵：從 workoutLogs 查詢完成記錄
                   StreamBuilder<QuerySnapshot>(
                     stream: _firestore
                         .collection('workoutLogs')
                         .where('userId', isEqualTo: traineeId)
-                        .where('planId', isEqualTo: doc.id)
+                        .where('planId', isEqualTo: doc.id)  // ✅ 關鍵過濾條件
                         .snapshots(),
                     builder: (context, logSnapshot) {
                       int completedSessions = 0;
@@ -430,6 +495,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     );
   }
 
+  /// 🏷️ 統計標籤
   Widget _buildStatChip(IconData icon, String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -456,6 +522,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     );
   }
 
+  /// 👁️ 查看計畫詳情
   Future<void> _viewPlanDetail(String planId, Map<String, dynamic> data, String traineeId) async {
     await showDialog(
       context: context,
@@ -467,6 +534,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     );
   }
 
+  /// 🗑️ 刪除計畫
   Future<void> _deletePlan(String planId, String planName) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -507,13 +575,14 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     }
   }
 
+  /// 📅 格式化日期
   String _formatDate(DateTime date) {
     return DateFormat('yyyy/MM/dd').format(date);
   }
 }
 
 // ===================================
-// 📌 計畫詳情對話框 - 改進版
+// 📌 計畫詳情對話框
 // ===================================
 
 class PlanDetailDialog extends StatelessWidget {
@@ -557,7 +626,7 @@ class PlanDetailDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ✅ 改進的標題欄
+            // 🎨 標題欄
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -597,7 +666,7 @@ class PlanDetailDialog extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // ✅ 顯示學員名稱
+                  // 👤 學員名稱
                   FutureBuilder<DocumentSnapshot>(
                     future: FirebaseFirestore.instance.collection('users').doc(traineeId).get(),
                     builder: (context, snapshot) {
@@ -626,7 +695,7 @@ class PlanDetailDialog extends StatelessWidget {
               ),
             ),
 
-            // ✅ 改進的說明區域
+            // 📝 說明區域
             if (description != null && description.isNotEmpty) ...[
               Container(
                 margin: const EdgeInsets.all(16),
@@ -682,7 +751,7 @@ class PlanDetailDialog extends StatelessWidget {
               ),
             ],
 
-            // 訓練內容
+            // 📋 訓練內容
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -701,6 +770,7 @@ class PlanDetailDialog extends StatelessWidget {
     );
   }
 
+  /// 📅 單日訓練卡片
   Widget _buildDayCard(Map<String, dynamic> day) {
     final dayOfWeek = day['dayOfWeek'] as String;
     final exercises = (day['exercises'] as List<dynamic>?) ?? [];

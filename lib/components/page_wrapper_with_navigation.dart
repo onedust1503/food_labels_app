@@ -1,5 +1,8 @@
 // lib/components/page_wrapper_with_navigation.dart
-// ✅ 已整合新的訓練記錄功能 + 新增訓練計畫管理 + 保持原有排版和功能不變
+// ✅ 修正版 - 整合訓練計畫管理功能
+// 📌 教練端：快速操作加入「創建計畫」和「管理計畫」
+// 📌 學員端：快速操作加入「查看計畫」和「記錄訓練」
+// 📌 側邊欄：加入訓練管理專區（僅教練）
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -7,7 +10,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../components/modern_bottom_navigation.dart';
 import '../pages/chat_detail_page.dart';
-import '../pages/coach_search_page.dart';
 import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
 import '../services/food_database_service.dart';
@@ -127,6 +129,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
+  /// ✅ 教練快速操作 - 修正版
   void _showCoachQuickActions() {
     showModalBottomSheet(
       context: context,
@@ -155,6 +158,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 20),
+            
+            // ✅ 創建訓練計畫
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -176,6 +181,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 );
               },
             ),
+            
+            // ✅ 管理訓練計畫
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -197,6 +204,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 );
               },
             ),
+            
             const SizedBox(height: 20),
           ],
         ),
@@ -204,6 +212,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
+  /// ✅ 學員快速操作 - 修正版
   void _showStudentQuickActions() {
     showModalBottomSheet(
       context: context,
@@ -232,25 +241,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 20),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.camera_alt, color: Color(0xFF3B82F6)),
-              ),
-              title: const Text('營養掃描'),
-              subtitle: const Text('拍照記錄飲食營養'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('營養掃描功能 (開發中)')),
-                );
-              },
-            ),
-            // ✅ 修改：使用新的訓練記錄頁面
+            
+            // ✅ 記錄訓練（自由訓練，不帶 planId）
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -261,7 +253,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 child: const Icon(Icons.fitness_center, color: Colors.green),
               ),
               title: const Text('記錄訓練'),
-              subtitle: const Text('記錄今日訓練成果'),
+              subtitle: const Text('記錄今日自由訓練'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -270,11 +262,14 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     builder: (context) => const ImprovedWorkoutLogPage(
                       isCoach: false,
                       traineeId: null,
+                      planId: null,  // ✅ 自由訓練，沒有 planId
                     ),
                   ),
                 );
               },
             ),
+            
+            // ✅ 查看訓練計畫
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -295,7 +290,28 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                   ),
                 );
               },
-            ),          
+            ),
+            
+            // 營養掃描（暫未實作）
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.camera_alt, color: Color(0xFF3B82F6)),
+              ),
+              title: const Text('營養掃描'),
+              subtitle: const Text('拍照記錄飲食營養'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('營養掃描功能 (開發中)')),
+                );
+              },
+            ),
+            
             const SizedBox(height: 20),
           ],
         ),
@@ -303,7 +319,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 側邊欄內容
+  // ✅ 側邊欄內容 - 修正版
   Widget _buildDrawer() {
     return Drawer(
       child: Column(
@@ -362,7 +378,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                // ✅ 新增：教練專屬訓練管理選項
+                // ✅ 教練專屬訓練管理選項
                 if (widget.isCoach) ...[
                   _buildDrawerHeader('💪 訓練管理'),
                   _buildDrawerItem(
@@ -555,7 +571,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 保持原有的首頁內容 - 完全不變
+  // ==================== 以下保持原有頁面內容不變 ====================
+
   Widget _buildHomePage() {
     if (widget.customHomePage != null) {
       return widget.customHomePage!;
@@ -566,7 +583,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
         padding: const EdgeInsets.only(bottom: 110),
         child: Column(
           children: [
-            // 頂部歡迎區域
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -609,7 +625,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 24),
-            // 內容區域
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -641,7 +656,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 保持原有的第二頁內容 - 完全不變
   Widget _buildSecondPage() {
     if (widget.isCoach) {
       return const StudentManagementPage();
@@ -650,7 +664,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 保持原有的聊天頁面 - 完全不變
   Widget _buildChatPage() {
     return SafeArea(
       child: Padding(
@@ -715,7 +728,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     );
                   }
 
-                  // 在本地排序聊天室（按最後訊息時間）
                   List<QueryDocumentSnapshot> chatRooms = snapshot.data!.docs.toList();
                   chatRooms.sort((a, b) {
                     var aData = a.data() as Map<String, dynamic>;
@@ -887,7 +899,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // 保持原有的個人頁面 - 完全不變
   Widget _buildProfilePage() {
     return SafeArea(
       child: Padding(
@@ -903,7 +914,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 24),
-            // 用戶資料卡片
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -986,7 +996,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               ),
             ),
             const SizedBox(height: 24),
-            // 功能選項
             Expanded(
               child: Column(
                 children: [
@@ -1170,7 +1179,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
           ),
           content: const Text(
             '這將會在 Firestore 中建立基礎食物資料庫。\n\n'
-            '如果資料庫已存在，將不會重複建立。\n\n'
+            '如果資料庫已存在,將不會重複建立。\n\n'
             '確定要執行嗎？',
           ),
           actions: [

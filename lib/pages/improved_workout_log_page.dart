@@ -1,5 +1,6 @@
 // lib/pages/improved_workout_log_page.dart
-// ✨ 改進的訓練記錄頁面 - 生產版本（無調試信息）
+// ✨ 改進的訓練記錄頁面 - 支援訓練計畫追蹤
+// ✅ 新增 planId 參數，用於追蹤來自訓練計畫的記錄
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -10,11 +11,13 @@ import 'exercise_selection_page.dart';
 class ImprovedWorkoutLogPage extends StatefulWidget {
   final bool isCoach;
   final String? traineeId;
+  final String? planId;  // ✅ 新增：訓練計畫 ID（如果是從計畫開始的訓練）
 
   const ImprovedWorkoutLogPage({
     super.key,
     required this.isCoach,
     this.traineeId,
+    this.planId,  // ✅ 新增
   });
 
   @override
@@ -41,6 +44,11 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
   void initState() {
     super.initState();
     _loadData();
+    
+    // ✅ 調試：顯示是否為計畫訓練
+    if (kDebugMode && widget.planId != null) {
+      debugPrint('📋 訓練計畫模式: planId = ${widget.planId}');
+    }
   }
 
   /// 載入所有數據
@@ -151,12 +159,27 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
       appBar: AppBar(
         backgroundColor: Colors.green,
         elevation: 0,
-        title: const Text(
-          '訓練記錄',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '訓練記錄',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            // ✅ 新增：顯示是否為計畫訓練
+            if (widget.planId != null)
+              Text(
+                '📋 計畫訓練',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 12,
+                ),
+              ),
+          ],
         ),
         actions: [
           IconButton(
@@ -179,6 +202,9 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
+                    // ✅ 新增：計畫訓練提示卡片
+                    if (widget.planId != null) _buildPlanModeInfoCard(),
+
                     // 今日統計卡片
                     _buildTodayStatsCard(),
 
@@ -193,12 +219,14 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
+          // ✅ 修改：傳遞 planId 到運動選擇頁面
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ExerciseSelectionPage(
                 isCoach: widget.isCoach,
                 traineeId: widget.traineeId,
+                planId: widget.planId,  // ✅ 傳遞 planId
               ),
             ),
           );
@@ -216,6 +244,74 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
             fontWeight: FontWeight.bold,
           ),
         ),
+      ),
+    );
+  }
+
+  /// ✅ 新增：計畫訓練提示卡片
+  Widget _buildPlanModeInfoCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.event_note,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '訓練計畫模式',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '此次訓練將計入計畫進度',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.check_circle,
+            color: Colors.white,
+            size: 28,
+          ),
+        ],
       ),
     );
   }
@@ -500,6 +596,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     final reps = workout['reps'];
     final weight = workout['weight'];
     final workoutId = workout['id'] ?? '';
+    final hasplanId = workout['planId'] != null;  // ✅ 新增：檢查是否有 planId
 
     return Dismissible(
       key: Key(workoutId),
@@ -538,21 +635,49 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.green.withValues(alpha: 0.1),
+            // ✅ 新增：計畫訓練使用藍色，自由訓練使用綠色
+            color: hasplanId 
+                ? Colors.blue.withValues(alpha: 0.1)
+                : Colors.green.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(
-            Icons.fitness_center,
-            color: Colors.green,
+          child: Icon(
+            // ✅ 新增：計畫訓練顯示不同圖示
+            hasplanId ? Icons.event_note : Icons.fitness_center,
+            color: hasplanId ? Colors.blue : Colors.green,
             size: 24,
           ),
         ),
-        title: Text(
-          name,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            // ✅ 新增：計畫訓練標籤
+            if (hasplanId)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                ),
+                child: const Text(
+                  '計畫',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,8 +1,9 @@
 // lib/pages/workout/workout_plan_detail_page.dart
+// ✅ 修復版本：正確使用 WorkoutExecutionPage
 import 'package:flutter/material.dart';
 import '../../models/workout_model.dart';
 import '../../services/workout_service.dart';
-import 'workout_execution_page.dart'; // ✅ 新增: 訓練執行頁面
+import '../improved_workout_log_page.dart';  // ✅ 改用 ImprovedWorkoutLogPage
 
 class WorkoutPlanDetailPage extends StatefulWidget {
   final WorkoutPlanModel plan;
@@ -73,11 +74,11 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
           colors: [Colors.orange, Colors.deepOrange],
         ),
-        borderRadius: const BorderRadius.only(
+        borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(30),
           bottomRight: Radius.circular(30),
         ),
@@ -202,18 +203,20 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
               return _buildExerciseItem(exercise, index + 1);
             }),
             
-            // ✅ 新增: 開始訓練按鈕
+            // ✅ 修復：使用正確的頁面和參數
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
+                  // ✅ 跳轉到 ImprovedWorkoutLogPage，傳入 planId
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => WorkoutExecutionPage(
-                        workoutPlan: widget.plan,
-                        selectedDay: day,
+                      builder: (context) => ImprovedWorkoutLogPage(
+                        isCoach: false,  // 學員從計畫開始訓練
+                        traineeId: null,
+                        planId: widget.plan.id,  // ✅ 傳入計畫 ID
                       ),
                     ),
                   );

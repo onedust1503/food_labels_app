@@ -1,19 +1,22 @@
 // lib/pages/workout/exercise_selection_page.dart
 // 🎯 運動選擇頁面 - 整合 WGER API + 優化搜尋篩選
+// ✅ 新增 planId 支援，用於追蹤訓練計畫
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/wger_api_service.dart';
-import 'workout_execution_page.dart';
+import 'workout/workout_execution_page.dart';
 
 class ExerciseSelectionPage extends StatefulWidget {
   final bool isCoach;
   final String? traineeId;
+  final String? planId;  // ✅ 新增：訓練計畫 ID
 
   const ExerciseSelectionPage({
     super.key,
     required this.isCoach,
     this.traineeId,
+    this.planId,  // ✅ 新增
   });
 
   @override
@@ -46,6 +49,11 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     super.initState();
     _loadExercises();
     _searchController.addListener(_filterExercises);
+    
+    // ✅ 調試：顯示是否為計畫訓練
+    if (kDebugMode && widget.planId != null) {
+      debugPrint('📋 運動選擇（計畫模式）: planId = ${widget.planId}');
+    }
   }
 
   @override
@@ -107,6 +115,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
           exercise: exercise,
           isCoach: widget.isCoach,
           traineeId: widget.traineeId,
+          planId: widget.planId,  // ✅ 新增：傳遞 planId
         ),
       ),
     ).then((completed) {
@@ -139,16 +148,34 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          '選擇運動',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '選擇運動',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            // ✅ 新增：顯示是否為計畫訓練
+            if (widget.planId != null)
+              Text(
+                '📋 計畫訓練',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 12,
+                ),
+              ),
+          ],
         ),
       ),
       body: Column(
         children: [
+          // ✅ 新增：計畫訓練提示橫幅
+          if (widget.planId != null) _buildPlanModeBanner(),
+
           // 搜尋和篩選區域
           Container(
             decoration: BoxDecoration(
@@ -277,6 +304,51 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                           },
                         ),
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ✅ 新增：計畫訓練提示橫幅
+  Widget _buildPlanModeBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade500],
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(
+              Icons.event_note,
+              color: Colors.white,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '此次訓練將計入計畫進度',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.95),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const Icon(
+            Icons.check_circle,
+            color: Colors.white,
+            size: 20,
           ),
         ],
       ),

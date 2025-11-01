@@ -1,4 +1,4 @@
-// lib/pages/workout/workout_execution_page.dart
+/* // lib/pages/workout/workout_execution_page.dart
 // 🎯 訓練執行頁面 - 計時器 + 組數記錄 + 保存訓練
 
 import 'dart:async';
@@ -750,4 +750,4 @@ class WorkoutSet {
       weight: weight ?? this.weight,
     );
   }
-}
+} */

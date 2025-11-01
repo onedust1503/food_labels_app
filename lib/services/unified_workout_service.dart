@@ -22,6 +22,7 @@ class UnifiedWorkoutService {
     double? caloriesBurned,
     String? intensity,
     String? notes,
+    String? planId,
   }) async {
     if (_currentUserId == null) throw Exception('用戶未登入');
 
@@ -44,6 +45,7 @@ class UnifiedWorkoutService {
       'caloriesBurned': calories,
       if (intensity != null) 'intensity': intensity,
       if (notes != null) 'notes': notes,
+      if (planId != null) 'planId': planId,
       'createdAt': FieldValue.serverTimestamp(),
       'timestamp': now.millisecondsSinceEpoch,
     };

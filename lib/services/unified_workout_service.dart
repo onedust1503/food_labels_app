@@ -1,5 +1,5 @@
 // lib/services/unified_workout_service.dart
-// 🔧 統一訓練記錄服務 - 增強版：詳細調試 + 更強容錯
+// 🔧 統一訓練記錄服務 - 完整版：包含訓練計畫功能
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,13 +11,15 @@ class UnifiedWorkoutService {
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
+  // ========== 運動記錄相關 ==========
+
   /// 🔥 統一新增運動記錄（同時寫入新舊兩個系統）
   Future<String> addWorkoutLog({
     required String type,
     required String name,
     required int duration,
-    required int sets,
-    required int reps,
+    int? sets,
+    int? reps,
     double? weight,
     double? caloriesBurned,
     String? intensity,
@@ -39,8 +41,8 @@ class UnifiedWorkoutService {
       'type': type,
       'name': name,
       'duration': duration,
-      'sets': sets,
-      'reps': reps,
+      if (sets != null) 'sets': sets,
+      if (reps != null) 'reps': reps,
       if (weight != null) 'weight': weight,
       'caloriesBurned': calories,
       if (intensity != null) 'intensity': intensity,
@@ -72,6 +74,9 @@ class UnifiedWorkoutService {
         debugPrint('   ID: ${workoutRef.id}');
         debugPrint('   日期: $today');
         debugPrint('   名稱: $name');
+        if (planId != null) {
+          debugPrint('   計畫ID: $planId');
+        }
       }
 
       return workoutRef.id;
@@ -123,7 +128,7 @@ class UnifiedWorkoutService {
     switch (type.toLowerCase()) {
       case 'weight_training':
       case '重量訓練':
-        met = 4.5; // 🔧 降低重量訓練的 MET 值
+        met = 4.5;
         break;
       case 'cardio':
       case '有氧運動':
@@ -138,20 +143,17 @@ class UnifiedWorkoutService {
         met = 2.5;
         break;
       default:
-        met = 4.0; // 🔧 降低預設值
+        met = 4.0;
     }
 
-    // 🔧 使用更合理的體重（如果沒有提供重量，使用 65kg）
+    // 使用標準體重 65kg
     double bodyWeight = 65.0;
-    
-    // 🔧 如果是重量訓練且有重量，不使用重量作為體重
-    // 重量是訓練負重，不是體重
     
     // 卡路里 = MET × 體重(kg) × 時間(小時)
     double hours = duration / 60.0;
     double calories = met * bodyWeight * hours;
     
-    // 🔧 確保最小值為 10 卡
+    // 確保最小值為 10 卡
     return calories < 10 ? 10 : calories;
   }
 
@@ -212,11 +214,6 @@ class UnifiedWorkoutService {
       if (newSnapshot.docs.isNotEmpty) {
         if (kDebugMode) {
           debugPrint('✅ 從新系統（無排序）讀取到 ${newSnapshot.docs.length} 筆記錄');
-          // 輸出第一筆記錄詳情
-          if (newSnapshot.docs.isNotEmpty) {
-            var firstDoc = newSnapshot.docs.first.data() as Map<String, dynamic>;
-            debugPrint('   第一筆: ${firstDoc['name']} (date: ${firstDoc['date']})');
-          }
         }
         
         // 手動排序
@@ -276,31 +273,6 @@ class UnifiedWorkoutService {
 
       if (kDebugMode) {
         debugPrint('✅ 從舊系統（無排序）讀取到 ${oldSnapshot.docs.length} 筆記錄');
-        
-        // 🔧 詳細調試：輸出所有文檔的 date 欄位
-        if (oldSnapshot.docs.isEmpty) {
-          debugPrint('⚠️ 舊系統也沒有數據！');
-          debugPrint('   嘗試查詢所有該用戶的記錄...');
-          
-          // 查詢所有記錄看看有什麼
-          QuerySnapshot allDocs = await _firestore
-              .collection('workoutLogs')
-              .where('userId', isEqualTo: _currentUserId!)
-              .limit(10)
-              .get();
-          
-          debugPrint('   該用戶總共有 ${allDocs.docs.length} 筆記錄');
-          for (var doc in allDocs.docs) {
-            var data = doc.data() as Map<String, dynamic>;
-            debugPrint('   - ID: ${doc.id}, date: ${data['date']}, name: ${data['name']}');
-          }
-        } else {
-          // 輸出找到的記錄
-          for (var doc in oldSnapshot.docs) {
-            var data = doc.data() as Map<String, dynamic>;
-            debugPrint('   找到: ${data['name']} (date: ${data['date']})');
-          }
-        }
       }
 
       var workouts = oldSnapshot.docs
@@ -321,7 +293,6 @@ class UnifiedWorkoutService {
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 載入訓練記錄失敗: $e');
-        debugPrint('   堆疊追蹤: ${StackTrace.current}');
       }
       return [];
     }
@@ -544,6 +515,192 @@ class UnifiedWorkoutService {
         'totalDuration': 0,
         'totalCalories': 0.0,
       };
+    }
+  }
+
+  // ========== 訓練計畫相關 ==========
+
+  /// 🔥 獲取訓練計畫的進度
+  Future<Map<String, int>> getPlanProgress(String planId) async {
+    if (_currentUserId == null) return {};
+
+    try {
+      // 查詢該計畫的所有完成記錄
+      QuerySnapshot snapshot = await _firestore
+          .collection('planCompletions')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
+
+      Map<String, int> completions = {};
+      
+      for (var doc in snapshot.docs) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        String dayOfWeek = data['dayOfWeek'] as String;
+        
+        // 計算每個星期幾的完成次數
+        completions[dayOfWeek] = (completions[dayOfWeek] ?? 0) + 1;
+      }
+
+      if (kDebugMode) {
+        debugPrint('✅ 計畫進度: $completions');
+      }
+
+      return completions;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取計畫進度失敗: $e');
+      }
+      return {};
+    }
+  }
+
+  /// 🔥 記錄計畫訓練日完成
+  Future<void> recordPlanDayCompletion({
+    required String planId,
+    required String dayOfWeek,
+    required DateTime date,
+  }) async {
+    if (_currentUserId == null) throw Exception('用戶未登入');
+
+    try {
+      await _firestore.collection('planCompletions').add({
+        'planId': planId,
+        'userId': _currentUserId,
+        'dayOfWeek': dayOfWeek,
+        'completedDate': date.toIso8601String().split('T')[0],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      if (kDebugMode) {
+        debugPrint('✅ 計畫訓練日完成記錄已保存: $dayOfWeek');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 記錄計畫完成失敗: $e');
+      }
+      throw Exception('記錄計畫完成失敗: $e');
+    }
+  }
+
+  /// 🔥 創建訓練計畫（教練端）
+  Future<String> createWorkoutPlan({
+    required String traineeId,
+    required String planName,
+    String? description,
+    required DateTime startDate,
+    DateTime? endDate,
+    required List<Map<String, dynamic>> days,
+  }) async {
+    if (_currentUserId == null) throw Exception('用戶未登入');
+
+    try {
+      Map<String, dynamic> planData = {
+        'coachId': _currentUserId!,
+        'traineeId': traineeId,
+        'planName': planName,
+        if (description != null) 'description': description,
+        'startDate': startDate.toIso8601String().split('T')[0],
+        if (endDate != null) 'endDate': endDate.toIso8601String().split('T')[0],
+        'days': days,
+        'status': 'active',
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      DocumentReference docRef = await _firestore
+          .collection('workoutPlans')
+          .add(planData);
+
+      if (kDebugMode) {
+        debugPrint('✅ 訓練計畫已創建: ${docRef.id}');
+      }
+
+      return docRef.id;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 創建訓練計畫失敗: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// 🔥 獲取學員的訓練計畫（學員端）
+  Future<List<Map<String, dynamic>>> getMyWorkoutPlans() async {
+    if (_currentUserId == null) return [];
+
+    try {
+      QuerySnapshot snapshot = await _firestore
+          .collection('workoutPlans')
+          .where('traineeId', isEqualTo: _currentUserId)
+          .where('status', isEqualTo: 'active')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      if (kDebugMode) {
+        debugPrint('✅ 找到 ${snapshot.docs.length} 個訓練計畫');
+      }
+
+      return snapshot.docs
+          .map((doc) => {
+                'id': doc.id,
+                ...doc.data() as Map<String, dynamic>,
+              })
+          .toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取訓練計畫失敗: $e');
+      }
+      return [];
+    }
+  }
+
+  /// 🔥 獲取教練創建的所有計畫（教練端）
+  Future<List<Map<String, dynamic>>> getCoachPlans() async {
+    if (_currentUserId == null) return [];
+
+    try {
+      QuerySnapshot snapshot = await _firestore
+          .collection('workoutPlans')
+          .where('coachId', isEqualTo: _currentUserId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      if (kDebugMode) {
+        debugPrint('✅ 找到 ${snapshot.docs.length} 個教練計畫');
+      }
+
+      return snapshot.docs
+          .map((doc) => {
+                'id': doc.id,
+                ...doc.data() as Map<String, dynamic>,
+              })
+          .toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取教練計畫失敗: $e');
+      }
+      return [];
+    }
+  }
+
+  /// 🔥 標記訓練為完成
+  Future<void> markPlanAsCompleted(String planId) async {
+    if (_currentUserId == null) throw Exception('用戶未登入');
+
+    try {
+      await _firestore.collection('workoutPlans').doc(planId).update({
+        'status': 'completed',
+        'completedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (kDebugMode) {
+        debugPrint('✅ 訓練計畫已標記為完成: $planId');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 標記完成失敗: $e');
+      }
+      rethrow;
     }
   }
 }

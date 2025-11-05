@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/wger_api_service.dart';
-import 'workout/workout_execution_page.dart';
+import 'workout/workout_single_execution_page.dart';
 
 class ExerciseSelectionPage extends StatefulWidget {
   final bool isCoach;
@@ -111,7 +111,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WorkoutExecutionPage(
+        builder: (context) => WorkoutSingleExecutionPage(
           exercise: exercise,
           isCoach: widget.isCoach,
           traineeId: widget.traineeId,
@@ -164,7 +164,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
               Text(
                 '📋 計畫訓練',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: Colors.white.withOpacity(0.9),
                   fontSize: 12,
                 ),
               ),
@@ -182,7 +182,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withValues(alpha: 0.1),
+                  color: Colors.grey.withOpacity(0.1),
                   blurRadius: 10,
                   offset: const Offset(0, 5),
                 ),
@@ -325,7 +325,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(6),
             ),
             child: const Icon(
@@ -339,7 +339,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
             child: Text(
               '此次訓練將計入計畫進度',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.95),
+                color: Colors.white.withOpacity(0.95),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -364,7 +364,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.1),
+            color: Colors.grey.withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -384,7 +384,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: _getCategoryColor(exercise.category).withValues(alpha: 0.1),
+                    color: _getCategoryColor(exercise.category).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -421,7 +421,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
                             ),
                             decoration: BoxDecoration(
                               color: _getCategoryColor(exercise.category)
-                                  .withValues(alpha: 0.15),
+                                  .withOpacity(0.15),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(

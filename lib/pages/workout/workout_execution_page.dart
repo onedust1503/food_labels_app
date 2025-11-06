@@ -1,9 +1,10 @@
 // lib/pages/workout/workout_execution_page.dart
-// ✅ 修正版 - 移除 AudioPlayer 依賴
+// ✅ 修正版 - 解決 Transaction 查詢問題
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/workout_model.dart';
-import '../../services/workout_service.dart';
 
 class WorkoutExecutionPage extends StatefulWidget {
   final WorkoutPlanDay planDay;
@@ -22,13 +23,12 @@ class WorkoutExecutionPage extends StatefulWidget {
 }
 
 class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
-  final WorkoutService _workoutService = WorkoutService();
-  
   int currentExerciseIndex = 0;
   int currentSet = 1;
   bool isResting = false;
   int restSeconds = 60;
   Timer? _restTimer;
+  bool _isCompleting = false; // 🆕 防止重複點擊
   
   Map<int, bool> completedExercises = {};
   Map<int, List<bool>> completedSets = {};
@@ -71,7 +71,6 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
   void _completeRest() {
     _restTimer?.cancel();
     setState(() => isResting = false);
-    // ✅ 移除音效播放
     debugPrint('⏰ 休息結束');
   }
 
@@ -93,7 +92,20 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
   }
 
   Future<void> _completeWorkout() async {
+    // ✅ 防止重複點擊
+    if (_isCompleting) {
+      debugPrint('⚠️ 已經在處理中，忽略重複點擊');
+      return;
+    }
+    
+    setState(() => _isCompleting = true);
+    
     try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        throw Exception('用戶未登入');
+      }
+
       int totalDuration = 0;
       double totalCalories = 0;
       
@@ -102,40 +114,144 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
         totalCalories += (exercise.duration ?? 5) * 5;
       }
 
-      // ✅ 使用正確的日期格式
-      String today = DateTime.now().toIso8601String().split('T')[0];
+      final now = DateTime.now();
+      final dateOnly = DateTime(now.year, now.month, now.day);
 
-      await _workoutService.addWorkoutLog(
-        type: 'plan_workout',
-        name: '${widget.planName} - ${widget.planDay.dayOfWeek}',
-        duration: totalDuration,
-        caloriesBurned: totalCalories,
-      );
+      debugPrint('📝 開始記錄訓練完成...');
 
-      // ✅ 暫時註解掉，因為 WorkoutService 可能沒有這個方法
-      // await _workoutService.recordPlanDayCompletion(
-      //   planId: widget.planId,
-      //   dayOfWeek: widget.planDay.dayOfWeek,
-      //   date: DateTime.now(),
-      // );
+      // ✅ 步驟 1: 先查詢今天是否已有記錄（在 transaction 外部）
+      final existingCompletionsSnapshot = await FirebaseFirestore.instance
+          .collection('workoutCompletions')
+          .where('planId', isEqualTo: widget.planId)
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('dayOfWeek', isEqualTo: widget.planDay.dayOfWeek)
+          .limit(10)
+          .get();
+
+      // 過濾出今天的記錄
+      final todayRecords = existingCompletionsSnapshot.docs.where((doc) {
+        final data = doc.data();
+        final completionDate = (data['completionDate'] as Timestamp).toDate();
+        return completionDate.year == dateOnly.year &&
+               completionDate.month == dateOnly.month &&
+               completionDate.day == dateOnly.day;
+      }).toList();
+
+      debugPrint('📊 找到今天的記錄數量: ${todayRecords.length}');
+
+      // ✅ 步驟 2: 使用 batch 操作（比 transaction 簡單，適合寫入操作）
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 2.1 寫入 workoutLogs（運動日誌）
+      final workoutLogRef = FirebaseFirestore.instance
+          .collection('workoutLogs')
+          .doc();
+      
+      batch.set(workoutLogRef, {
+        'type': 'plan_workout',
+        'name': '${widget.planName} - ${widget.planDay.dayOfWeek}',
+        'duration': totalDuration,
+        'caloriesBurned': totalCalories,
+        'userId': currentUser.uid,
+        'date': Timestamp.fromDate(now),
+        'planId': widget.planId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ 準備寫入 workoutLog');
+
+      // 2.2 寫入或更新 workoutCompletions
+      if (todayRecords.isNotEmpty) {
+        // 更新現有記錄
+        final docRef = FirebaseFirestore.instance
+            .collection('workoutCompletions')
+            .doc(todayRecords.first.id);
+        
+        batch.update(docRef, {
+          'exercisesCompleted': widget.planDay.exercises.length,
+          'totalExercises': widget.planDay.exercises.length,
+          'totalDuration': totalDuration,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        debugPrint('✅ 準備更新現有的 workoutCompletion: ${todayRecords.first.id}');
+      } else {
+        // 創建新記錄
+        final completionRef = FirebaseFirestore.instance
+            .collection('workoutCompletions')
+            .doc();
+        
+        batch.set(completionRef, {
+          'planId': widget.planId,
+          'userId': currentUser.uid,
+          'completionDate': Timestamp.fromDate(dateOnly),
+          'dayOfWeek': widget.planDay.dayOfWeek,
+          'exercisesCompleted': widget.planDay.exercises.length,
+          'totalExercises': widget.planDay.exercises.length,
+          'totalDuration': totalDuration,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        debugPrint('✅ 準備創建新的 workoutCompletion');
+      }
+
+      // 提交 batch
+      await batch.commit();
+      debugPrint('🎉 所有記錄已成功提交');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🎉 訓練完成!'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
         Navigator.pop(context, true);
       }
+    } on FirebaseException catch (e) {
+      debugPrint('❌ Firebase 錯誤: ${e.code} - ${e.message}');
+      if (mounted) {
+        String errorMessage = '記錄失敗';
+        
+        if (e.code == 'unavailable' || e.code == 'deadline-exceeded') {
+          errorMessage = '⚠️ 網路連線不穩定，請檢查網路後重試';
+        } else if (e.code == 'permission-denied') {
+          errorMessage = '❌ 權限不足，請確認已登入';
+        } else if (e.code == 'failed-precondition') {
+          errorMessage = '⚠️ 資料庫索引建立中，請稍後再試（約 1-5 分鐘）';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: '重試',
+              textColor: Colors.white,
+              onPressed: () {
+                setState(() => _isCompleting = false);
+                _completeWorkout();
+              },
+            ),
+          ),
+        );
+      }
     } catch (e) {
+      debugPrint('❌ 未知錯誤: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('記錄失敗: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCompleting = false);
       }
     }
   }
@@ -610,7 +726,7 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
         children: [
           Expanded(
             child: OutlinedButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: _isCompleting ? null : () => Navigator.pop(context),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -626,25 +742,37 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
           Expanded(
             flex: 2,
             child: ElevatedButton(
-              onPressed: allCompleted ? _completeWorkout : null,
+              onPressed: (allCompleted && !_isCompleting) ? _completeWorkout : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: allCompleted ? 4 : 0,
+                elevation: (allCompleted && !_isCompleting) ? 4 : 0,
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.check_circle, size: 24),
-                  const SizedBox(width: 8),
-                  Text(
-                    allCompleted ? '完成訓練' : '完成所有動作後點擊',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
+              child: _isCompleting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.check_circle, size: 24),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            allCompleted ? '完成訓練' : '完成所有動作後點擊',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],

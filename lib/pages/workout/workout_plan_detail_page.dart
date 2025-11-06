@@ -1,8 +1,9 @@
 // lib/pages/workout/workout_plan_detail_page.dart
-// ✅ 修正版 - 暫時移除進度載入功能
+// ✅ 更新版 - 啟用進度追蹤功能，保留所有原有功能
 import 'package:flutter/material.dart';
 import '../../models/workout_model.dart';
 import '../../services/workout_service.dart';
+import '../../services/workout_progress_service.dart'; // 🆕 導入進度服務
 import 'workout_execution_page.dart';
 
 class WorkoutPlanDetailPage extends StatefulWidget {
@@ -16,10 +17,11 @@ class WorkoutPlanDetailPage extends StatefulWidget {
 
 class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   final WorkoutService _workoutService = WorkoutService();
+  final WorkoutProgressService _progressService = WorkoutProgressService(); // 🆕 進度服務
   
-  // ✅ 暫時不使用進度功能
-  // Map<String, int> _completions = {};
-  // bool _isLoadingProgress = true;
+  // ✅ 啟用進度功能
+  Map<String, int> _completions = {};
+  bool _isLoadingProgress = true;
 
   final Map<String, String> _dayNames = {
     'monday': '星期一',
@@ -34,26 +36,25 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   @override
   void initState() {
     super.initState();
-    // ✅ 暫時不載入進度
-    // _loadProgress();
+    _loadProgress(); // ✅ 載入進度
   }
 
-  // ✅ 暫時註解掉進度載入
-  // Future<void> _loadProgress() async {
-  //   if (widget.plan.id != null) {
-  //     try {
-  //       final progress = await _workoutService.getPlanProgress(widget.plan.id!);
-  //       setState(() {
-  //         _completions = progress;
-  //         _isLoadingProgress = false;
-  //       });
-  //     } catch (e) {
-  //       setState(() => _isLoadingProgress = false);
-  //     }
-  //   } else {
-  //     setState(() => _isLoadingProgress = false);
-  //   }
-  // }
+  // ✅ 啟用進度載入
+  Future<void> _loadProgress() async {
+    if (widget.plan.id != null) {
+      try {
+        final progress = await _progressService.getWeeklyCompletion(widget.plan.id!);
+        setState(() {
+          _completions = progress;
+          _isLoadingProgress = false;
+        });
+      } catch (e) {
+        setState(() => _isLoadingProgress = false);
+      }
+    } else {
+      setState(() => _isLoadingProgress = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,8 +95,15 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
           children: [
             _buildPlanHeader(),
             const SizedBox(height: 16),
-            // ✅ 不再檢查載入狀態
-            _buildWeeklySchedule(),
+            // ✅ 檢查載入狀態
+            _isLoadingProgress
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : _buildWeeklySchedule(),
           ],
         ),
       ),
@@ -103,8 +111,8 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   }
 
   Widget _buildPlanHeader() {
-    // ✅ 暫時不計算完成次數
-    // int totalCompletions = _completions.values.fold(0, (sum, count) => sum + count);
+    // ✅ 計算完成次數
+    int totalCompletions = _completions.values.fold(0, (sum, count) => sum + count);
     int totalDays = widget.plan.days.length;
 
     return Container(
@@ -156,8 +164,8 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                // ✅ 暫時顯示固定文字
-                _buildStatItem('訓練計畫', '進行中', Icons.flag),
+                // ✅ 顯示實際完成次數
+                _buildStatItem('已完成', '$totalCompletions 次', Icons.check_circle),
                 Container(width: 1, height: 40, color: Colors.white.withOpacity(0.3)),
                 _buildStatItem('本週目標', '$totalDays 天', Icons.fitness_center),
               ],
@@ -211,8 +219,8 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   }
 
   Widget _buildDayCard(WorkoutPlanDay day, int index) {
-    // ✅ 暫時不顯示完成次數
-    // int completionCount = _completions[day.dayOfWeek] ?? 0;
+    // ✅ 顯示完成次數
+    int completionCount = _completions[day.dayOfWeek] ?? 0;
     
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -251,31 +259,31 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
                   '${day.exercises.length} 個動作',
                   style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                 ),
-                // ✅ 暫時不顯示完成次數
-                // const Spacer(),
-                // if (completionCount > 0)
-                //   Container(
-                //     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                //     decoration: BoxDecoration(
-                //       color: Colors.green.withOpacity(0.1),
-                //       borderRadius: BorderRadius.circular(12),
-                //     ),
-                //     child: Row(
-                //       mainAxisSize: MainAxisSize.min,
-                //       children: [
-                //         const Icon(Icons.check_circle, size: 14, color: Colors.green),
-                //         const SizedBox(width: 4),
-                //         Text(
-                //           '完成 $completionCount 次',
-                //           style: const TextStyle(
-                //             fontSize: 11,
-                //             color: Colors.green,
-                //             fontWeight: FontWeight.w600,
-                //           ),
-                //         ),
-                //       ],
-                //     ),
-                //   ),
+                // ✅ 顯示完成次數
+                const Spacer(),
+                if (completionCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle, size: 14, color: Colors.green),
+                        const SizedBox(width: 4),
+                        Text(
+                          '完成 $completionCount 次',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -463,10 +471,10 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
       ),
     );
 
-    // ✅ 暫時不重新載入進度
-    // if (result == true) {
-    //   _loadProgress();
-    // }
+    // ✅ 重新載入進度
+    if (result == true) {
+      _loadProgress();
+    }
   }
 
   Future<void> _markAsCompleted() async {

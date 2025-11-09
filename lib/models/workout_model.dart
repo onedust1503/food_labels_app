@@ -1,61 +1,8 @@
 // lib/models/workout_model.dart
-// 🔧 完全修正版 - 包含所有必要屬性
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// ========== 運動記錄模型 (WorkoutLog) ==========
-class WorkoutLog {
-  final String? id;
-  final String userId;
-  final String exerciseName;
-  final int sets;
-  final int reps;
-  final int? duration; // 分鐘
-  final double? caloriesBurned;
-  final String? notes;
-  final DateTime createdAt;
+// ========== 原有模型（保持不變）==========
 
-  WorkoutLog({
-    this.id,
-    required this.userId,
-    required this.exerciseName,
-    required this.sets,
-    required this.reps,
-    this.duration,
-    this.caloriesBurned,
-    this.notes,
-    required this.createdAt,
-  });
-
-  factory WorkoutLog.fromFirestore(Map<String, dynamic> data, String docId) {
-    return WorkoutLog(
-      id: docId,
-      userId: data['userId'] ?? '',
-      exerciseName: data['exerciseName'] ?? '',
-      sets: data['sets'] ?? 0,
-      reps: data['reps'] ?? 0,
-      duration: data['duration'],
-      caloriesBurned: data['caloriesBurned']?.toDouble(),
-      notes: data['notes'],
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-    );
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'userId': userId,
-      'exerciseName': exerciseName,
-      'sets': sets,
-      'reps': reps,
-      if (duration != null) 'duration': duration,
-      if (caloriesBurned != null) 'caloriesBurned': caloriesBurned,
-      if (notes != null) 'notes': notes,
-      'createdAt': FieldValue.serverTimestamp(),
-    };
-  }
-}
-
-// ========== 運動記錄模型 (WorkoutModel) - 兼容舊版 ==========
 class WorkoutModel {
   final String? id;
   final String userId;
@@ -127,7 +74,7 @@ class WorkoutModel {
   }
 }
 
-// ========== 訓練計畫模型 ==========
+// 訓練計畫模型
 class WorkoutPlanModel {
   final String? id;
   final String coachId;
@@ -137,7 +84,7 @@ class WorkoutPlanModel {
   final DateTime startDate;
   final DateTime? endDate;
   final List<WorkoutPlanDay> days;
-  final String status; // active, completed, cancelled, template
+  final String status;
   final DateTime createdAt;
 
   WorkoutPlanModel({
@@ -179,14 +126,13 @@ class WorkoutPlanModel {
       if (description != null) 'description': description,
       'startDate': Timestamp.fromDate(startDate),
       if (endDate != null) 'endDate': Timestamp.fromDate(endDate!),
-      'days': days.map((day) => day.toFirestore()).toList(),
+      'days': days.map((day) => day.toMap()).toList(),
       'status': status,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
 }
 
-// ========== 訓練計畫的每日項目 ==========
 class WorkoutPlanDay {
   final String dayOfWeek;
   final List<PlannedExercise> exercises;
@@ -212,47 +158,259 @@ class WorkoutPlanDay {
       'exercises': exercises.map((ex) => ex.toMap()).toList(),
     };
   }
-
-  Map<String, dynamic> toFirestore() => toMap();
 }
 
-// ========== 計畫中的運動項目 ==========
 class PlannedExercise {
   final String name;
-  final String type; // 🔥 新增: weight_training, cardio, yoga, stretching
+  final String type;
   final int? sets;
   final int? reps;
-  final int? duration; // 分鐘
+  final int? duration;
   final String? notes;
+  final String? primaryMuscleGroup; // 主要肌群（例如：胸部、腿部）
+  final List<String>? targetMuscles; // 目標肌肉（例如：[下背部, 腿後肌]）
 
   PlannedExercise({
     required this.name,
-    this.type = 'weight_training', // 🔥 預設值
+    required this.type,
     this.sets,
     this.reps,
     this.duration,
     this.notes,
+    this.primaryMuscleGroup,
+    this.targetMuscles,
   });
 
   factory PlannedExercise.fromMap(Map<String, dynamic> data) {
     return PlannedExercise(
       name: data['name'] ?? '',
-      type: data['type'] ?? 'weight_training', // 🔥 新增
+      type: data['type'] ?? '',
       sets: data['sets'],
       reps: data['reps'],
       duration: data['duration'],
       notes: data['notes'],
+      primaryMuscleGroup: data['primaryMuscleGroup'],
+      targetMuscles: data['targetMuscles'] != null
+          ? List<String>.from(data['targetMuscles'])
+          : null,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
       'name': name,
-      'type': type, // 🔥 新增
+      'type': type,
       if (sets != null) 'sets': sets,
       if (reps != null) 'reps': reps,
       if (duration != null) 'duration': duration,
       if (notes != null) 'notes': notes,
+      if (primaryMuscleGroup != null) 'primaryMuscleGroup': primaryMuscleGroup,
+      if (targetMuscles != null) 'targetMuscles': targetMuscles,
     };
+  }
+}
+
+// ========== 新增模型（狀態機，用於實時訓練）==========
+
+/// 組數狀態
+enum WorkoutSetStatus {
+  pending,    // 等待開始
+  active,     // 執行中
+  completed,  // 已完成
+  skipped,    // 已略過
+  failed,     // 失敗
+  resting     // 休息中
+}
+
+/// 訓練會話模型（workoutSessions 集合）
+class WorkoutSessionModel {
+  final String id;
+  final String userId;
+  final String source; // 'self' 或 'coach'
+  final String? planId;
+  final String? planDayId;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final int totalActiveSec; // 不含休息的活動時間
+  final int totalRestSec; // 休息總秒數
+  final double? calories;
+  final int? sessionRpe; // 整體 RPE (1-10)
+  final Map<String, dynamic>? meta;
+
+  WorkoutSessionModel({
+    required this.id,
+    required this.userId,
+    required this.source,
+    this.planId,
+    this.planDayId,
+    required this.startedAt,
+    this.endedAt,
+    this.totalActiveSec = 0,
+    this.totalRestSec = 0,
+    this.calories,
+    this.sessionRpe,
+    this.meta,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'userId': userId,
+        'source': source,
+        'planId': planId,
+        'planDayId': planDayId,
+        'startedAt': startedAt,
+        'endedAt': endedAt,
+        'totalActiveSec': totalActiveSec,
+        'totalRestSec': totalRestSec,
+        'calories': calories,
+        'sessionRpe': sessionRpe,
+        'meta': meta,
+        'createdAt': DateTime.now(),
+      };
+
+  factory WorkoutSessionModel.fromFirestore(Map<String, dynamic> data, String docId) {
+    return WorkoutSessionModel(
+      id: docId,
+      userId: data['userId'] ?? '',
+      source: data['source'] ?? 'self',
+      planId: data['planId'],
+      planDayId: data['planDayId'],
+      startedAt: (data['startedAt'] as Timestamp).toDate(),
+      endedAt: data['endedAt'] != null ? (data['endedAt'] as Timestamp).toDate() : null,
+      totalActiveSec: data['totalActiveSec'] ?? 0,
+      totalRestSec: data['totalRestSec'] ?? 0,
+      calories: data['calories']?.toDouble(),
+      sessionRpe: data['sessionRpe'],
+      meta: data['meta'],
+    );
+  }
+}
+
+/// 單組進度
+class SetProgress {
+  final int index;
+  final WorkoutSetStatus status;
+  final int? targetReps;
+  final int? actualReps;
+  final double? weight;
+  final int? targetDurationSec;
+  final int? actualDurationSec;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final int? restPlannedSec;
+  final int? restTakenSec;
+  final double? rpe; // 主觀感受 (1-10)
+  final String? note;
+
+  const SetProgress({
+    required this.index,
+    this.status = WorkoutSetStatus.pending,
+    this.targetReps,
+    this.actualReps,
+    this.weight,
+    this.targetDurationSec,
+    this.actualDurationSec,
+    this.startedAt,
+    this.completedAt,
+    this.restPlannedSec,
+    this.restTakenSec,
+    this.rpe,
+    this.note,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'index': index,
+        'status': status.name,
+        'targetReps': targetReps,
+        'actualReps': actualReps,
+        'weight': weight,
+        'targetDurationSec': targetDurationSec,
+        'actualDurationSec': actualDurationSec,
+        'startedAt': startedAt,
+        'completedAt': completedAt,
+        'restPlannedSec': restPlannedSec,
+        'restTakenSec': restTakenSec,
+        'rpe': rpe,
+        'note': note,
+      };
+
+  factory SetProgress.fromMap(Map<String, dynamic> data) {
+    return SetProgress(
+      index: data['index'] ?? 0,
+      status: WorkoutSetStatus.values.firstWhere(
+        (e) => e.name == data['status'],
+        orElse: () => WorkoutSetStatus.pending,
+      ),
+      targetReps: data['targetReps'],
+      actualReps: data['actualReps'],
+      weight: data['weight']?.toDouble(),
+      targetDurationSec: data['targetDurationSec'],
+      actualDurationSec: data['actualDurationSec'],
+      startedAt: data['startedAt'] != null ? (data['startedAt'] as Timestamp).toDate() : null,
+      completedAt: data['completedAt'] != null ? (data['completedAt'] as Timestamp).toDate() : null,
+      restPlannedSec: data['restPlannedSec'],
+      restTakenSec: data['restTakenSec'],
+      rpe: data['rpe']?.toDouble(),
+      note: data['note'],
+    );
+  }
+}
+
+/// 動作進度
+class ExerciseProgress {
+  final String exerciseId;
+  final String exerciseName;
+  final String type; // 'reps' | 'duration'
+  final int plannedSets;
+  final int? plannedReps;
+  final int? plannedDurationSec;
+  final int restSec; // 每組之間的休息秒數
+  final List<SetProgress> sets;
+  final int currentSetIndex;
+
+  const ExerciseProgress({
+    required this.exerciseId,
+    required this.exerciseName,
+    required this.type,
+    required this.plannedSets,
+    this.plannedReps,
+    this.plannedDurationSec,
+    this.restSec = 90,
+    required this.sets,
+    this.currentSetIndex = 0,
+  });
+
+  /// 判斷動作是否完成
+  bool get isCompleted => sets.every((s) =>
+      s.status == WorkoutSetStatus.completed ||
+      s.status == WorkoutSetStatus.skipped ||
+      s.status == WorkoutSetStatus.failed);
+
+  Map<String, dynamic> toMap() => {
+        'exerciseId': exerciseId,
+        'exerciseName': exerciseName,
+        'type': type,
+        'plannedSets': plannedSets,
+        'plannedReps': plannedReps,
+        'plannedDurationSec': plannedDurationSec,
+        'restSec': restSec,
+        'currentSetIndex': currentSetIndex,
+        'sets': sets.map((e) => e.toMap()).toList(),
+      };
+
+  factory ExerciseProgress.fromMap(Map<String, dynamic> data) {
+    return ExerciseProgress(
+      exerciseId: data['exerciseId'] ?? '',
+      exerciseName: data['exerciseName'] ?? '',
+      type: data['type'] ?? 'reps',
+      plannedSets: data['plannedSets'] ?? 1,
+      plannedReps: data['plannedReps'],
+      plannedDurationSec: data['plannedDurationSec'],
+      restSec: data['restSec'] ?? 90,
+      sets: (data['sets'] as List<dynamic>?)
+              ?.map((s) => SetProgress.fromMap(s as Map<String, dynamic>))
+              .toList() ??
+          [],
+      currentSetIndex: data['currentSetIndex'] ?? 0,
+    );
   }
 }

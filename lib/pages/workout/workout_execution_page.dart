@@ -1,5 +1,6 @@
 // lib/pages/workout/workout_execution_page.dart
-// ✅ 修正版 - 解決 Transaction 查詢問題
+// ✅ 完整修復版 - 顯示目標肌群資訊
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,7 +29,7 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
   bool isResting = false;
   int restSeconds = 60;
   Timer? _restTimer;
-  bool _isCompleting = false; // 🆕 防止重複點擊
+  bool _isCompleting = false;
   
   Map<int, bool> completedExercises = {};
   Map<int, List<bool>> completedSets = {};
@@ -92,7 +93,6 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
   }
 
   Future<void> _completeWorkout() async {
-    // ✅ 防止重複點擊
     if (_isCompleting) {
       debugPrint('⚠️ 已經在處理中，忽略重複點擊');
       return;
@@ -119,7 +119,6 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
 
       debugPrint('📝 開始記錄訓練完成...');
 
-      // ✅ 步驟 1: 先查詢今天是否已有記錄（在 transaction 外部）
       final existingCompletionsSnapshot = await FirebaseFirestore.instance
           .collection('workoutCompletions')
           .where('planId', isEqualTo: widget.planId)
@@ -128,7 +127,6 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
           .limit(10)
           .get();
 
-      // 過濾出今天的記錄
       final todayRecords = existingCompletionsSnapshot.docs.where((doc) {
         final data = doc.data();
         final completionDate = (data['completionDate'] as Timestamp).toDate();
@@ -139,10 +137,8 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
 
       debugPrint('📊 找到今天的記錄數量: ${todayRecords.length}');
 
-      // ✅ 步驟 2: 使用 batch 操作（比 transaction 簡單，適合寫入操作）
       final batch = FirebaseFirestore.instance.batch();
 
-      // 2.1 寫入 workoutLogs（運動日誌）
       final workoutLogRef = FirebaseFirestore.instance
           .collection('workoutLogs')
           .doc();
@@ -160,9 +156,7 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
 
       debugPrint('✅ 準備寫入 workoutLog');
 
-      // 2.2 寫入或更新 workoutCompletions
       if (todayRecords.isNotEmpty) {
-        // 更新現有記錄
         final docRef = FirebaseFirestore.instance
             .collection('workoutCompletions')
             .doc(todayRecords.first.id);
@@ -176,7 +170,6 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
 
         debugPrint('✅ 準備更新現有的 workoutCompletion: ${todayRecords.first.id}');
       } else {
-        // 創建新記錄
         final completionRef = FirebaseFirestore.instance
             .collection('workoutCompletions')
             .doc();
@@ -195,7 +188,6 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
         debugPrint('✅ 準備創建新的 workoutCompletion');
       }
 
-      // 提交 batch
       await batch.commit();
       debugPrint('🎉 所有記錄已成功提交');
 
@@ -215,11 +207,11 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
         String errorMessage = '記錄失敗';
         
         if (e.code == 'unavailable' || e.code == 'deadline-exceeded') {
-          errorMessage = '⚠️ 網路連線不穩定，請檢查網路後重試';
+          errorMessage = '⚠️ 網路連線不穩定,請檢查網路後重試';
         } else if (e.code == 'permission-denied') {
-          errorMessage = '❌ 權限不足，請確認已登入';
+          errorMessage = '❌ 權限不足,請確認已登入';
         } else if (e.code == 'failed-precondition') {
-          errorMessage = '⚠️ 資料庫索引建立中，請稍後再試（約 1-5 分鐘）';
+          errorMessage = '⚠️ 資料庫索引建立中,請稍後再試（約 1-5 分鐘）';
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -352,6 +344,7 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
     );
   }
 
+  // ✅ 完整修復版 - 顯示目標肌群的動作卡片
   Widget _buildCurrentExerciseCard(PlannedExercise exercise) {
     IconData icon;
     Color iconColor;
@@ -376,6 +369,9 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
 
     return Container(
       width: double.infinity,
+      constraints: const BoxConstraints(
+        minHeight: 250,
+      ),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -393,16 +389,31 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // 白色圖示圓形容器
           Container(
+            width: 88,
+            height: 88,
             padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: Icon(icon, size: 48, color: iconColor),
+            child: Center(
+              child: Icon(icon, size: 48, color: iconColor),
+            ),
           ),
           const SizedBox(height: 20),
+          
+          // 運動名稱
           Text(
             exercise.name,
             style: const TextStyle(
@@ -413,7 +424,57 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
+          
+          // 主要肌群標籤
+          if (exercise.primaryMuscleGroup != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                exercise.primaryMuscleGroup!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          
+          // ✅ 修復重點:顯示目標肌肉的白色框
+          if (exercise.targetMuscles != null && exercise.targetMuscles!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,  // ✅ 白色背景
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                exercise.targetMuscles!.join(', '),  // ✅ 顯示「下背部, 腿後肌」
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+          
+          const SizedBox(height: 16),
           _buildExerciseDetails(exercise),
+          
+          // 備註
           if (exercise.notes != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -423,13 +484,18 @@ class _WorkoutExecutionPageState extends State<WorkoutExecutionPage> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(Icons.info_outline, color: Colors.white, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       exercise.notes!,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                 ],

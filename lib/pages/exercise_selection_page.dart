@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/wger_api_service.dart';
 import 'workout/workout_single_execution_page.dart';
+import 'workout/free_workout_execution_page.dart';
 
 class ExerciseSelectionPage extends StatefulWidget {
   final bool isCoach;
@@ -121,6 +122,28 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     ).then((completed) {
       if (completed == true && mounted) {
         // 訓練完成後返回
+        Navigator.pop(context, true);
+      }
+    });
+  }
+
+  /// 新的自由訓練導覽（FreeWorkoutExecutionPage）
+  void _navigateToFreeWorkout(Exercise exercise) {
+    final mapped = <String, dynamic>{
+      'name': exercise.nameZhTw,
+      'plannedSets': 3,
+      'plannedReps': 10,
+      'restSec': 90,
+    };
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FreeWorkoutExecutionPage(
+          exercises: [mapped],
+        ),
+      ),
+    ).then((completed) {
+      if (completed == true && mounted) {
         Navigator.pop(context, true);
       }
     });
@@ -373,7 +396,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _navigateToWorkout(exercise),
+          onTap: () => _navigateToFreeWorkout(exercise),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(16),

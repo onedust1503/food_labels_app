@@ -1,7 +1,7 @@
 // lib/models/workout_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// ========== 原有模型（保持不變）==========
+// ========== 原有模型（保持不變，只新增欄位）==========
 
 class WorkoutModel {
   final String? id;
@@ -18,6 +18,12 @@ class WorkoutModel {
   final String? intensity; // 強度：low, medium, high
   final String? notes; // 備註
   final DateTime createdAt;
+  
+  // 🔥 新增欄位 - 用於統一訓練記錄
+  final String? sessionId; // 關聯到 workoutSession 的 ID
+  final int? totalSets; // 總組數（所有動作加總）
+  final int? totalExercises; // 總動作數
+  final List<dynamic>? exerciseSummary; // 動作摘要 [{name: "深蹲", sets: 3}, ...]
 
   WorkoutModel({
     this.id,
@@ -34,6 +40,11 @@ class WorkoutModel {
     this.intensity,
     this.notes,
     required this.createdAt,
+    // 🔥 新增參數
+    this.sessionId,
+    this.totalSets,
+    this.totalExercises,
+    this.exerciseSummary,
   });
 
   factory WorkoutModel.fromFirestore(Map<String, dynamic> data, String docId) {
@@ -52,6 +63,11 @@ class WorkoutModel {
       intensity: data['intensity'],
       notes: data['notes'],
       createdAt: (data['createdAt'] as Timestamp).toDate(),
+      // 🔥 新增欄位解析
+      sessionId: data['sessionId'] as String?,
+      totalSets: data['totalSets'] as int?,
+      totalExercises: data['totalExercises'] as int?,
+      exerciseSummary: data['exerciseSummary'] as List<dynamic>?,
     );
   }
 
@@ -70,6 +86,11 @@ class WorkoutModel {
       if (intensity != null) 'intensity': intensity,
       if (notes != null) 'notes': notes,
       'createdAt': FieldValue.serverTimestamp(),
+      // 🔥 新增欄位儲存
+      if (sessionId != null) 'sessionId': sessionId,
+      if (totalSets != null) 'totalSets': totalSets,
+      if (totalExercises != null) 'totalExercises': totalExercises,
+      if (exerciseSummary != null) 'exerciseSummary': exerciseSummary,
     };
   }
 }

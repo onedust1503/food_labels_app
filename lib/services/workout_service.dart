@@ -1,5 +1,5 @@
 // lib/services/workout_service.dart
-// 🔧 最終修正版 - 移除 WorkoutLog，只使用 WorkoutModel
+// 🔥 修正版 - 統一訓練記錄 + 詳細組數資訊
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -142,7 +142,6 @@ class WorkoutService {
 
   // ========== 統計數據相關 ==========
 
-  // 🔥 獲取本週運動統計（兼容 trainee_home_page.dart 的調用）
   Future<Map<String, dynamic>> getWeeklyWorkoutStats() async {
     if (_currentUserId == null) {
       return {
@@ -189,12 +188,10 @@ class WorkoutService {
     }
   }
 
-  // 🔥 獲取本週運動統計（別名，保持兼容性）
   Future<Map<String, dynamic>> getWeeklySummary() async {
     return await getWeeklyWorkoutStats();
   }
 
-  // 🔥 獲取歷史訓練記錄
   Future<List<WorkoutModel>> getWorkoutHistory({int days = 30}) async {
     if (_currentUserId == null) return [];
 
@@ -218,7 +215,6 @@ class WorkoutService {
         .toList();
   }
 
-  // 🔥 獲取訓練統計
   Future<Map<String, dynamic>> getWorkoutStats({int days = 30}) async {
     if (_currentUserId == null) {
       return {
@@ -256,7 +252,6 @@ class WorkoutService {
     };
   }
 
-  // 🔥 刪除運動記錄
   Future<void> deleteWorkoutLog(String workoutId) async {
     await _firestore.collection('workoutLogs').doc(workoutId).delete();
   }
@@ -329,9 +324,9 @@ class WorkoutService {
     });
   }
 
-  // ========== 自訓練（AdHoc Session）相關 ==========
+  // ========== 自由訓練（AdHoc Session）相關 ==========
 
-  /// 🔥 開始自訓練會話
+  /// 🔥 開始自由訓練會話
   Future<String> startAdHocSession({
     required List<Map<String, dynamic>> exercises,
   }) async {
@@ -352,7 +347,6 @@ class WorkoutService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // 初始化每個動作和組數
     for (int i = 0; i < exercises.length; i++) {
       final ex = exercises[i];
       final exRef = sessionRef.collection('exercises').doc('ex$i');
@@ -368,7 +362,6 @@ class WorkoutService {
         'currentSetIndex': 0,
       });
 
-      // 初始化所有組為 pending 狀態
       for (int s = 0; s < plannedSets; s++) {
         await exRef.collection('sets').doc('$s').set({
           'index': s,
@@ -383,7 +376,6 @@ class WorkoutService {
     return sessionRef.id;
   }
 
-  /// 🔥 開始某一組
   Future<void> adHocStartSet(
     String sessionId,
     String exerciseDocId,
@@ -406,7 +398,6 @@ class WorkoutService {
     });
   }
 
-  /// 🔥 完成某一組（立刻進入休息狀態）
   Future<void> adHocCompleteSet({
     required String sessionId,
     required String exerciseDocId,
@@ -439,7 +430,6 @@ class WorkoutService {
     });
   }
 
-  /// 🔥 結束休息
   Future<void> adHocEndRest({
     required String sessionId,
     required String exerciseDocId,
@@ -478,7 +468,7 @@ class WorkoutService {
     });
   }
 
-  /// 🔥 完成自訓練會話
+  /// 🔥 完成自由訓練會話 - ✅ 創建一筆統一記錄
   Future<void> finishAdHocSession({
     required String sessionId,
     int? sessionRpe,
@@ -491,28 +481,121 @@ class WorkoutService {
         .collection('workoutSessions')
         .doc(sessionId);
 
+    // 1. 標記 session 為已完成
     await sessionRef.update({
       'endedAt': FieldValue.serverTimestamp(),
       if (sessionRpe != null) 'sessionRpe': sessionRpe,
       if (calories != null) 'calories': calories,
     });
 
-    final snap = await sessionRef.get();
-    final startedAt =
-        (snap.data()?['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final sessionSnap = await sessionRef.get();
+    final sessionData = sessionSnap.data();
+    if (sessionData == null) {
+      print('⚠️ Session 資料不存在');
+      return;
+    }
 
-    await _firestore.collection('workoutLogs').add({
-      'type': 'self_workout',
-      'name': '自選訓練',
-      'duration': ((snap.data()?['totalActiveSec'] ?? 0) as int) ~/ 60,
-      'caloriesBurned': calories,
+    final startedAt = (sessionData['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final endedAt = (sessionData['endedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final dateStr = startedAt.toIso8601String().split('T')[0];
+    
+    // 計算總時長(分鐘)
+    final totalDurationMin = endedAt.difference(startedAt).inMinutes.clamp(1, 300);
+
+    // 2. 獲取所有動作的詳細資訊
+    final exercisesSnap = await sessionRef.collection('exercises').get();
+    
+    if (exercisesSnap.docs.isEmpty) {
+      print('⚠️ 沒有任何動作記錄');
+      return;
+    }
+
+    // 收集所有動作的組數詳情
+    List<Map<String, dynamic>> exerciseDetails = [];
+    int totalCompletedSets = 0;
+    double estimatedCalories = 0;
+
+    for (final exDoc in exercisesSnap.docs) {
+      final exData = exDoc.data();
+      final exerciseName = exData['exerciseName'] ?? '未命名動作';
+      
+      // 獲取該動作的所有組數
+      final setsSnap = await exDoc.reference.collection('sets').get();
+      
+      if (setsSnap.docs.isEmpty) continue;
+
+      List<Map<String, dynamic>> setsInfo = [];
+      int completedSets = 0;
+      
+      for (final setDoc in setsSnap.docs) {
+        final setData = setDoc.data();
+        final status = setData['status'] as String?;
+        
+        // 只記錄已完成或休息中的組
+        if (status == 'completed' || status == 'resting') {
+          completedSets++;
+          setsInfo.add({
+            'setIndex': setData['index'],
+            'reps': setData['actualReps'],
+            'weight': setData['weight'],
+            'durationSec': setData['actualDurationSec'],
+            'rpe': setData['rpe'],
+            'note': setData['note'],
+          });
+        }
+      }
+
+      if (completedSets > 0) {
+        totalCompletedSets += completedSets;
+        estimatedCalories += completedSets * 12.0; // 每組約12卡
+        
+        exerciseDetails.add({
+          'name': exerciseName,
+          'completedSets': completedSets,
+          'sets': setsInfo,
+          'category': exData['category'] ?? '未分類',
+        });
+      }
+    }
+
+    if (exerciseDetails.isEmpty) {
+      print('⚠️ 沒有完成任何組數');
+      return;
+    }
+
+    // 3. 🎯 創建一筆統一的 workoutLog
+    final logRef = _firestore.collection('workoutLogs').doc();
+    await logRef.set({
       'userId': uid,
-      'date': Timestamp.fromDate(startedAt),
+      'date': dateStr,
+      'type': 'weight_training',
+      'name': '自由訓練', // 統一名稱
+      'duration': totalDurationMin,
+      'caloriesBurned': calories ?? estimatedCalories,
+      'totalSets': totalCompletedSets,
+      'totalExercises': exerciseDetails.length,
+      'intensity': 'medium',
+      'notes': '自由訓練 - ${exerciseDetails.length} 個動作',
+      'sessionId': sessionId, // 🔥 關鍵：保留 sessionId 用於查詢詳情
       'createdAt': FieldValue.serverTimestamp(),
+      
+      // 🔥 新增：儲存動作摘要(用於列表顯示)
+      'exerciseSummary': exerciseDetails.map((ex) => {
+        'name': ex['name'],
+        'sets': ex['completedSets'],
+      }).toList(),
     });
+
+    // 4. 更新每日統計
+    await _updateDailySummary(dateStr, totalDurationMin, calories ?? estimatedCalories);
+
+    print('✅ Ad-hoc session 完成: $sessionId');
+    print('   總時長: $totalDurationMin 分鐘');
+    print('   總卡路里: ${(calories ?? estimatedCalories).toStringAsFixed(1)}');
+    print('   總組數: $totalCompletedSets');
+    print('   動作數: ${exerciseDetails.length}');
   }
 
-  /// 🔥 略過某一組
   Future<void> adHocSkipSet({
     required String sessionId,
     required String exerciseDocId,
@@ -535,7 +618,6 @@ class WorkoutService {
     });
   }
 
-  /// 🔥 新增組數
   Future<void> adHocAddSet({
     required String sessionId,
     required String exerciseDocId,
@@ -566,7 +648,50 @@ class WorkoutService {
     });
   }
 
-  /// 🔥 獲取會話實時數據
+  // 🔥 新增：獲取訓練詳情(包含所有組數)
+  Future<Map<String, dynamic>?> getWorkoutSessionDetails(String sessionId) async {
+    final uid = _currentUserId!;
+    final sessionRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId);
+    
+    final sessionSnap = await sessionRef.get();
+    if (!sessionSnap.exists) return null;
+    
+    final sessionData = sessionSnap.data()!;
+    
+    // 獲取所有動作
+    final exercisesSnap = await sessionRef.collection('exercises').get();
+    List<Map<String, dynamic>> exercises = [];
+    
+    for (final exDoc in exercisesSnap.docs) {
+      final exData = exDoc.data();
+      
+      // 獲取所有組數
+      final setsSnap = await exDoc.reference.collection('sets').orderBy('index').get();
+      List<Map<String, dynamic>> sets = setsSnap.docs
+          .map((setDoc) => setDoc.data())
+          .toList();
+      
+      exercises.add({
+        'name': exData['exerciseName'],
+        'type': exData['type'],
+        'category': exData['category'],
+        'sets': sets,
+      });
+    }
+    
+    return {
+      'sessionId': sessionId,
+      'startedAt': sessionData['startedAt'],
+      'endedAt': sessionData['endedAt'],
+      'totalRestSec': sessionData['totalRestSec'],
+      'exercises': exercises,
+    };
+  }
+
   Stream<DocumentSnapshot> watchSession(String sessionId) {
     final uid = _currentUserId!;
     return _firestore
@@ -577,7 +702,6 @@ class WorkoutService {
         .snapshots();
   }
 
-  /// 🔥 獲取動作實時數據
   Stream<DocumentSnapshot> watchExercise(String sessionId, String exerciseDocId) {
     final uid = _currentUserId!;
     return _firestore
@@ -590,7 +714,6 @@ class WorkoutService {
         .snapshots();
   }
 
-  /// 🔥 獲取所有組數實時數據
   Stream<QuerySnapshot> watchSets(String sessionId, String exerciseDocId) {
     final uid = _currentUserId!;
     return _firestore

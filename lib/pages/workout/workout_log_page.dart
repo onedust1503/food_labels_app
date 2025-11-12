@@ -1,10 +1,14 @@
 // lib/pages/workout/workout_log_page.dart
-// 🔥 修改版：添加「開始訓練」功能
+// 🔥 修正版：完善導航流程和資料刷新
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import '../../services/workout_service.dart';
 import '../../models/workout_model.dart';
-import 'free_workout_execution_page.dart'; // 新增
+import 'free_workout_execution_page.dart';
+import 'workout_summary_page.dart';
 
 class WorkoutLogPage extends StatefulWidget {
   const WorkoutLogPage({super.key});
@@ -15,6 +19,8 @@ class WorkoutLogPage extends StatefulWidget {
 
 class _WorkoutLogPageState extends State<WorkoutLogPage> {
   final WorkoutService _workoutService = WorkoutService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   List<WorkoutModel> _todayWorkouts = [];
   Map<String, dynamic> _todaySummary = {};
   bool _isLoading = true;
@@ -75,12 +81,11 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                   children: [
                     _buildTodaySummaryCard(),
                     const SizedBox(height: 20),
-                    
-                    // 🔥 新增：開始訓練按鈕
                     _buildStartWorkoutButton(),
                     const SizedBox(height: 20),
-
                     _buildWorkoutList(),
+                    const SizedBox(height: 20),
+                    _buildCompletedSessionsSection(),
                   ],
                 ),
               ),
@@ -88,7 +93,6 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  // 🔥 新增：開始訓練按鈕
   Widget _buildStartWorkoutButton() {
     return SizedBox(
       width: double.infinity,
@@ -112,7 +116,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  // 🔥 新增：選擇動作對話框
+  // 🔥 修正：選擇動作對話框
   void _showSelectExercisesDialog() {
     showDialog(
       context: context,
@@ -125,27 +129,42 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  // 🔥 新增：開始訓練
+  // 🔥 修正：開始訓練 → 完成後先顯示總結 → 再刷新
   Future<void> _startWorkout(List<Map<String, dynamic>> exercises) async {
     if (exercises.isEmpty) {
       _showSnackBar('請至少選擇一個動作', Colors.orange);
       return;
     }
 
-    final result = await Navigator.push(
+    // 1. 進入訓練執行頁面
+    final sessionId = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => FreeWorkoutExecutionPage(exercises: exercises),
       ),
     );
 
-    // 如果完成訓練，重新載入
-    if (result == true) {
-      _loadTodayWorkouts();
+    if (!mounted) return;
+
+    // 2. 如果訓練完成（有返回 sessionId），先顯示總結頁面
+    if (sessionId != null && sessionId.isNotEmpty) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WorkoutSummaryPage(sessionId: sessionId),
+        ),
+      );
+
+      if (!mounted) return;
+
+      // 3. 總結頁面關閉後，刷新今日訓練列表
+      await _loadTodayWorkouts();
+      
+      // 4. 顯示成功提示
+      _showSnackBar('✅ 訓練記錄已保存！', Colors.green);
     }
   }
 
-  // 今日統計卡片
   Widget _buildTodaySummaryCard() {
     int totalDuration = _todaySummary['totalDuration'] ?? 0;
     double totalCalories = (_todaySummary['totalCalories'] ?? 0).toDouble();
@@ -215,7 +234,6 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  // 運動列表
   Widget _buildWorkoutList() {
     if (_todayWorkouts.isEmpty) {
       return Center(
@@ -283,75 +301,251 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         typeColor = Colors.orange;
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: typeColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
+    return GestureDetector(
+      onTap: () {
+        final sid = workout.sessionId;
+        if (sid != null && sid.isNotEmpty) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => WorkoutSummaryPage(sessionId: sid),
             ),
-            child: Icon(typeIcon, color: typeColor, size: 28),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  workout.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${workout.duration} 分鐘',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                ),
-                if (workout.sets != null && workout.reps != null)
+          );
+        } else {
+          _showSnackBar('此記錄未綁定訓練日誌詳情', Colors.grey);
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: typeColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(typeIcon, color: typeColor, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    '${workout.sets} 組 × ${workout.reps} 次',
+                    workout.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${workout.duration} 分鐘',
                     style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
-              ],
+                  // 🔥 新增：顯示總組數和動作數
+                  if (workout.totalSets != null && workout.totalExercises != null)
+                    Text(
+                      '${workout.totalExercises} 個動作 · ${workout.totalSets} 組',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (workout.caloriesBurned != null)
-            Column(
-              children: [
-                const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
-                Text(
-                  '${workout.caloriesBurned!.toInt()}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange,
+            if (workout.caloriesBurned != null)
+              Column(
+                children: [
+                  const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
+                  Text(
+                    '${workout.caloriesBurned!.toInt()}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
                   ),
-                ),
-              ],
-            ),
-        ],
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  // 新增運動對話框（事後記錄）
+  Widget _buildCompletedSessionsSection() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('workoutSessions')
+          .where('status', isEqualTo: 'completed')
+          .orderBy('startedAt', descending: true)
+          .limit(10) // 🔥 限制顯示數量
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '歷史訓練記錄',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  '目前還沒有歷史訓練記錄',
+                  style: TextStyle(color: Colors.black87),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final sessions = snapshot.data!.docs;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '歷史訓練記錄',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: sessions.length,
+              itemBuilder: (context, index) {
+                final doc = sessions[index];
+                final data = doc.data();
+                final startTs = data['startedAt'] as Timestamp?;
+                final endTs = data['endedAt'] as Timestamp?;
+                final start = startTs?.toDate();
+                final end = endTs?.toDate();
+                final duration = data['duration'] as int?;
+                final exercises = data['totalExercises'] as int?;
+                final totalSets = data['totalSets'] as int?;
+                final calories = data['calories'] as num?;
+
+                final dateText = (start != null)
+                    ? DateFormat('yyyy/MM/dd (E) HH:mm', 'zh_TW').format(start)
+                    : '未記錄時間';
+
+                final durationText = duration != null
+                    ? '$duration 分鐘'
+                    : (start != null && end != null)
+                        ? '${end.difference(start).inMinutes} 分鐘'
+                        : '—';
+
+                return GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => WorkoutSummaryPage(sessionId: doc.id),
+                    ),
+                  ),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6C63FF).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.history, color: Color(0xFF6C63FF), size: 28),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                dateText,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '時長：$durationText · 動作：${exercises ?? 0} · 組數：${totalSets ?? 0}',
+                                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (calories != null)
+                          Column(
+                            children: [
+                              const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
+                              Text(
+                                '${calories.toInt()}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showAddWorkoutDialog() {
     showModalBottomSheet(
       context: context,
@@ -379,7 +573,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   }
 }
 
-// ========== 🔥 新增：選擇動作對話框 ==========
+// ========== 選擇動作對話框 ==========
 
 class SelectExercisesDialog extends StatefulWidget {
   final Function(List<Map<String, dynamic>>) onConfirm;
@@ -393,7 +587,6 @@ class SelectExercisesDialog extends StatefulWidget {
 class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
   final List<Map<String, dynamic>> _selectedExercises = [];
 
-  // 預設動作庫（可以之後改成從 Firebase 讀取）
   final List<Map<String, dynamic>> _exerciseLibrary = [
     {'name': '臥推', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 8, 'restSec': 120},
     {'name': '深蹲', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 8, 'restSec': 120},
@@ -432,7 +625,6 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          // 標題
           Row(
             children: [
               const Text(
@@ -448,7 +640,6 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
           ),
           const Divider(),
 
-          // 已選擇的動作
           if (_selectedExercises.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Align(
@@ -475,7 +666,6 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
             const Divider(),
           ],
 
-          // 動作庫
           Expanded(
             child: ListView.builder(
               itemCount: _exerciseLibrary.length,
@@ -498,7 +688,6 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
             ),
           ),
 
-          // 確認按鈕
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -522,7 +711,7 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
   }
 }
 
-// ========== 事後記錄對話框（原有的，保持不變）==========
+// ========== 事後記錄對話框 ========== 
 
 class AddWorkoutDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;

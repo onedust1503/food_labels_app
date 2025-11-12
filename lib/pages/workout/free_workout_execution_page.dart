@@ -474,7 +474,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
 
       if (mounted) {
         HapticFeedback.heavyImpact();
-        Navigator.pop(context, true);
+        Navigator.pop(context, _sessionId);
       }
     } catch (e) {
       _showSnackBar('完成失敗：$e', Colors.red);

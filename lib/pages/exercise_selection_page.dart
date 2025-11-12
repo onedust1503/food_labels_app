@@ -1,11 +1,12 @@
 // lib/pages/workout/exercise_selection_page.dart
 // 🎯 多選運動頁面 - FitFit 風格
-// 功能：勾選多個動作 → 長按拖曳排序 → 進入自由訓練
+// ✅ 修正導航流程：完成訓練 → 總結頁面 → 返回上一頁
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/wger_api_service.dart';
 import 'workout/free_workout_execution_page.dart';
+import 'workout/workout_summary_page.dart'; // 🔥 新增引入
 
 class ExerciseSelectionPage extends StatefulWidget {
   final bool isCoach;
@@ -31,7 +32,7 @@ class _ExerciseSelectionPageState
 
   List<Exercise> _allExercises = [];
   List<Exercise> _filteredExercises = [];
-  List<SelectedExercise> _selectedExercises = []; // 🔥 已選擇的動作（可排序）
+  List<SelectedExercise> _selectedExercises = [];
 
   bool _isLoading = true;
   String _selectedCategory = '全部';
@@ -100,17 +101,14 @@ class _ExerciseSelectionPageState
     });
   }
 
-  // 🔥 切換選擇狀態
   void _toggleSelection(Exercise exercise) {
     setState(() {
       final index = _selectedExercises
           .indexWhere((e) => e.exercise.id == exercise.id);
 
       if (index >= 0) {
-        // 已選 → 取消選擇
         _selectedExercises.removeAt(index);
       } else {
-        // 未選 → 加入選擇（預設 90 秒休息）
         _selectedExercises.add(SelectedExercise(
           exercise: exercise,
           restSec: 90,
@@ -123,14 +121,13 @@ class _ExerciseSelectionPageState
     return _selectedExercises.any((e) => e.exercise.id == exercise.id);
   }
 
-  // 🔥 開始訓練
-  void _startWorkout() {
+  // 🔥 修正：開始訓練 → 完成後先顯示總結 → 再返回
+  Future<void> _startWorkout() async {
     if (_selectedExercises.isEmpty) {
       _showSnackBar('請至少選擇一個動作');
       return;
     }
 
-    // 轉換成執行頁需要的格式
     final exercises = _selectedExercises.map((selected) {
       return {
         'id': selected.exercise.id,
@@ -138,23 +135,36 @@ class _ExerciseSelectionPageState
         'category': selected.exercise.category,
         'muscles': selected.exercise.muscles,
         'restSec': selected.restSec,
-        // 🔥 不傳 plannedSets - 讓執行頁動態新增
       };
     }).toList();
 
-    Navigator.push(
+    // 1. 先進入訓練執行頁面
+    final sessionId = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => FreeWorkoutExecutionPage(
           exercises: exercises,
         ),
       ),
-    ).then((result) {
-      if (result == true && mounted) {
-        // 訓練完成，返回上一頁
-        Navigator.pop(context, true);
-      }
-    });
+    );
+
+    if (!mounted) return;
+
+    // 2. 如果訓練完成（有返回 sessionId），顯示總結頁面
+    if (sessionId != null && sessionId.isNotEmpty) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WorkoutSummaryPage(sessionId: sessionId),
+        ),
+      );
+
+      if (!mounted) return;
+
+      // 3. 總結頁面關閉後，返回到上一頁（workout_log_page）
+      // 傳遞 true 表示訓練已完成，上一頁需要刷新
+      Navigator.pop(context, true);
+    }
   }
 
   void _showSnackBar(String message) {
@@ -184,7 +194,6 @@ class _ExerciseSelectionPageState
               '選擇運動',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            // 顯示計畫模式提示
             if (widget.planId != null)
               Text(
                 '📋 計畫訓練',
@@ -199,7 +208,6 @@ class _ExerciseSelectionPageState
         foregroundColor: Colors.black87,
         elevation: 0,
         actions: [
-          // 🔥 顯示已選數量
           if (_selectedExercises.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(right: 16),
@@ -221,16 +229,9 @@ class _ExerciseSelectionPageState
       ),
       body: Column(
         children: [
-          // 搜尋和篩選
           _buildSearchAndFilter(),
-
-          // 🔥 已選擇區域（可拖曳排序）
           if (_selectedExercises.isNotEmpty) _buildSelectedArea(),
-
-          // 結果數量
           if (!_isLoading) _buildResultCount(),
-
-          // 運動列表
           Expanded(
             child: _isLoading
                 ? const Center(
@@ -255,14 +256,12 @@ class _ExerciseSelectionPageState
           ),
         ],
       ),
-      // 🔥 底部固定按鈕
       bottomNavigationBar: _selectedExercises.isNotEmpty
           ? _buildBottomActionBar()
           : null,
     );
   }
 
-  // 搜尋和篩選區域
   Widget _buildSearchAndFilter() {
     return Container(
       decoration: BoxDecoration(
@@ -281,7 +280,6 @@ class _ExerciseSelectionPageState
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              // 搜尋欄
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
@@ -309,8 +307,6 @@ class _ExerciseSelectionPageState
                 ),
               ),
               const SizedBox(height: 12),
-
-              // 分類篩選
               SizedBox(
                 height: 40,
                 child: ListView.builder(
@@ -354,7 +350,6 @@ class _ExerciseSelectionPageState
     );
   }
 
-  // 🔥 已選擇區域（橫向滾動 + 可拖曳）
   Widget _buildSelectedArea() {
     return Container(
       height: 120,
@@ -502,7 +497,6 @@ class _ExerciseSelectionPageState
     );
   }
 
-  // 運動卡片
   Widget _buildExerciseCard(Exercise exercise) {
     final isSelected = _isSelected(exercise);
 
@@ -533,7 +527,6 @@ class _ExerciseSelectionPageState
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // 勾選框
                 Container(
                   width: 28,
                   height: 28,
@@ -558,8 +551,6 @@ class _ExerciseSelectionPageState
                       : null,
                 ),
                 const SizedBox(width: 12),
-
-                // 圖示
                 Container(
                   width: 48,
                   height: 48,
@@ -574,8 +565,6 @@ class _ExerciseSelectionPageState
                   ),
                 ),
                 const SizedBox(width: 12),
-
-                // 資訊
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -672,7 +661,6 @@ class _ExerciseSelectionPageState
     );
   }
 
-  // 🔥 底部操作欄
   Widget _buildBottomActionBar() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -690,7 +678,6 @@ class _ExerciseSelectionPageState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 提示文字
             Text(
               '可在訓練中新增動作或調整組數',
               style: TextStyle(
@@ -699,8 +686,6 @@ class _ExerciseSelectionPageState
               ),
             ),
             const SizedBox(height: 12),
-
-            // 開始按鈕
             SizedBox(
               width: double.infinity,
               height: 56,
@@ -779,10 +764,9 @@ class _ExerciseSelectionPageState
   }
 }
 
-// 🔥 已選擇的動作模型
 class SelectedExercise {
   final Exercise exercise;
-  int restSec; // 可調整的休息時間
+  int restSec;
 
   SelectedExercise({
     required this.exercise,

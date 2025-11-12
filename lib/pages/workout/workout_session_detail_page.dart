@@ -1,7 +1,8 @@
 // lib/pages/workout/workout_session_detail_page.dart
-// ✨ 訓練記錄詳細頁面
-// 🔥 修正: 訓練時長顯示為 "XX分XX秒"
-// 🔥 修正: 確保所有資料正確顯示
+// ✨ 訓練記錄詳細頁面 - 最終完整修正版
+// 🔥 修正1: 從 Firestore timestamps 計算實際訓練秒數
+// 🔥 修正2: 只顯示已完成的組數(不包含 pending/skipped)
+// 🔥 修正3: 平均強度 = 總卡路里 ÷ 訓練時長(分鐘)
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +14,26 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     super.key,
     required this.workoutSession,
   });
+
+  /// 🔥 從 startedAt 和 endedAt 計算實際秒數
+  int _calculateActualDuration() {
+    final startedAt = workoutSession['startedAt'];
+    final endedAt = workoutSession['endedAt'];
+    
+    if (startedAt != null && endedAt != null) {
+      try {
+        final start = startedAt.toDate();
+        final end = endedAt.toDate();
+        return end.difference(start).inSeconds;
+      } catch (e) {
+        print('計算時長失敗: $e');
+      }
+    }
+    
+    // 降級處理:使用分鐘數
+    final duration = workoutSession['duration'] ?? 0;
+    return duration * 60;
+  }
 
   /// 🔥 格式化時長為 "XX分XX秒"
   String _formatDuration(int totalSeconds) {
@@ -29,10 +50,13 @@ class WorkoutSessionDetailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // 解析資料
     final name = workoutSession['name'] ?? '訓練記錄';
-    final duration = workoutSession['duration'] ?? 0; // 單位:分鐘
-    final calories = (workoutSession['caloriesBurned'] ?? 0.0).toDouble();
+    final calories = (workoutSession['caloriesBurned'] ?? 
+                     workoutSession['calories'] ?? 0.0).toDouble();
     final exercises = workoutSession['exercises'] as List<dynamic>? ?? [];
     final hasplanId = workoutSession['planId'] != null;
+    
+    // 🔥 計算實際訓練秒數
+    final actualDurationSeconds = _calculateActualDuration();
     
     // 解析時間戳記
     final timestamp = workoutSession['completedAt'] ?? 
@@ -107,15 +131,10 @@ class WorkoutSessionDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 訓練總覽卡片
-            _buildSummaryCard(duration, calories, exercises.length, dateTime),
-
-            // 運動列表
+            // 🔥 訓練總覽卡片 - 使用實際秒數
+            _buildSummaryCard(actualDurationSeconds, calories, exercises.length, dateTime),
             _buildExercisesList(exercises),
-
-            // 訓練分析
-            _buildAnalysisCard(exercises, duration, calories),
-
+            _buildAnalysisCard(exercises, actualDurationSeconds, calories),
             const SizedBox(height: 20),
           ],
         ),
@@ -123,8 +142,8 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     );
   }
 
-  /// 🔥 訓練總覽卡片 - 顯示秒數
-  Widget _buildSummaryCard(int duration, double calories, int exerciseCount, DateTime? dateTime) {
+  /// 🔥 訓練總覽卡片 - 顯示實際秒數
+  Widget _buildSummaryCard(int durationSeconds, double calories, int exerciseCount, DateTime? dateTime) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -188,7 +207,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
               ),
               _buildStatItem(
                 icon: Icons.timer,
-                value: _formatDuration(duration * 60), // ✅ 轉換為秒並格式化
+                value: _formatDuration(durationSeconds), // ✅ 顯示實際秒數
                 label: '訓練時長',
                 color: Colors.white,
               ),
@@ -219,7 +238,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
           value,
           style: TextStyle(
             color: color,
-            fontSize: 20, // 稍微小一點以容納秒數
+            fontSize: 18, // 稍微小一點
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -313,22 +332,28 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     );
   }
 
-  /// 單個運動項目
+  /// 🔥 單個運動項目 - 只計算已完成的組
   Widget _buildExerciseItem(Map<String, dynamic> exercise, int index) {
     final name = exercise['exerciseName'] ?? exercise['name'] ?? '未知運動';
     final type = exercise['exerciseType'] ?? exercise['type'] ?? 'other';
-    final sets = exercise['sets'] as List<dynamic>? ?? [];
+    final allSets = exercise['sets'] as List<dynamic>? ?? [];
+    
+    // 🔥 只顯示 status = 'completed' 或 'resting' 的組
+    final completedSets = allSets.where((set) {
+      final status = set['status'] as String?;
+      return status == 'completed' || status == 'resting';
+    }).toList();
     
     // 計算總次數和總重量
     int totalReps = 0;
     double totalWeight = 0;
-    for (var set in sets) {
+    for (var set in completedSets) {
       final reps = (set['actualReps'] ?? set['reps'] ?? 0) as int;
       final weight = ((set['weight'] ?? 0) as num).toDouble();
       totalReps += reps;
       totalWeight += weight;
     }
-    final avgWeight = sets.isNotEmpty ? totalWeight / sets.length : 0;
+    final avgWeight = completedSets.isNotEmpty ? totalWeight / completedSets.length : 0;
 
     // 圖示和顏色
     IconData icon;
@@ -395,7 +420,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 4, left: 34),
         child: Text(
-          '${sets.length} 組 • $totalReps 次${avgWeight > 0 ? ' • 平均 ${avgWeight.toStringAsFixed(1)}kg' : ''}',
+          '${completedSets.length} 組 • $totalReps 次${avgWeight > 0 ? ' • 平均 ${avgWeight.toStringAsFixed(1)}kg' : ''}',
           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
       ),
@@ -405,10 +430,11 @@ class WorkoutSessionDetailPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 組數詳情
-              ...sets.asMap().entries.map((entry) {
-                final setIndex = entry.key + 1;
+              // 🔥 只顯示已完成的組
+              ...completedSets.asMap().entries.map((entry) {
+                final displayIndex = entry.key + 1; // 顯示序號
                 final set = entry.value as Map<String, dynamic>;
+                final actualSetIndex = (set['index'] ?? set['setIndex'] ?? 0) as int; // 實際組號
                 final reps = (set['actualReps'] ?? set['reps'] ?? 0) as int;
                 final weight = ((set['weight'] ?? 0) as num).toDouble();
                 final rest = (set['restTakenSec'] ?? set['restAfter'] ?? 0) as int;
@@ -432,7 +458,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
                         ),
                         child: Center(
                           child: Text(
-                            '$setIndex',
+                            '$displayIndex', // ✅ 顯示連續編號
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -483,17 +509,24 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     );
   }
 
-  /// 訓練分析卡片
-  Widget _buildAnalysisCard(List<dynamic> exercises, int duration, double calories) {
-    // 計算總組數和總次數
+  /// 🔥 訓練分析卡片 - 只計算已完成的組
+  Widget _buildAnalysisCard(List<dynamic> exercises, int durationSeconds, double calories) {
     int totalSets = 0;
     int totalReps = 0;
-    double totalVolume = 0; // 總訓練量 (重量 × 次數)
+    double totalVolume = 0;
 
     for (var exercise in exercises) {
-      final sets = exercise['sets'] as List<dynamic>? ?? [];
-      totalSets += sets.length;
-      for (var set in sets) {
+      final allSets = exercise['sets'] as List<dynamic>? ?? [];
+      
+      // 🔥 只計算已完成的組
+      final completedSets = allSets.where((set) {
+        final status = set['status'] as String?;
+        return status == 'completed' || status == 'resting';
+      }).toList();
+      
+      totalSets += completedSets.length;
+      
+      for (var set in completedSets) {
         final reps = (set['actualReps'] ?? set['reps'] ?? 0) as int;
         final weight = ((set['weight'] ?? 0) as num).toDouble();
         totalReps += reps;
@@ -501,7 +534,9 @@ class WorkoutSessionDetailPage extends StatelessWidget {
       }
     }
 
-    final avgCaloriesPerMinute = duration > 0 ? calories / duration : 0;
+    // 🔥 平均強度 = 總卡路里 ÷ 訓練時長(分鐘)
+    final durationMinutes = durationSeconds / 60.0;
+    final avgCaloriesPerMinute = durationMinutes > 0 ? calories / durationMinutes : 0;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -593,8 +628,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     );
   }
 
-  /// 格式化完整日期時間 (包含秒數)
   String _formatFullDateTime(DateTime dateTime) {
-    return DateFormat('yyyy/MM/dd HH:mm:ss').format(dateTime);
+    return DateFormat('yyyy/MM/dd (E) HH:mm:ss', 'zh_TW').format(dateTime);
   }
 }

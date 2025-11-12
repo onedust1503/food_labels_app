@@ -1,5 +1,5 @@
 // lib/services/workout_service.dart
-// 🔥 修正版 - 統一訓練記錄 + 詳細組數資訊
+// 🔥 完整版 - 統一訓練記錄 + 詳細組數資訊
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,6 +13,7 @@ class WorkoutService {
 
   // ========== 運動記錄相關 ==========
 
+  // 🔥 添加運動記錄
   Future<void> addWorkoutLog({
     required String type,
     required String name,
@@ -49,6 +50,7 @@ class WorkoutService {
     await _updateDailySummary(today, duration, caloriesBurned ?? 0);
   }
 
+  // 更新每日運動總計
   Future<void> _updateDailySummary(String date, int duration, double calories) async {
     DocumentReference summaryRef = _firestore
         .collection('users')
@@ -80,7 +82,7 @@ class WorkoutService {
     });
   }
 
-  // 🔥 獲取今日訓練記錄
+  // 🔥 獲取今日運動記錄
   Future<List<WorkoutModel>> getTodayWorkouts() async {
     if (_currentUserId == null) return [];
 
@@ -688,6 +690,7 @@ class WorkoutService {
       'startedAt': sessionData['startedAt'],
       'endedAt': sessionData['endedAt'],
       'totalRestSec': sessionData['totalRestSec'],
+      'calories': sessionData['calories'],
       'exercises': exercises,
     };
   }

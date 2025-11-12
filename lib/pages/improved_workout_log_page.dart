@@ -1,6 +1,7 @@
 // lib/pages/improved_workout_log_page.dart
-// ✨ 改進的訓練記錄頁面 - 支援訓練計畫追蹤
-// ✅ 新增 planId 參數，用於追蹤來自訓練計畫的記錄
+// ✨ 改進的訓練記錄頁面 - 完全修正版
+// ✅ 正確顯示 workoutSessions 的資料結構
+// ✅ 支援訓練計畫追蹤
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -11,13 +12,13 @@ import 'exercise_selection_page.dart';
 class ImprovedWorkoutLogPage extends StatefulWidget {
   final bool isCoach;
   final String? traineeId;
-  final String? planId;  // ✅ 新增：訓練計畫 ID（如果是從計畫開始的訓練）
+  final String? planId;
 
   const ImprovedWorkoutLogPage({
     super.key,
     required this.isCoach,
     this.traineeId,
-    this.planId,  // ✅ 新增
+    this.planId,
   });
 
   @override
@@ -45,7 +46,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     super.initState();
     _loadData();
     
-    // ✅ 調試：顯示是否為計畫訓練
     if (kDebugMode && widget.planId != null) {
       debugPrint('📋 訓練計畫模式: planId = ${widget.planId}');
     }
@@ -74,6 +74,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
       if (kDebugMode) {
         debugPrint('✅ 載入成功:');
         debugPrint('   今日訓練: ${workouts.length} 筆');
+        debugPrint('   訓練內容: ${workouts.map((w) => w['name'] ?? '未知').toList()}');
         debugPrint('   今日統計: $todayStats');
         debugPrint('   本週統計: $weeklyStats');
       }
@@ -86,18 +87,19 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (kDebugMode) {
         debugPrint('❌ 載入訓練數據失敗: $e');
+        debugPrint('堆疊追蹤: $stackTrace');
       }
       if (mounted) {
         setState(() => _isLoading = false);
-        _showSnackBar('載入數據失敗');
+        _showSnackBar('載入數據失敗: $e');
       }
     }
   }
 
-  /// 刪除運動記錄
+  /// 刪除運動記錄 - session-based
   Future<void> _deleteWorkout(String workoutId) async {
     if (kDebugMode) {
       debugPrint('🗑️ 刪除訓練記錄: $workoutId');
@@ -111,7 +113,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
       if (kDebugMode) {
         debugPrint('❌ 刪除失敗: $e');
       }
-      _showSnackBar('刪除失敗，請重試');
+      _showSnackBar('刪除失敗,請重試');
     }
   }
 
@@ -121,7 +123,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('確認刪除'),
-        content: Text('確定要刪除「$workoutName」嗎？'),
+        content: Text('確定要刪除「$workoutName」嗎?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -170,7 +172,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                 fontSize: 18,
               ),
             ),
-            // ✅ 新增：顯示是否為計畫訓練
             if (widget.planId != null)
               Text(
                 '📋 計畫訓練',
@@ -202,7 +203,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
-                    // ✅ 新增：計畫訓練提示卡片
+                    // 計畫訓練提示卡片
                     if (widget.planId != null) _buildPlanModeInfoCard(),
 
                     // 今日統計卡片
@@ -219,14 +220,13 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
-          // ✅ 修改：傳遞 planId 到運動選擇頁面
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ExerciseSelectionPage(
                 isCoach: widget.isCoach,
                 traineeId: widget.traineeId,
-                planId: widget.planId,  // ✅ 傳遞 planId
+                planId: widget.planId,
               ),
             ),
           );
@@ -248,7 +248,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     );
   }
 
-  /// ✅ 新增：計畫訓練提示卡片
+  /// 計畫訓練提示卡片
   Widget _buildPlanModeInfoCard() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -441,7 +441,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
               Icon(Icons.calendar_today, color: Colors.green.shade700, size: 20),
               const SizedBox(width: 8),
               Text(
-                '本週統計（過去7天）',
+                '本週統計(過去7天)',
                 style: TextStyle(
                   color: Colors.green.shade700,
                   fontSize: 16,
@@ -587,16 +587,28 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     );
   }
 
-  /// 訓練項目
+  /// ✅ 修正: 訓練項目 - 正確處理 workoutSession 的資料結構
   Widget _buildWorkoutItem(Map<String, dynamic> workout) {
+    // ✅ 新資料結構使用 'name' 而非 'exerciseName'
     final name = workout['name'] ?? '未知運動';
     final duration = workout['duration'] ?? 0;
     final calories = (workout['caloriesBurned'] ?? 0.0).toDouble();
-    final sets = workout['sets'];
-    final reps = workout['reps'];
-    final weight = workout['weight'];
+    
+    // ✅ 新資料結構: exercises 是一個列表,包含多個運動
+    final exercises = workout['exercises'] as List<dynamic>? ?? [];
     final workoutId = workout['id'] ?? '';
-    final hasplanId = workout['planId'] != null;  // ✅ 新增：檢查是否有 planId
+    final hasplanId = workout['planId'] != null;
+
+    // ✅ 計算總組數和總次數
+    int totalSets = 0;
+    int totalReps = 0;
+    for (var exercise in exercises) {
+      final sets = exercise['sets'] as List<dynamic>? ?? [];
+      totalSets += sets.length;
+      for (var set in sets) {
+        totalReps += (set['reps'] ?? 0) as int;
+      }
+    }
 
     return Dismissible(
       key: Key(workoutId),
@@ -606,7 +618,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('確認刪除'),
-            content: Text('確定要刪除「$name」嗎？'),
+            content: Text('確定要刪除「$name」嗎?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -635,14 +647,12 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            // ✅ 新增：計畫訓練使用藍色，自由訓練使用綠色
             color: hasplanId 
                 ? Colors.blue.withValues(alpha: 0.1)
                 : Colors.green.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
-            // ✅ 新增：計畫訓練顯示不同圖示
             hasplanId ? Icons.event_note : Icons.fitness_center,
             color: hasplanId ? Colors.blue : Colors.green,
             size: 24,
@@ -659,7 +669,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                 ),
               ),
             ),
-            // ✅ 新增：計畫訓練標籤
             if (hasplanId)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -683,6 +692,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
+            // ✅ 第一行: 時間 + 卡路里
             Row(
               children: [
                 Icon(Icons.timer, size: 14, color: Colors.grey.shade600),
@@ -701,10 +711,11 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                 ),
               ],
             ),
-            if (sets != null && reps != null) ...[
+            // ✅ 第二行: 運動數量 + 總組數
+            if (exercises.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
-                '$sets 組 × $reps 次${weight != null ? ' @ ${weight}kg' : ''}',
+                '${exercises.length} 個動作 • $totalSets 組 • $totalReps 次',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],

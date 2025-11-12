@@ -1,7 +1,7 @@
 // lib/models/workout_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// ========== 原有模型（保持不變，只新增欄位）==========
+// ========== 基礎運動記錄模型 ==========
 
 class WorkoutModel {
   final String? id;
@@ -47,6 +47,7 @@ class WorkoutModel {
     this.exerciseSummary,
   });
 
+  // 從 Firestore 轉換
   factory WorkoutModel.fromFirestore(Map<String, dynamic> data, String docId) {
     return WorkoutModel(
       id: docId,
@@ -71,6 +72,7 @@ class WorkoutModel {
     );
   }
 
+  // 轉為 Firestore 格式
   Map<String, dynamic> toFirestore() {
     return {
       'userId': userId,
@@ -95,17 +97,18 @@ class WorkoutModel {
   }
 }
 
-// 訓練計畫模型
+// ========== 訓練計畫模型 ==========
+
 class WorkoutPlanModel {
   final String? id;
-  final String coachId;
-  final String traineeId;
-  final String planName;
-  final String? description;
+  final String coachId; // 教練 ID
+  final String traineeId; // 學員 ID
+  final String planName; // 計畫名稱
+  final String? description; // 說明
   final DateTime startDate;
   final DateTime? endDate;
-  final List<WorkoutPlanDay> days;
-  final String status;
+  final List<WorkoutPlanDay> days; // 每日訓練
+  final String status; // active, completed, cancelled
   final DateTime createdAt;
 
   WorkoutPlanModel({
@@ -154,8 +157,9 @@ class WorkoutPlanModel {
   }
 }
 
+// 訓練計畫的每日項目
 class WorkoutPlanDay {
-  final String dayOfWeek;
+  final String dayOfWeek; // monday, tuesday, etc.
   final List<PlannedExercise> exercises;
 
   WorkoutPlanDay({
@@ -181,12 +185,13 @@ class WorkoutPlanDay {
   }
 }
 
+// 計畫中的運動項目
 class PlannedExercise {
   final String name;
   final String type;
   final int? sets;
   final int? reps;
-  final int? duration;
+  final int? duration; // 分鐘
   final String? notes;
   final String? primaryMuscleGroup; // 主要肌群（例如：胸部、腿部）
   final List<String>? targetMuscles; // 目標肌肉（例如：[下背部, 腿後肌]）
@@ -231,7 +236,7 @@ class PlannedExercise {
   }
 }
 
-// ========== 新增模型（狀態機，用於實時訓練）==========
+// ========== 狀態機模型（用於實時訓練）==========
 
 /// 組數狀態
 enum WorkoutSetStatus {

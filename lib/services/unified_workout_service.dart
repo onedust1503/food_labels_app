@@ -464,6 +464,49 @@ class UnifiedWorkoutService {
     });
   }
 
+  /// ✅ 新增：獲取訓練歷史記錄
+  Future<List<Map<String, dynamic>>> getWorkoutHistory({int days = 30}) async {
+    if (_currentUserId == null) return [];
+
+    try {
+      // 計算起始日期
+      final DateTime startDate = DateTime.now().subtract(Duration(days: days));
+      final String startDateStr = startDate.toIso8601String().split('T')[0];
+
+      if (kDebugMode) {
+        debugPrint('📋 查詢訓練歷史: 從 $startDateStr 開始，共 $days 天');
+      }
+
+      // 從 workoutSessions 集合查詢
+      final QuerySnapshot snapshot = await _firestore
+          .collection('workoutSessions')
+          .where('userId', isEqualTo: _currentUserId)
+          .where('date', isGreaterThanOrEqualTo: startDateStr)
+          .orderBy('date', descending: true)
+          .orderBy('completedAt', descending: true)
+          .get();
+
+      if (kDebugMode) {
+        debugPrint('✅ 找到 ${snapshot.docs.length} 筆訓練記錄');
+      }
+
+      // 轉換為 Map 列表
+      final List<Map<String, dynamic>> workouts = snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id; // 添加文檔 ID
+        return data;
+      }).toList();
+
+      return workouts;
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取訓練歷史失敗: $e');
+        debugPrint('堆疊追蹤: $stackTrace');
+      }
+      return [];
+    }
+  }
+
   /// 🔥 獲取本週訓練統計
   Future<Map<String, dynamic>> getWeeklyStats() async {
     if (_currentUserId == null) {

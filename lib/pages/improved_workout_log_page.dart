@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../../services/unified_workout_service.dart';
 import 'exercise_selection_page.dart';
+import 'workout/workout_session_detail_page.dart';
 
 class ImprovedWorkoutLogPage extends StatefulWidget {
   final bool isCoach;
@@ -599,6 +600,17 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     final workoutId = workout['id'] ?? '';
     final hasplanId = workout['planId'] != null;
 
+    // ✅ 解析時間戳記
+    final timestamp = workout['completedAt'] ?? workout['createdAt'];
+    DateTime? dateTime;
+    if (timestamp != null) {
+      try {
+        dateTime = timestamp.toDate();
+      } catch (e) {
+        if (kDebugMode) debugPrint('❌ 時間解析失敗: $e');
+      }
+    }
+
     // ✅ 計算總組數和總次數
     int totalSets = 0;
     int totalReps = 0;
@@ -642,88 +654,147 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: hasplanId 
-                ? Colors.blue.withValues(alpha: 0.1)
-                : Colors.green.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            hasplanId ? Icons.event_note : Icons.fitness_center,
-            color: hasplanId ? Colors.blue : Colors.green,
-            size: 24,
-          ),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            // ✅ 點擊進入詳細頁面
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => WorkoutSessionDetailPage(
+                  workoutSession: workout,
                 ),
               ),
-            ),
-            if (hasplanId)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                ),
-                child: const Text(
-                  '計畫',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.blue,
-                    fontWeight: FontWeight.bold,
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // 圖示
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: hasplanId 
+                        ? Colors.blue.withValues(alpha: 0.1)
+                        : Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    hasplanId ? Icons.event_note : Icons.fitness_center,
+                    color: hasplanId ? Colors.blue : Colors.green,
+                    size: 24,
                   ),
                 ),
-              ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            // ✅ 第一行: 時間 + 卡路里
-            Row(
-              children: [
-                Icon(Icons.timer, size: 14, color: Colors.grey.shade600),
-                const SizedBox(width: 4),
-                Text(
-                  '$duration 分鐘',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
                 const SizedBox(width: 12),
-                Icon(Icons.local_fire_department,
-                    size: 14, color: Colors.grey.shade600),
-                const SizedBox(width: 4),
-                Text(
-                  '${calories.toStringAsFixed(0)} 卡',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                
+                // 訓練資訊
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 標題行
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (hasplanId)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                              ),
+                              child: const Text(
+                                '計畫',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.blue,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      
+                      // ✅ 日期時間顯示
+                      if (dateTime != null) ...[
+                        Row(
+                          children: [
+                            Icon(Icons.access_time, size: 12, color: Colors.grey.shade500),
+                            const SizedBox(width: 4),
+                            Text(
+                              DateFormat('MM/dd HH:mm:ss').format(dateTime),
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                      
+                      // 統計資訊
+                      Row(
+                        children: [
+                          Icon(Icons.timer, size: 14, color: Colors.grey.shade600),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$duration 分鐘',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                          const SizedBox(width: 12),
+                          Icon(Icons.local_fire_department,
+                              size: 14, color: Colors.grey.shade600),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${calories.toStringAsFixed(0)} 卡',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                      
+                      // 動作資訊
+                      if (exercises.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '${exercises.length} 個動作 • $totalSets 組 • $totalReps 次',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                // 刪除按鈕 & 箭頭
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                      onPressed: () => _confirmDelete(workoutId, name),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey.shade400,
+                      size: 20,
+                    ),
+                  ],
                 ),
               ],
             ),
-            // ✅ 第二行: 運動數量 + 總組數
-            if (exercises.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${exercises.length} 個動作 • $totalSets 組 • $totalReps 次',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-            ],
-          ],
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, color: Colors.red),
-          onPressed: () => _confirmDelete(workoutId, name),
+          ),
         ),
       ),
     );

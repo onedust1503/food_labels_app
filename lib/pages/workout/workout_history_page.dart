@@ -1,10 +1,11 @@
 // lib/pages/workout/workout_history_page.dart
 // 🔥 訓練歷史頁 - 顯示統一的訓練記錄
+// ✅ 修正版：使用正確的參數傳遞給詳細頁面
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../services/workout_service.dart';
-import '../../models/workout_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/unified_workout_service.dart';
 import 'workout_session_detail_page.dart';
 
 class WorkoutHistoryPage extends StatefulWidget {
@@ -15,9 +16,9 @@ class WorkoutHistoryPage extends StatefulWidget {
 }
 
 class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
-  final WorkoutService _service = WorkoutService();
+  final UnifiedWorkoutService _service = UnifiedWorkoutService();
   
-  List<WorkoutModel> _workouts = [];
+  List<Map<String, dynamic>> _workouts = [];
   bool _isLoading = true;
   int _selectedDays = 30;
 
@@ -31,6 +32,7 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
     setState(() => _isLoading = true);
     
     try {
+      // 使用 UnifiedWorkoutService 的方法
       final workouts = await _service.getWorkoutHistory(days: _selectedDays);
       
       if (mounted) {
@@ -112,11 +114,28 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
     );
   }
 
-  Widget _buildWorkoutCard(WorkoutModel workout) {
-    // 解析動作摘要
-    List<Map<String, dynamic>> exercises = [];
-    if (workout.exerciseSummary != null) {
-      exercises = List<Map<String, dynamic>>.from(workout.exerciseSummary!);
+  Widget _buildWorkoutCard(Map<String, dynamic> workout) {
+    // 解析資料
+    final name = workout['name'] ?? '訓練記錄';
+    final duration = workout['duration'] ?? 0;
+    final calories = (workout['caloriesBurned'] ?? 0.0).toDouble();
+    final exercises = workout['exercises'] as List<dynamic>? ?? [];
+    final hasplanId = workout['planId'] != null;
+    
+    // 解析日期
+    final dateStr = workout['date'] ?? '';
+    
+    // 解析時間戳記
+    final timestamp = workout['completedAt'] ?? workout['createdAt'];
+    DateTime? dateTime;
+    if (timestamp != null) {
+      try {
+        if (timestamp is Timestamp) {
+          dateTime = timestamp.toDate();
+        }
+      } catch (e) {
+        // 時間解析失敗,使用日期字串
+      }
     }
 
     return Container(
@@ -136,18 +155,15 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            // 如果有 sessionId，進入詳情頁
-            if (workout.sessionId != null) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => WorkoutSessionDetailPage(
-                    sessionId: workout.sessionId!,
-                    workoutLog: workout,
-                  ),
+            // ✅ 修正：直接傳遞 workout (workoutSession) 物件
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => WorkoutSessionDetailPage(
+                  workoutSession: workout,
                 ),
-              );
-            }
+              ),
+            );
           },
           borderRadius: BorderRadius.circular(16),
           child: Padding(
@@ -161,13 +177,15 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF6C63FF), Color(0xFF2DC4EA)],
+                        gradient: LinearGradient(
+                          colors: hasplanId 
+                              ? [const Color(0xFF2196F3), const Color(0xFF1976D2)]
+                              : [const Color(0xFF6C63FF), const Color(0xFF2DC4EA)],
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(
-                        Icons.fitness_center,
+                      child: Icon(
+                        hasplanId ? Icons.event_note : Icons.fitness_center,
                         color: Colors.white,
                         size: 24,
                       ),
@@ -177,20 +195,60 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            workout.name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              if (hasplanId)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.blue.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    '計畫',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.blue,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _formatDate(workout.date),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 12,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                dateTime != null
+                                    ? _formatDateTime(dateTime)
+                                    : _formatDate(dateStr),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -209,20 +267,20 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                   children: [
                     _buildStatChip(
                       Icons.timer,
-                      '${workout.duration} 分鐘',
+                      '$duration 分鐘',
                       const Color(0xFF6C63FF),
                     ),
                     const SizedBox(width: 8),
                     _buildStatChip(
                       Icons.local_fire_department,
-                      '${workout.caloriesBurned?.toInt() ?? 0} 卡',
+                      '${calories.toInt()} 卡',
                       Colors.orange,
                     ),
                     const SizedBox(width: 8),
-                    if (workout.totalExercises != null)
+                    if (exercises.isNotEmpty)
                       _buildStatChip(
                         Icons.list,
-                        '${workout.totalExercises} 動作',
+                        '${exercises.length} 動作',
                         const Color(0xFF22C55E),
                       ),
                   ],
@@ -253,6 +311,10 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                           spacing: 6,
                           runSpacing: 6,
                           children: exercises.take(4).map((ex) {
+                            final exMap = ex as Map<String, dynamic>;
+                            final exName = exMap['name'] ?? '未知';
+                            final sets = exMap['sets'] as List<dynamic>? ?? [];
+                            
                             return Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -266,7 +328,7 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
                                 ),
                               ),
                               child: Text(
-                                '${ex['name']} ${ex['sets']}組',
+                                '$exName ${sets.length}組',
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -373,5 +435,23 @@ class _WorkoutHistoryPageState extends State<WorkoutHistoryPage> {
     } catch (e) {
       return dateStr;
     }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final targetDate = DateTime(dateTime.year, dateTime.month, dateTime.day);
+
+    String prefix;
+    if (targetDate == today) {
+      prefix = '今天';
+    } else if (targetDate == yesterday) {
+      prefix = '昨天';
+    } else {
+      prefix = DateFormat('MM/dd', 'zh_TW').format(dateTime);
+    }
+
+    return '$prefix ${DateFormat('HH:mm').format(dateTime)}';
   }
 }

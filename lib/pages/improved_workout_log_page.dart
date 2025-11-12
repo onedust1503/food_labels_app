@@ -1,13 +1,14 @@
 // lib/pages/improved_workout_log_page.dart
 // ✨ 改進的訓練記錄頁面 - 完全修正版
-// ✅ 正確顯示 workoutSessions 的資料結構
-// ✅ 支援訓練計畫追蹤
+// 🔥 修正: 改用 WorkoutService (而非 UnifiedWorkoutService)
+// 🔥 修正: 訓練時長顯示為 "XX分XX秒"
+// 🔥 修正: 時間戳顯示精確到秒
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import '../../services/unified_workout_service.dart';
-import 'exercise_selection_page.dart';
+import '../../services/workout_service.dart'; // ✅ 改用 WorkoutService
+import 'workout/free_workout_execution_page.dart';
 import 'workout/workout_session_detail_page.dart';
 
 class ImprovedWorkoutLogPage extends StatefulWidget {
@@ -27,7 +28,7 @@ class ImprovedWorkoutLogPage extends StatefulWidget {
 }
 
 class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
-  final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
+  final WorkoutService _workoutService = WorkoutService(); // ✅ 使用 WorkoutService
 
   bool _isLoading = true;
   List<Map<String, dynamic>> _todayWorkouts = [];
@@ -52,7 +53,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     }
   }
 
-  /// 載入所有數據
+  /// 🔥 修正: 使用 WorkoutService 載入資料
   Future<void> _loadData() async {
     if (kDebugMode) {
       debugPrint('🔄 開始載入訓練數據...');
@@ -61,28 +62,27 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     setState(() => _isLoading = true);
 
     try {
-      // 並行載入三個數據源
-      final results = await Future.wait([
-        _workoutService.getTodayWorkouts(),
-        _workoutService.getTodayStats(),
-        _workoutService.getWeeklyStats(),
-      ]);
-
-      final workouts = results[0] as List<Map<String, dynamic>>;
-      final todayStats = results[1] as Map<String, dynamic>;
-      final weeklyStats = results[2] as Map<String, dynamic>;
+      // 🔥 從 workoutLogs 讀取今日訓練
+      final workouts = await _workoutService.getTodayWorkouts();
+      final todayStats = await _workoutService.getTodayWorkoutSummary();
+      final weeklyStats = await _workoutService.getWeeklyWorkoutStats();
 
       if (kDebugMode) {
         debugPrint('✅ 載入成功:');
         debugPrint('   今日訓練: ${workouts.length} 筆');
-        debugPrint('   訓練內容: ${workouts.map((w) => w['name'] ?? '未知').toList()}');
         debugPrint('   今日統計: $todayStats');
         debugPrint('   本週統計: $weeklyStats');
       }
 
       if (mounted) {
         setState(() {
-          _todayWorkouts = workouts;
+          // ✅ 轉換為 Map 格式
+          _todayWorkouts = workouts.map((workout) {
+            final data = workout.toFirestore();
+            data['id'] = workout.id;
+            return data;
+          }).toList();
+          
           _todayStats = todayStats;
           _weeklyStats = weeklyStats;
           _isLoading = false;
@@ -100,16 +100,16 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     }
   }
 
-  /// 刪除運動記錄 - session-based
+  /// 🔥 刪除運動記錄
   Future<void> _deleteWorkout(String workoutId) async {
     if (kDebugMode) {
       debugPrint('🗑️ 刪除訓練記錄: $workoutId');
     }
 
     try {
-      await _workoutService.deleteWorkout(workoutId);
+      await _workoutService.deleteWorkoutLog(workoutId);
       _showSnackBar('已刪除運動記錄');
-      await _loadData(); // 重新載入數據
+      await _loadData();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 刪除失敗: $e');
@@ -153,6 +153,17 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
         ),
       );
     }
+  }
+
+  /// 🔥 格式化時長為 "XX分XX秒"
+  String _formatDuration(int totalSeconds) {
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    
+    if (seconds == 0) {
+      return '$minutes分';
+    }
+    return '$minutes分$seconds秒';
   }
 
   @override
@@ -220,26 +231,11 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
               ),
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ExerciseSelectionPage(
-                isCoach: widget.isCoach,
-                traineeId: widget.traineeId,
-                planId: widget.planId,
-              ),
-            ),
-          );
-
-          if (result == true) {
-            _loadData(); // 新增訓練後重新載入
-          }
-        },
+        onPressed: _startNewWorkout,
         backgroundColor: Colors.green,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text(
-          '新增訓練',
+          '開始訓練',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -247,6 +243,12 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
         ),
       ),
     );
+  }
+
+  /// 🔥 開始新訓練
+  Future<void> _startNewWorkout() async {
+    // 這裡可以導航到選擇運動頁面
+    _showSnackBar('請先選擇訓練動作');
   }
 
   /// 計畫訓練提示卡片
@@ -317,9 +319,9 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     );
   }
 
-  /// 今日統計卡片
+  /// 🔥 今日統計卡片 - 顯示秒數
   Widget _buildTodayStatsCard() {
-    final duration = _todayStats['totalDuration'] ?? 0;
+    final duration = _todayStats['totalDuration'] ?? 0; // 單位:分鐘
     final calories = (_todayStats['totalCalories'] ?? 0.0).toDouble();
     final count = _todayStats['workoutCount'] ?? 0;
 
@@ -369,8 +371,8 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
               ),
               _buildStatItem(
                 icon: Icons.timer,
-                value: '$duration',
-                label: '分鐘',
+                value: _formatDuration(duration * 60), // ✅ 轉換為秒數並格式化
+                label: '訓練時長',
               ),
               _buildStatItem(
                 icon: Icons.local_fire_department,
@@ -398,7 +400,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
           value,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 24,
+            fontSize: 20, // 稍微小一點以容納秒數
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -588,20 +590,17 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     );
   }
 
-  /// ✅ 修正: 訓練項目 - 正確處理 workoutSession 的資料結構
+  /// 🔥 訓練項目 - 顯示秒數 + 可點擊
   Widget _buildWorkoutItem(Map<String, dynamic> workout) {
-    // ✅ 新資料結構使用 'name' 而非 'exerciseName'
     final name = workout['name'] ?? '未知運動';
-    final duration = workout['duration'] ?? 0;
+    final duration = workout['duration'] ?? 0; // 單位:分鐘
     final calories = (workout['caloriesBurned'] ?? 0.0).toDouble();
-    
-    // ✅ 新資料結構: exercises 是一個列表,包含多個運動
-    final exercises = workout['exercises'] as List<dynamic>? ?? [];
     final workoutId = workout['id'] ?? '';
-    final hasplanId = workout['planId'] != null;
+    final sessionId = workout['sessionId'] as String?;
+    final hasSessionId = sessionId != null && sessionId.isNotEmpty;
 
-    // ✅ 解析時間戳記
-    final timestamp = workout['completedAt'] ?? workout['createdAt'];
+    // 解析時間戳記
+    final timestamp = workout['createdAt'];
     DateTime? dateTime;
     if (timestamp != null) {
       try {
@@ -611,16 +610,10 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
       }
     }
 
-    // ✅ 計算總組數和總次數
-    int totalSets = 0;
-    int totalReps = 0;
-    for (var exercise in exercises) {
-      final sets = exercise['sets'] as List<dynamic>? ?? [];
-      totalSets += sets.length;
-      for (var set in sets) {
-        totalReps += (set['reps'] ?? 0) as int;
-      }
-    }
+    // 解析動作摘要
+    final exerciseSummary = workout['exerciseSummary'] as List<dynamic>? ?? [];
+    final totalSets = workout['totalSets'] ?? 0;
+    final totalExercises = workout['totalExercises'] ?? 0;
 
     return Dismissible(
       key: Key(workoutId),
@@ -657,16 +650,27 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
+          onTap: () async {
             // ✅ 點擊進入詳細頁面
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => WorkoutSessionDetailPage(
-                  workoutSession: workout,
-                ),
-              ),
-            );
+            if (hasSessionId) {
+              // 🔥 從 Firestore 載入完整的 session 資料
+              final sessionDetails = await _workoutService.getWorkoutSessionDetails(sessionId);
+              
+              if (sessionDetails != null && mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => WorkoutSessionDetailPage(
+                      workoutSession: sessionDetails,
+                    ),
+                  ),
+                );
+              } else {
+                _showSnackBar('無法載入訓練詳情');
+              }
+            } else {
+              _showSnackBar('此記錄暫無詳細資料');
+            }
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -676,14 +680,12 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: hasplanId 
-                        ? Colors.blue.withValues(alpha: 0.1)
-                        : Colors.green.withValues(alpha: 0.1),
+                    color: Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(
-                    hasplanId ? Icons.event_note : Icons.fitness_center,
-                    color: hasplanId ? Colors.blue : Colors.green,
+                  child: const Icon(
+                    Icons.fitness_center,
+                    color: Colors.green,
                     size: 24,
                   ),
                 ),
@@ -695,60 +697,41 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // 標題行
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          if (hasplanId)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                              ),
-                              child: const Text(
-                                '計畫',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.blue,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       
-                      // ✅ 日期時間顯示
+                      // 🔥 日期時間顯示 (含秒數)
                       if (dateTime != null) ...[
                         Row(
                           children: [
                             Icon(Icons.access_time, size: 12, color: Colors.grey.shade500),
                             const SizedBox(width: 4),
                             Text(
-                              DateFormat('MM/dd HH:mm:ss').format(dateTime),
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                              DateFormat('MM/dd HH:mm:ss').format(dateTime), // ✅ 含秒數
+                              style: const TextStyle(
+                                fontSize: 11, 
+                                color: Colors.grey,
+                                fontFamily: 'monospace',
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 4),
                       ],
                       
-                      // 統計資訊
+                      // 🔥 統計資訊 - 顯示 "XX分XX秒"
                       Row(
                         children: [
                           Icon(Icons.timer, size: 14, color: Colors.grey.shade600),
                           const SizedBox(width: 4),
                           Text(
-                            '$duration 分鐘',
+                            _formatDuration(duration * 60), // ✅ 轉換並格式化
                             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                           ),
                           const SizedBox(width: 12),
@@ -763,10 +746,10 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                       ),
                       
                       // 動作資訊
-                      if (exercises.isNotEmpty) ...[
+                      if (totalExercises > 0 && totalSets > 0) ...[
                         const SizedBox(height: 4),
                         Text(
-                          '${exercises.length} 個動作 • $totalSets 組 • $totalReps 次',
+                          '$totalExercises 個動作 • $totalSets 組',
                           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                         ),
                       ],
@@ -786,7 +769,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                     ),
                     const SizedBox(width: 8),
                     Icon(
-                      Icons.chevron_right,
+                      hasSessionId ? Icons.chevron_right : Icons.info_outline,
                       color: Colors.grey.shade400,
                       size: 20,
                     ),

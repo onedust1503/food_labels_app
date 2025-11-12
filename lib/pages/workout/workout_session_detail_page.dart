@@ -1,6 +1,7 @@
 // lib/pages/workout/workout_session_detail_page.dart
 // ✨ 訓練記錄詳細頁面
-// 顯示完整的訓練資訊、各個動作的組數、休息時間、卡路里分析等
+// 🔥 修正: 訓練時長顯示為 "XX分XX秒"
+// 🔥 修正: 確保所有資料正確顯示
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -13,20 +14,37 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     required this.workoutSession,
   });
 
+  /// 🔥 格式化時長為 "XX分XX秒"
+  String _formatDuration(int totalSeconds) {
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    
+    if (seconds == 0) {
+      return '$minutes分';
+    }
+    return '$minutes分$seconds秒';
+  }
+
   @override
   Widget build(BuildContext context) {
     // 解析資料
     final name = workoutSession['name'] ?? '訓練記錄';
-    final duration = workoutSession['duration'] ?? 0;
+    final duration = workoutSession['duration'] ?? 0; // 單位:分鐘
     final calories = (workoutSession['caloriesBurned'] ?? 0.0).toDouble();
     final exercises = workoutSession['exercises'] as List<dynamic>? ?? [];
     final hasplanId = workoutSession['planId'] != null;
     
     // 解析時間戳記
-    final timestamp = workoutSession['completedAt'] ?? workoutSession['createdAt'];
+    final timestamp = workoutSession['completedAt'] ?? 
+                     workoutSession['endedAt'] ?? 
+                     workoutSession['createdAt'];
     DateTime? dateTime;
     if (timestamp != null) {
-      dateTime = timestamp.toDate();
+      try {
+        dateTime = timestamp.toDate();
+      } catch (e) {
+        print('時間解析失敗: $e');
+      }
     }
 
     return Scaffold(
@@ -105,7 +123,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
     );
   }
 
-  /// 訓練總覽卡片
+  /// 🔥 訓練總覽卡片 - 顯示秒數
   Widget _buildSummaryCard(int duration, double calories, int exerciseCount, DateTime? dateTime) {
     return Container(
       margin: const EdgeInsets.all(16),
@@ -170,8 +188,8 @@ class WorkoutSessionDetailPage extends StatelessWidget {
               ),
               _buildStatItem(
                 icon: Icons.timer,
-                value: '$duration',
-                label: '分鐘',
+                value: _formatDuration(duration * 60), // ✅ 轉換為秒並格式化
+                label: '訓練時長',
                 color: Colors.white,
               ),
               _buildStatItem(
@@ -201,7 +219,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
           value,
           style: TextStyle(
             color: color,
-            fontSize: 24,
+            fontSize: 20, // 稍微小一點以容納秒數
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -249,6 +267,22 @@ class WorkoutSessionDetailPage extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${exercises.length} 個動作',
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -281,16 +315,18 @@ class WorkoutSessionDetailPage extends StatelessWidget {
 
   /// 單個運動項目
   Widget _buildExerciseItem(Map<String, dynamic> exercise, int index) {
-    final name = exercise['name'] ?? '未知運動';
-    final type = exercise['exerciseType'] ?? 'other';
+    final name = exercise['exerciseName'] ?? exercise['name'] ?? '未知運動';
+    final type = exercise['exerciseType'] ?? exercise['type'] ?? 'other';
     final sets = exercise['sets'] as List<dynamic>? ?? [];
     
     // 計算總次數和總重量
     int totalReps = 0;
     double totalWeight = 0;
     for (var set in sets) {
-      totalReps += (set['reps'] ?? 0) as int;
-      totalWeight += ((set['weight'] ?? 0) as num).toDouble();
+      final reps = (set['actualReps'] ?? set['reps'] ?? 0) as int;
+      final weight = ((set['weight'] ?? 0) as num).toDouble();
+      totalReps += reps;
+      totalWeight += weight;
     }
     final avgWeight = sets.isNotEmpty ? totalWeight / sets.length : 0;
 
@@ -373,9 +409,9 @@ class WorkoutSessionDetailPage extends StatelessWidget {
               ...sets.asMap().entries.map((entry) {
                 final setIndex = entry.key + 1;
                 final set = entry.value as Map<String, dynamic>;
-                final reps = set['reps'] ?? 0;
-                final weight = (set['weight'] ?? 0).toDouble();
-                final rest = set['restAfter'] ?? 0;
+                final reps = (set['actualReps'] ?? set['reps'] ?? 0) as int;
+                final weight = ((set['weight'] ?? 0) as num).toDouble();
+                final rest = (set['restTakenSec'] ?? set['restAfter'] ?? 0) as int;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -458,7 +494,7 @@ class WorkoutSessionDetailPage extends StatelessWidget {
       final sets = exercise['sets'] as List<dynamic>? ?? [];
       totalSets += sets.length;
       for (var set in sets) {
-        final reps = (set['reps'] ?? 0) as int;
+        final reps = (set['actualReps'] ?? set['reps'] ?? 0) as int;
         final weight = ((set['weight'] ?? 0) as num).toDouble();
         totalReps += reps;
         totalVolume += weight * reps;

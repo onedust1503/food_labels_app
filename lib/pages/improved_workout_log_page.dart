@@ -1,11 +1,12 @@
 // lib/pages/improved_workout_log_page.dart
-// ✅ 修正版 - 只修改 _loadData 和 _buildWorkoutItem
+// ✅ 修正版 - 修復開始訓練按鈕導航 + 訓練完成後刷新數據
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../../services/workout_service.dart';
 import 'workout/workout_session_detail_page.dart';
+import 'exercise_selection_page.dart'; // ✅ 新增導入
 
 class ImprovedWorkoutLogPage extends StatefulWidget {
   final bool isCoach;
@@ -65,7 +66,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
         debugPrint('✅ 載入成功:');
         debugPrint('   今日訓練: ${workouts.length} 筆');
         
-        // ✅ DEBUG: 檢查每筆資料的 createdAt (直接從 WorkoutModel)
         for (var i = 0; i < workouts.length; i++) {
           final workout = workouts[i];
           debugPrint('   記錄 $i: createdAt = ${workout.createdAt}');
@@ -74,7 +74,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
 
       if (mounted) {
         setState(() {
-          // ✅ 關鍵修改: 不使用 toFirestore(),直接手動建立 Map
           _todayWorkouts = workouts.map((workout) {
             return {
               'id': workout.id,
@@ -84,7 +83,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
               'sessionId': workout.sessionId,
               'totalSets': workout.totalSets,
               'totalExercises': workout.totalExercises,
-              'createdAt': workout.createdAt, // ✅ 直接存 DateTime
+              'createdAt': workout.createdAt,
             };
           }).toList();
           
@@ -240,8 +239,32 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     );
   }
 
+  /// ✅ 修復：導航到運動選擇頁面，訓練完成後刷新數據
   Future<void> _startNewWorkout() async {
-    _showSnackBar('請先選擇訓練動作');
+    if (kDebugMode) {
+      debugPrint('🏋️ 導航到運動選擇頁面...');
+    }
+
+    // 導航到運動選擇頁面
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExerciseSelectionPage(
+          isCoach: widget.isCoach,
+          traineeId: widget.traineeId,
+          planId: widget.planId,
+        ),
+      ),
+    );
+
+    // ✅ 如果訓練完成（返回 true），重新載入數據
+    if (result == true && mounted) {
+      if (kDebugMode) {
+        debugPrint('✅ 訓練完成，重新載入數據...');
+      }
+      await _loadData();
+      _showSnackBar('✅ 訓練已記錄！');
+    }
   }
 
   Widget _buildPlanModeInfoCard() {
@@ -577,7 +600,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     );
   }
 
-  /// ✅ 修正版 - createdAt 現在是 DateTime 而不是 FieldValue
   Widget _buildWorkoutItem(Map<String, dynamic> workout) {
     final name = workout['name'] ?? '未知運動';
     final duration = workout['duration'] ?? 0;
@@ -586,19 +608,12 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
     final sessionId = workout['sessionId'] as String?;
     final hasSessionId = sessionId != null && sessionId.isNotEmpty;
 
-    // ✅ 現在 createdAt 已經是 DateTime 了
     final createdAt = workout['createdAt'];
     DateTime dateTime;
     
     if (createdAt is DateTime) {
       dateTime = createdAt;
-      if (kDebugMode) {
-        debugPrint('✅ createdAt 是 DateTime: $dateTime');
-      }
     } else {
-      if (kDebugMode) {
-        debugPrint('⚠️ createdAt 不是 DateTime (${createdAt.runtimeType}),使用當前時間');
-      }
       dateTime = DateTime.now();
     }
 
@@ -691,7 +706,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage> {
                       ),
                       const SizedBox(height: 6),
                       
-                      // ✅ 直接使用 DateTime 格式化
                       Row(
                         children: [
                           Icon(Icons.access_time, size: 12, color: Colors.grey.shade500),

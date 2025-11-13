@@ -1,9 +1,12 @@
 // lib/services/unified_workout_service.dart
 // 🔧 統一訓練記錄服務 - 完整版：包含訓練計畫功能
+// ✅ 新增: getTodayWorkoutSessions, getAllWorkoutSessions, getWorkoutSessionDetails
+// ✅ 改進: 更準確的卡路里計算
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 
 class UnifiedWorkoutService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -745,5 +748,284 @@ class UnifiedWorkoutService {
       }
       rethrow;
     }
+  }
+
+  // ========== 訓練記錄詳情相關 (新增) ==========
+
+  /// 🔥 取得今日訓練 sessions (用於訓練記錄頁面)
+  /// ✅ 直接從 workoutSessions 讀取，確保數據一致
+  Future<List<Map<String, dynamic>>> getTodayWorkoutSessions([String? traineeId]) async {
+    try {
+      final userId = traineeId ?? _currentUserId;
+      if (userId == null) return [];
+
+      final today = DateTime.now();
+      final startOfDay = DateTime(today.year, today.month, today.day);
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+
+      if (kDebugMode) {
+        debugPrint('📅 查詢今日訓練 sessions: ${DateFormat('yyyy-MM-dd').format(today)}');
+      }
+
+      final snapshot = await _firestore
+          .collection('workoutSessions')
+          .where('userId', isEqualTo: userId)
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('timestamp', isLessThan: Timestamp.fromDate(endOfDay))
+          .orderBy('timestamp', descending: true)
+          .get();
+
+      if (kDebugMode) {
+        debugPrint('✅ 找到 ${snapshot.docs.length} 筆今日訓練 sessions');
+      }
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'sessionId': doc.id,
+          'timestamp': (data['timestamp'] as Timestamp?)?.toDate(),
+          'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
+          'totalCalories': (data['totalCalories'] ?? 0.0).toDouble(),
+          'exercises': data['exercises'] ?? [],
+        };
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ getTodayWorkoutSessions 錯誤: $e');
+      }
+      return [];
+    }
+  }
+
+  /// 🔥 取得所有訓練 sessions (用於統計計算)
+  Future<List<Map<String, dynamic>>> getAllWorkoutSessions([String? traineeId]) async {
+    try {
+      final userId = traineeId ?? _currentUserId;
+      if (userId == null) return [];
+
+      final snapshot = await _firestore
+          .collection('workoutSessions')
+          .where('userId', isEqualTo: userId)
+          .orderBy('timestamp', descending: true)
+          .limit(100) // 限制最近100筆
+          .get();
+
+      if (kDebugMode) {
+        debugPrint('✅ 找到 ${snapshot.docs.length} 筆歷史訓練 sessions');
+      }
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'sessionId': doc.id,
+          'timestamp': (data['timestamp'] as Timestamp?)?.toDate(),
+          'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
+          'totalCalories': (data['totalCalories'] ?? 0.0).toDouble(),
+          'exercises': data['exercises'] ?? [],
+        };
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ getAllWorkoutSessions 錯誤: $e');
+      }
+      return [];
+    }
+  }
+
+  /// 🔥 取得訓練 session 詳細資料
+  Future<Map<String, dynamic>?> getWorkoutSessionDetails(String sessionId) async {
+    try {
+      if (kDebugMode) {
+        debugPrint('🔍 查詢 session 詳情: $sessionId');
+      }
+
+      final doc = await _firestore
+          .collection('workoutSessions')
+          .doc(sessionId)
+          .get();
+
+      if (!doc.exists) {
+        if (kDebugMode) {
+          debugPrint('❌ Session 不存在: $sessionId');
+        }
+        return null;
+      }
+
+      final data = doc.data()!;
+      
+      if (kDebugMode) {
+        debugPrint('✅ 成功取得 session 詳情');
+      }
+
+      return {
+        'sessionId': doc.id,
+        'timestamp': (data['timestamp'] as Timestamp?)?.toDate(),
+        'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
+        'totalCalories': (data['totalCalories'] ?? 0.0).toDouble(),
+        'exercises': data['exercises'] ?? [],
+        'userId': data['userId'],
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ getWorkoutSessionDetails 錯誤: $e');
+      }
+      return null;
+    }
+  }
+
+  // ========== 改進的卡路里計算 (新增) ==========
+
+  /// 🔥 改進的卡路里計算
+  /// 根據運動類型、時長、重量和組數計算更準確的卡路里消耗
+  double calculateCaloriesForExercise({
+    required String exerciseName,
+    required int durationSeconds,
+    double? weight,
+    int? sets,
+    int? reps,
+  }) {
+    // 1. 根據動作名稱判斷運動類型和強度
+    double met = _getMetValueFromExerciseName(exerciseName);
+    
+    // 2. 如果有重量訓練，根據重量調整 MET 值
+    if (weight != null && weight > 0) {
+      // 重量越大，消耗越高
+      // 假設：20kg 以下是輕量，20-40kg 是中量，40kg 以上是重量
+      if (weight >= 40) {
+        met = met * 1.3; // 重量增加 30%
+      } else if (weight >= 20) {
+        met = met * 1.15; // 中量增加 15%
+      }
+    }
+
+    // 3. 根據組數和次數調整（高組數高次數代表更高強度）
+    if (sets != null && reps != null) {
+      int totalReps = sets * reps;
+      if (totalReps > 50) {
+        met = met * 1.2; // 高訓練量增加 20%
+      } else if (totalReps > 30) {
+        met = met * 1.1; // 中訓練量增加 10%
+      }
+    }
+
+    // 4. 計算卡路里
+    // 公式: 卡路里 = MET × 體重(kg) × 時間(小時)
+    const double standardBodyWeight = 70.0; // 標準體重 70kg
+    double hours = durationSeconds / 3600.0;
+    double calories = met * standardBodyWeight * hours;
+
+    // 5. 確保最小值
+    if (calories < 1.0) {
+      calories = durationSeconds / 60.0; // 每分鐘至少 1 卡
+    }
+
+    if (kDebugMode) {
+      debugPrint('💪 卡路里計算: $exerciseName');
+      debugPrint('   MET: ${met.toStringAsFixed(1)}');
+      debugPrint('   時長: ${durationSeconds}秒');
+      debugPrint('   結果: ${calories.toStringAsFixed(1)} 卡');
+    }
+
+    return calories;
+  }
+
+  /// 根據動作名稱取得 MET 值
+  double _getMetValueFromExerciseName(String name) {
+    final nameLower = name.toLowerCase();
+
+    // 高強度動作 (MET 6.0-8.0)
+    if (nameLower.contains('深蹲') || 
+        nameLower.contains('squat') ||
+        nameLower.contains('硬舉') || 
+        nameLower.contains('deadlift')) {
+      return 7.0;
+    }
+
+    // 中高強度 (MET 5.0-6.0)
+    if (nameLower.contains('臥推') || 
+        nameLower.contains('bench press') ||
+        nameLower.contains('肩推') || 
+        nameLower.contains('shoulder press') ||
+        nameLower.contains('划船') || 
+        nameLower.contains('row')) {
+      return 5.5;
+    }
+
+    // 中等強度 (MET 4.0-5.0)
+    if (nameLower.contains('彎舉') || 
+        nameLower.contains('curl') ||
+        nameLower.contains('飛鳥') || 
+        nameLower.contains('fly') ||
+        nameLower.contains('下拉') || 
+        nameLower.contains('pulldown')) {
+      return 4.5;
+    }
+
+    // 低強度 (MET 3.0-4.0)
+    if (nameLower.contains('伸展') || 
+        nameLower.contains('stretch') ||
+        nameLower.contains('捲腹') || 
+        nameLower.contains('crunch')) {
+      return 3.5;
+    }
+
+    // 有氧運動 (MET 6.0-8.0)
+    if (nameLower.contains('跑步') || 
+        nameLower.contains('running') ||
+        nameLower.contains('踩腳踏車') || 
+        nameLower.contains('cycling')) {
+      return 7.0;
+    }
+
+    // 預設中等強度
+    return 5.0;
+  }
+
+  /// 🔥 計算整個 session 的總卡路里
+  double calculateSessionTotalCalories(List<dynamic> exercises) {
+    double totalCalories = 0.0;
+
+    for (var exercise in exercises) {
+      final exerciseName = exercise['exerciseName'] as String? ?? '';
+      final sets = exercise['sets'] as List? ?? [];
+      
+      // 計算該動作的總時長（所有組的時長加總）
+      int totalDurationSeconds = 0;
+      double totalWeight = 0.0;
+      int validSetsCount = 0;
+
+      for (var set in sets) {
+        final duration = set['duration'] as int? ?? 0;
+        final weight = (set['weight'] as num?)?.toDouble() ?? 0.0;
+        
+        totalDurationSeconds += duration;
+        if (weight > 0) {
+          totalWeight += weight;
+          validSetsCount++;
+        }
+      }
+
+      // 計算平均重量
+      double avgWeight = validSetsCount > 0 ? totalWeight / validSetsCount : 0.0;
+
+      // 計算該動作的卡路里
+      if (totalDurationSeconds > 0) {
+        double exerciseCalories = calculateCaloriesForExercise(
+          exerciseName: exerciseName,
+          durationSeconds: totalDurationSeconds,
+          weight: avgWeight > 0 ? avgWeight : null,
+          sets: sets.length,
+          reps: null, // 這裡可以進一步計算總次數
+        );
+
+        totalCalories += exerciseCalories;
+      }
+    }
+
+    if (kDebugMode) {
+      debugPrint('🔥 Session 總卡路里: ${totalCalories.toStringAsFixed(1)}');
+    }
+
+    return totalCalories;
   }
 }

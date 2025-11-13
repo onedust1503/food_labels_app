@@ -1,5 +1,6 @@
 // lib/services/workout_service.dart
 // 🔥 完整版 - 統一訓練記錄 + 詳細組數資訊
+// ✅ 修正：finishAdHocSession 同時寫入 workoutLogs 和 workoutSessions
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -470,7 +471,7 @@ class WorkoutService {
     });
   }
 
-  /// 🔥 完成自由訓練會話 - ✅ 創建一筆統一記錄
+  /// 🔥 完成自由訓練會話 - ✅ 同時寫入 workoutLogs 和 workoutSessions
   Future<void> finishAdHocSession({
     required String sessionId,
     int? sessionRpe,
@@ -483,11 +484,31 @@ class WorkoutService {
         .collection('workoutSessions')
         .doc(sessionId);
 
-    // 1. 標記 session 為已完成
+    // 1. 先計算卡路里(如果沒有傳入)
+    double? estimatedCaloriesTemp;
+    if (calories == null) {
+      // 預先計算以便寫入
+      final exercisesSnapTemp = await sessionRef.collection('exercises').get();
+      int totalSetsTemp = 0;
+      for (final exDoc in exercisesSnapTemp.docs) {
+        final setsSnap = await exDoc.reference.collection('sets').get();
+        for (final setDoc in setsSnap.docs) {
+          final status = setDoc.data()['status'] as String?;
+          if (status == 'completed' || status == 'resting') {
+            totalSetsTemp++;
+          }
+        }
+      }
+      estimatedCaloriesTemp = totalSetsTemp * 12.0;
+    }
+
+    final finalCaloriesForUpdate = calories ?? estimatedCaloriesTemp ?? 0.0;
+
+    // 2. ✅ 標記 session 為已完成 + 寫入卡路里
     await sessionRef.update({
       'endedAt': FieldValue.serverTimestamp(),
+      'calories': finalCaloriesForUpdate, // ✅ 確保寫入 calories
       if (sessionRpe != null) 'sessionRpe': sessionRpe,
-      if (calories != null) 'calories': calories,
     });
 
     final sessionSnap = await sessionRef.get();
@@ -501,8 +522,9 @@ class WorkoutService {
     final endedAt = (sessionData['endedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
     final dateStr = startedAt.toIso8601String().split('T')[0];
     
-    // 計算總時長(分鐘)
-    final totalDurationMin = endedAt.difference(startedAt).inMinutes.clamp(1, 300);
+    // 計算總時長(秒和分鐘)
+    final totalDurationSec = endedAt.difference(startedAt).inSeconds.clamp(1, 18000);
+    final totalDurationMin = (totalDurationSec / 60).ceil().clamp(1, 300);
 
     // 2. 獲取所有動作的詳細資訊
     final exercisesSnap = await sessionRef.collection('exercises').get();
@@ -565,37 +587,62 @@ class WorkoutService {
       return;
     }
 
-    // 3. 🎯 創建一筆統一的 workoutLog
-    final logRef = _firestore.collection('workoutLogs').doc();
-    await logRef.set({
+    final finalCalories = calories ?? estimatedCalories;
+
+    // ===== 🔥 使用 WriteBatch 同時寫入兩個集合 =====
+    final batch = _firestore.batch();
+
+    // 3a. ✅ 寫入 workoutLogs (供列表頁面讀取)
+    final workoutLogRef = _firestore.collection('workoutLogs').doc();
+    batch.set(workoutLogRef, {
       'userId': uid,
       'date': dateStr,
       'type': 'weight_training',
-      'name': '自由訓練', // 統一名稱
-      'duration': totalDurationMin,
-      'caloriesBurned': calories ?? estimatedCalories,
+      'name': '自由訓練',
+      'duration': totalDurationMin, // 分鐘
+      'caloriesBurned': finalCalories,
       'totalSets': totalCompletedSets,
       'totalExercises': exerciseDetails.length,
       'intensity': 'medium',
       'notes': '自由訓練 - ${exerciseDetails.length} 個動作',
-      'sessionId': sessionId, // 🔥 關鍵：保留 sessionId 用於查詢詳情
+      'sessionId': sessionId, // ✅ 保留 sessionId 用於查詢詳情
       'createdAt': FieldValue.serverTimestamp(),
-      
-      // 🔥 新增：儲存動作摘要(用於列表顯示)
-      'exerciseSummary': exerciseDetails.map((ex) => {
-        'name': ex['name'],
-        'sets': ex['completedSets'],
+      'timestamp': startedAt.millisecondsSinceEpoch,
+    });
+
+    // 3b. ✅ 寫入 workoutSessions (供詳細頁面讀取)
+    final workoutSessionRef = _firestore.collection('workoutSessions').doc(sessionId);
+    batch.set(workoutSessionRef, {
+      'userId': uid,
+      'date': dateStr,
+      'timestamp': Timestamp.fromDate(startedAt),
+      'completedAt': Timestamp.fromDate(endedAt),
+      'totalDurationSeconds': totalDurationSec, // ✅ 秒數
+      'totalCalories': finalCalories,
+      'totalSets': totalCompletedSets,
+      'totalExercises': exerciseDetails.length,
+      'sessionId': sessionId,
+      'source': 'self',
+      'exercises': exerciseDetails.map((ex) => {
+        'exerciseName': ex['name'],
+        'completedSets': ex['completedSets'],
+        'sets': ex['sets'],
+        'category': ex['category'],
       }).toList(),
     });
 
+    // ✅ 提交批次寫入
+    await batch.commit();
+
     // 4. 更新每日統計
-    await _updateDailySummary(dateStr, totalDurationMin, calories ?? estimatedCalories);
+    await _updateDailySummary(dateStr, totalDurationMin, finalCalories);
 
     print('✅ Ad-hoc session 完成: $sessionId');
-    print('   總時長: $totalDurationMin 分鐘');
-    print('   總卡路里: ${(calories ?? estimatedCalories).toStringAsFixed(1)}');
+    print('   總時長: $totalDurationMin 分鐘 ($totalDurationSec 秒)');
+    print('   總卡路里: ${finalCalories.toStringAsFixed(1)}');
     print('   總組數: $totalCompletedSets');
     print('   動作數: ${exerciseDetails.length}');
+    print('   ✅ 已同時寫入 workoutLogs 和 workoutSessions');
   }
 
   Future<void> adHocSkipSet({

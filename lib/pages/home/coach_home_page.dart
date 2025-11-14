@@ -1,5 +1,6 @@
 // lib/pages/home/coach_home_page.dart
-// 🎯 完整的教練端主頁 - 包含學員統計、重點學員、所有學員列表
+// 🎨 明亮版莫蘭迪風格教練主頁
+// ✨ 保持優雅柔和感 + 提升明度和活力
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,9 @@ import '../../services/user_service.dart';
 import '../../services/chat_service.dart';
 import '../chat_detail_page.dart';
 
+// ✅ 引入明亮版莫蘭迪設計系統
+import '../../theme/app_theme.dart';
+
 class CoachHomePage extends StatefulWidget {
   const CoachHomePage({super.key});
 
@@ -17,7 +21,7 @@ class CoachHomePage extends StatefulWidget {
   State<CoachHomePage> createState() => _CoachHomePageState();
 }
 
-class _CoachHomePageState extends State<CoachHomePage> {
+class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProviderStateMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final UserService _userService = UserService();
@@ -27,19 +31,55 @@ class _CoachHomePageState extends State<CoachHomePage> {
   String realUserName = '';
   bool isLoading = true;
   
-  // 🔥 統計數據
+  // 統計數據
   int totalStudents = 0;
   int activeStudents = 0;
   int pendingRequests = 0;
   
-  // 🔥 學員列表
+  // 學員列表
   List<DocumentSnapshot> allStudents = [];
   List<Map<String, dynamic>> topStudents = [];
+  
+  // 🔥 動畫控制器
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _initializeData();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  // 🔥 初始化動畫
+  void _initializeAnimations() {
+    _animationController = AnimationController(
+      duration: AppAnimations.slow,
+      vsync: this,
+    );
+    
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic,
+    ));
   }
 
   Future<void> _initializeData() async {
@@ -68,10 +108,12 @@ class _CoachHomePageState extends State<CoachHomePage> {
         }
       }
       
-      // 🔥 載入學員數據
       await _loadStudentsData();
       
       setState(() => isLoading = false);
+      
+      // 🔥 啟動進場動畫
+      _animationController.forward();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('載入數據失敗: $e');
@@ -80,22 +122,15 @@ class _CoachHomePageState extends State<CoachHomePage> {
     }
   }
 
-  // 🔥 載入真實的學員數據
   Future<void> _loadStudentsData() async {
     try {
       if (firebaseUser == null) return;
       
-      // 獲取所有學員
       allStudents = await _userService.getCoachStudents(firebaseUser!.uid);
       totalStudents = allStudents.length;
       
-      // 計算活躍學員（本週有活動的學員）
       activeStudents = await _calculateActiveStudents();
-      
-      // 識別重點學員
       await _identifyTopStudents();
-      
-      // 獲取待處理的配對請求數
       await _loadPendingRequests();
       
     } catch (e) {
@@ -105,14 +140,12 @@ class _CoachHomePageState extends State<CoachHomePage> {
     }
   }
 
-  // 🔥 計算活躍學員數
   Future<int> _calculateActiveStudents() async {
     int count = 0;
     DateTime weekAgo = DateTime.now().subtract(const Duration(days: 7));
     
     for (var student in allStudents) {
       try {
-        // 檢查學員是否有最近的訓練記錄
         final logs = await _firestore
             .collection('workoutLogs')
             .where('userId', isEqualTo: student.id)
@@ -133,7 +166,6 @@ class _CoachHomePageState extends State<CoachHomePage> {
     return count;
   }
 
-  // 🔥 識別重點學員（需要關注的學員）
   Future<void> _identifyTopStudents() async {
     topStudents.clear();
     
@@ -142,13 +174,9 @@ class _CoachHomePageState extends State<CoachHomePage> {
         final data = student.data() as Map<String, dynamic>;
         final studentName = data['displayName'] ?? '未命名學員';
         
-        // 獲取學員的訓練統計
         final stats = await _userService.getUserStats(student.id);
-        
-        // 計算合規率（完成率）
         final completionRate = stats['completionRate'] ?? 0;
         
-        // 獲取本週訓練天數
         DateTime weekStart = DateTime.now().subtract(Duration(days: DateTime.now().weekday - 1));
         final weekLogs = await _firestore
             .collection('workoutLogs')
@@ -157,15 +185,13 @@ class _CoachHomePageState extends State<CoachHomePage> {
             .get();
         
         final workoutDays = weekLogs.docs.length;
-        
-        // 判斷是否需要關注（完成率低於70%或本週訓練天數少於3天）
         bool needsAttention = completionRate < 70 || workoutDays < 3;
         
         topStudents.add({
           'id': student.id,
           'name': studentName,
           'goal': data['goal'] ?? '尚未設定目標',
-          'progress': 0.0, // TODO: 計算實際進度
+          'progress': 0.0,
           'compliance': completionRate,
           'workoutDays': '$workoutDays/7',
           'needsAttention': needsAttention,
@@ -177,20 +203,17 @@ class _CoachHomePageState extends State<CoachHomePage> {
       }
     }
     
-    // 排序：需要關注的學員排在前面
     topStudents.sort((a, b) {
       if (a['needsAttention'] && !b['needsAttention']) return -1;
       if (!a['needsAttention'] && b['needsAttention']) return 1;
       return (a['compliance'] as int).compareTo(b['compliance'] as int);
     });
     
-    // 只保留前5位
     if (topStudents.length > 5) {
       topStudents = topStudents.sublist(0, 5);
     }
   }
 
-  // 🔥 載入待處理的配對請求
   Future<void> _loadPendingRequests() async {
     try {
       if (firebaseUser == null) return;
@@ -209,7 +232,6 @@ class _CoachHomePageState extends State<CoachHomePage> {
     }
   }
 
-  // 🔥 開始與學員諮詢（進入聊天室）
   Future<void> _startConsultation(String studentId, String studentName) async {
     try {
       final chatRoomId = await _chatService.createOrGetChatRoom(studentId);
@@ -229,14 +251,21 @@ class _CoachHomePageState extends State<CoachHomePage> {
         );
       }
     } catch (e) {
-      _showSnackBar('開啟聊天失敗：$e', Colors.red);
+      _showSnackBar('開啟聊天失敗：$e', AppColors.error);
     }
   }
 
   void _showSnackBar(String message, Color color) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color),
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       );
     }
   }
@@ -244,8 +273,17 @@ class _CoachHomePageState extends State<CoachHomePage> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.backgroundGradient,
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.coach),
+            ),
+          ),
+        ),
       );
     }
 
@@ -255,34 +293,39 @@ class _CoachHomePageState extends State<CoachHomePage> {
     );
   }
 
-  // 🔥 增強版教練首頁
+  // 🔥 明亮版莫蘭迪主頁
   Widget _buildEnhancedHomePage() {
-    return SafeArea(
-      child: RefreshIndicator(
-        onRefresh: _initializeData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 110),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. 頂部歡迎區與通知
-                _buildWelcomeSection(),
-                const SizedBox(height: 20),
-
-                // 2. 數據總覽卡片
-                _buildStatisticsCards(),
-                const SizedBox(height: 24),
-
-                // 3. 本週重點學員
-                _buildTopStudentsSection(),
-                const SizedBox(height: 24),
-
-                // 4. 所有學員列表
-                _buildAllStudentsSection(),
-              ],
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.backgroundGradient,
+      ),
+      child: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: RefreshIndicator(
+              onRefresh: _initializeData,
+              color: AppColors.coach,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 110),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildWelcomeSection(),
+                      const SizedBox(height: 24),
+                      _buildStatisticsCards(),
+                      const SizedBox(height: 28),
+                      _buildTopStudentsSection(),
+                      const SizedBox(height: 28),
+                      _buildAllStudentsSection(),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -290,36 +333,34 @@ class _CoachHomePageState extends State<CoachHomePage> {
     );
   }
 
-  // 🎨 1. 歡迎區
+  // 🎨 1. 歡迎區 - 明亮莫蘭迪綠色漸層
   Widget _buildWelcomeSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
+    return AnimatedContainer(
+      duration: AppAnimations.normal,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.green.shade400, Colors.green.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.green.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        gradient: AppColors.secondaryGradient,  // 明亮薄荷綠漸層
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: AppShadows.emphasized,
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: Colors.white,
-            child: Text(
-              realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'C',
-              style: const TextStyle(
-                color: Colors.green,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+          // 🔥 頭像使用純白背景
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: AppShadows.small,
+            ),
+            child: Center(
+              child: Text(
+                realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'C',
+                style: AppTextStyles.h2.copyWith(
+                  color: AppColors.coach,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -330,41 +371,46 @@ class _CoachHomePageState extends State<CoachHomePage> {
               children: [
                 Text(
                   '您好，$realUserName',
-                  style: const TextStyle(
+                  style: AppTextStyles.h3.copyWith(
                     color: Colors.white,
-                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '今天也要加油指導學員！',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 14,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
                   ),
                 ),
               ],
             ),
           ),
-          // 通知圖標
+          // 🔥 通知圖標 - 莫蘭迪橘色
           if (pendingRequests > 0)
             Stack(
               children: [
-                IconButton(
-                  onPressed: () {
-                    // TODO: 導航至配對請求頁面
-                  },
-                  icon: const Icon(Icons.notifications, color: Colors.white),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.notifications_outlined,
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
                 Positioned(
-                  right: 8,
-                  top: 8,
+                  right: 6,
+                  top: 6,
                   child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning,  // 莫蘭迪橘
                       shape: BoxShape.circle,
+                      boxShadow: AppShadows.small,
                     ),
                     child: Text(
                       '$pendingRequests',
@@ -383,7 +429,7 @@ class _CoachHomePageState extends State<CoachHomePage> {
     );
   }
 
-  // 🎨 2. 統計卡片
+  // 🎨 2. 統計卡片 - 明亮莫蘭迪配色
   Widget _buildStatisticsCards() {
     return Row(
       children: [
@@ -391,26 +437,26 @@ class _CoachHomePageState extends State<CoachHomePage> {
           child: _buildStatCard(
             '總學員',
             '$totalStudents',
-            Icons.people,
-            Colors.blue.shade400,
+            Icons.people_outline,
+            AppColors.primary,      // 明亮霧藍
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         Expanded(
           child: _buildStatCard(
             '活躍中',
             '$activeStudents',
             Icons.trending_up,
-            Colors.green.shade400,
+            AppColors.coach,        // 明亮薄荷綠
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         Expanded(
           child: _buildStatCard(
             '待處理',
             '$pendingRequests',
             Icons.pending_actions,
-            Colors.orange.shade400,
+            AppColors.warning,      // 溫暖橘
           ),
         ),
       ],
@@ -418,37 +464,37 @@ class _CoachHomePageState extends State<CoachHomePage> {
   }
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
+    return AnimatedContainer(
+      duration: AppAnimations.fast,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppShadows.medium,
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: 32),
-          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(height: 12),
           Text(
             value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+            style: AppTextStyles.h2.copyWith(
               color: color,
+              fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
             ),
           ),
         ],
@@ -456,7 +502,7 @@ class _CoachHomePageState extends State<CoachHomePage> {
     );
   }
 
-  // 🎨 3. 本週重點學員
+  // 🎨 3. 本週重點學員 - 柔和警示設計
   Widget _buildTopStudentsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -464,10 +510,9 @@ class _CoachHomePageState extends State<CoachHomePage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               '本週重點學員',
-              style: TextStyle(
-                fontSize: 18,
+              style: AppTextStyles.h3.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -475,26 +520,47 @@ class _CoachHomePageState extends State<CoachHomePage> {
               onPressed: () {
                 // TODO: 查看全部重點學員
               },
-              child: const Text('查看全部'),
+              child: Text(
+                '查看全部',
+                style: AppTextStyles.label.copyWith(
+                  color: AppColors.coach,
+                ),
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         if (topStudents.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(Icons.check_circle, size: 48, color: Colors.green.shade300),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '所有學員進度良好！',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+          Container(
+            padding: const EdgeInsets.all(40),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: AppShadows.small,
+            ),
+            child: Center(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
                     ),
-                  ],
-                ),
+                    child: Icon(
+                      Icons.check_circle_outline,
+                      size: 48,
+                      color: AppColors.success,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '所有學員進度良好！',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           )
@@ -508,147 +574,188 @@ class _CoachHomePageState extends State<CoachHomePage> {
     final needsAttention = student['needsAttention'] as bool;
     final compliance = student['compliance'] as int;
     
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: needsAttention ? Colors.orange.shade300 : Colors.transparent,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: needsAttention 
+              ? AppColors.warning.withValues(alpha: 0.3)
+              : Colors.transparent,
           width: 2,
         ),
+        boxShadow: needsAttention ? AppShadows.large : AppShadows.medium,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: needsAttention ? Colors.orange.shade100 : Colors.green.shade100,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // 🔥 頭像 - 莫蘭迪配色
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: needsAttention 
+                      ? AppColors.warningGradient
+                      : AppColors.successGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: AppShadows.small,
+                ),
+                child: Center(
                   child: Text(
                     student['name'][0].toUpperCase(),
-                    style: TextStyle(
-                      color: needsAttention ? Colors.orange : Colors.green,
-                      fontSize: 20,
+                    style: AppTextStyles.h3.copyWith(
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            student['name'],
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          student['name'],
+                          style: AppTextStyles.h4.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (needsAttention) ...[
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.warning.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '需關注',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.warning,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          if (needsAttention) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                '需關注',
-                                style: TextStyle(
-                                  color: Colors.orange,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      student['goal'],
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        student['goal'],
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              // 🔥 聊天按鈕 - 莫蘭迪綠
+              IconButton(
+                onPressed: () => _startConsultation(student['id'], student['name']),
+                icon: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.coach.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.chat_bubble_outline,
+                    color: AppColors.coach,
+                    size: 20,
                   ),
                 ),
-                IconButton(
-                  onPressed: () => _startConsultation(student['id'], student['name']),
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  color: Colors.green,
-                  tooltip: '開始諮詢',
+                tooltip: '開始諮詢',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 🔥 關鍵指標 - 柔和配色
+          Row(
+            children: [
+              Expanded(
+                child: _buildMetricItem(
+                  Icons.calendar_today_outlined,
+                  '訓練天數',
+                  student['workoutDays'],
+                  needsAttention && (student['workoutDays'] as String).split('/')[0] == '0' ||
+                      (student['workoutDays'] as String).split('/')[0] == '1' ||
+                      (student['workoutDays'] as String).split('/')[0] == '2',
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // 關鍵指標
-            Row(
-              children: [
-                Expanded(
-                  child: _buildMetricItem(
-                    Icons.calendar_today,
-                    '訓練天數',
-                    student['workoutDays'],
-                    needsAttention && (student['workoutDays'] as String).startsWith('0') || (student['workoutDays'] as String).startsWith('1') || (student['workoutDays'] as String).startsWith('2'),
-                  ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildMetricItem(
+                  Icons.task_alt,
+                  '達成率',
+                  '$compliance%',
+                  compliance < 70,
                 ),
-                Expanded(
-                  child: _buildMetricItem(
-                    Icons.task_alt,
-                    '達成率',
-                    '$compliance%',
-                    compliance < 70,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildMetricItem(IconData icon, String label, String value, bool isWarning) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isWarning ? Colors.orange.shade50 : Colors.green.shade50,
-        borderRadius: BorderRadius.circular(8),
+        gradient: isWarning 
+            ? LinearGradient(
+                colors: [
+                  AppColors.warning.withValues(alpha: 0.08),
+                  AppColors.warning.withValues(alpha: 0.04),
+                ],
+              )
+            : LinearGradient(
+                colors: [
+                  AppColors.success.withValues(alpha: 0.08),
+                  AppColors.success.withValues(alpha: 0.04),
+                ],
+              ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isWarning 
+              ? AppColors.warning.withValues(alpha: 0.2)
+              : AppColors.success.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
         children: [
           Icon(
             icon,
-            size: 16,
-            color: isWarning ? Colors.orange : Colors.green,
+            size: 18,
+            color: isWarning ? AppColors.warning : AppColors.success,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade600,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   value,
-                  style: TextStyle(
-                    fontSize: 14,
+                  style: AppTextStyles.bodyLarge.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: isWarning ? Colors.orange : Colors.green,
+                    color: isWarning ? AppColors.warning : AppColors.success,
                   ),
                 ),
               ],
@@ -659,39 +766,57 @@ class _CoachHomePageState extends State<CoachHomePage> {
     );
   }
 
-  // 🎨 4. 所有學員列表
+  // 🎨 4. 所有學員列表 - 簡潔明亮設計
   Widget _buildAllStudentsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '所有學員',
-          style: TextStyle(
-            fontSize: 18,
+          style: AppTextStyles.h3.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         if (allStudents.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(Icons.person_add, size: 48, color: Colors.grey.shade300),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '尚無學員',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+          Container(
+            padding: const EdgeInsets.all(40),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: AppShadows.small,
+            ),
+            child: Center(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '等待學員發送配對請求',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    child: Icon(
+                      Icons.person_add_outlined,
+                      size: 48,
+                      color: AppColors.primary,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '尚無學員',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '等待學員發送配對請求',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ],
               ),
             ),
           )
@@ -706,28 +831,62 @@ class _CoachHomePageState extends State<CoachHomePage> {
     final name = data['displayName'] ?? '未命名學員';
     final goal = data['goal'] ?? '尚未設定目標';
     
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppShadows.small,
+      ),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.green.shade100,
-          child: Text(
-            name[0].toUpperCase(),
-            style: const TextStyle(
-              color: Colors.green,
-              fontWeight: FontWeight.bold,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        leading: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            gradient: AppColors.secondaryGradient,
+            shape: BoxShape.circle,
+            boxShadow: AppShadows.small,
+          ),
+          child: Center(
+            child: Text(
+              name[0].toUpperCase(),
+              style: AppTextStyles.h4.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),
         title: Text(
           name,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: AppTextStyles.bodyLarge.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        subtitle: Text(goal),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            goal,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
         trailing: IconButton(
           onPressed: () => _startConsultation(student.id, name),
-          icon: const Icon(Icons.chat_bubble_outline),
-          color: Colors.green,
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.coach.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              color: AppColors.coach,
+              size: 20,
+            ),
+          ),
         ),
         onTap: () {
           // TODO: 導航至學員詳情頁面

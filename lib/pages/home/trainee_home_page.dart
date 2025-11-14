@@ -1,5 +1,5 @@
 // lib/pages/home/trainee_home_page.dart
-// ✅ 莫蘭迪風格優化版 + 使用 AppModal 統一彈窗
+// ✨ 明亮版莫蘭迪風格 + 動態配色 + 微動畫效果
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -15,7 +15,7 @@ import '../../services/workout_service.dart';
 import 'dart:async';
 import '../improved_workout_log_page.dart';
 
-// ✅ 引入設計系統
+// ✅ 引入明亮版設計系統
 import '../../theme/app_theme.dart';
 // ✅ 引入 AppModal
 import '../../components/ui/app_modal.dart';
@@ -27,7 +27,7 @@ class TraineeHomePage extends StatefulWidget {
   State<TraineeHomePage> createState() => _TraineeHomePageState();
 }
 
-class _TraineeHomePageState extends State<TraineeHomePage> {
+class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProviderStateMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final WaterService _waterService = WaterService();
@@ -48,17 +48,48 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
 
   // Stream 訂閱
   StreamSubscription<DocumentSnapshot>? _nutritionStreamSubscription;
+  
+  // 🔥 新增：動畫控制器
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _initializeData();
   }
 
   @override
   void dispose() {
     _nutritionStreamSubscription?.cancel();
+    _animationController.dispose();
     super.dispose();
+  }
+
+  // 🔥 新增：初始化動畫
+  void _initializeAnimations() {
+    _animationController = AnimationController(
+      duration: AppAnimations.slow,
+      vsync: this,
+    );
+    
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic,
+    ));
   }
 
   Future<void> _initializeData() async {
@@ -90,6 +121,9 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
       }
       
       setState(() => isLoading = false);
+      
+      // 🔥 啟動進場動畫
+      _animationController.forward();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('載入數據失敗: $e');
@@ -189,8 +223,17 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.backgroundGradient,
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
+          ),
+        ),
       );
     }
 
@@ -206,86 +249,98 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
         gradient: AppColors.backgroundGradient,
       ),
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: 110),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 8),
-              _buildUserHeader(),
-              const SizedBox(height: 32),
-              
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '追蹤你的卡路里',
-                      style: AppTextStyles.h1.copyWith(
-                        color: AppColors.textPrimary,
-                      ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(bottom: 110),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 8),
+                  _buildUserHeader(),
+                  const SizedBox(height: 32),
+                  
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '追蹤你的卡路里',
+                          style: AppTextStyles.h1.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildPeriodSelector(),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    _buildPeriodSelector(),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 28),
+                  ),
+                  
+                  const SizedBox(height: 28),
 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: FutureBuilder<Map<String, dynamic>>(
-                  future: _loadWeeklyStats(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const SizedBox.shrink();
-                    }
-                    
-                    final stats = snapshot.data!;
-                    return WeeklySummaryCard(
-                      daysCompleted: stats['daysCompleted'],
-                      totalDays: stats['totalDays'],
-                      avgCalories: stats['avgCalories'],
-                      avgWater: stats['avgWater'],
-                      workoutDays: stats['workoutDays'],
-                    );
-                  },
-                ),
+                  // 🔥 本週統計卡片
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: FutureBuilder<Map<String, dynamic>>(
+                      future: _loadWeeklyStats(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const SizedBox.shrink();
+                        }
+                        
+                        final stats = snapshot.data!;
+                        return WeeklySummaryCard(
+                          daysCompleted: stats['daysCompleted'],
+                          totalDays: stats['totalDays'],
+                          avgCalories: stats['avgCalories'],
+                          avgWater: stats['avgWater'],
+                          workoutDays: stats['workoutDays'],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // 🔥 卡路里卡片 - 使用動態漸層
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildCalorieCard(),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // 🔥 營養素卡片 - 使用亮色高亮
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildNutritionCard(),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // 🔥 飲水卡片
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildWaterIntakeCard(),
+                  ),
+                  const SizedBox(height: 28),
+                  
+                  // 🔥 快速操作按鈕 - 使用活力漸層
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _buildQuickActions(),
+                  ),
+                  const SizedBox(height: 20),
+                ],
               ),
-              const SizedBox(height: 20),
-              
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildCalorieCard(),
-              ),
-              const SizedBox(height: 20),
-              
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildNutritionCard(),
-              ),
-              const SizedBox(height: 20),
-              
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildWaterIntakeCard(),
-              ),
-              const SizedBox(height: 28),
-              
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildQuickActions(),
-              ),
-              const SizedBox(height: 20),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  // 🔥 優化：用戶頭部 - 更明亮的設計
   Widget _buildUserHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 24, 12),
@@ -301,19 +356,21 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
             ),
           ),
           const SizedBox(width: 4),
+          // 🔥 更亮的頭像漸層
           Container(
             width: 52,
             height: 52,
             decoration: BoxDecoration(
               gradient: AppColors.primaryGradient,
               shape: BoxShape.circle,
-              boxShadow: AppShadows.small,
+              boxShadow: AppShadows.medium,
             ),
             child: Center(
               child: Text(
                 realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'S',
                 style: AppTextStyles.h3.copyWith(
                   color: AppColors.textOnPrimary,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
@@ -325,7 +382,9 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               children: [
                 Text(
                   realUserName,
-                  style: AppTextStyles.h4,
+                  style: AppTextStyles.h4.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -337,19 +396,24 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               ],
             ),
           ),
-          IconButton(
-            icon: Icon(Icons.refresh, color: AppColors.primary, size: 26),
-            onPressed: () {
-              _loadTodayNutrition();
-              // ✅ 使用 AppModal 的成功提示
-              AppModal.showSuccessSnackBar(context, '數據已更新');
-            },
+          // 🔥 重新整理按鈕加動畫
+          AnimatedRotation(
+            turns: isLoading ? 1.0 : 0.0,
+            duration: AppAnimations.slow,
+            child: IconButton(
+              icon: Icon(Icons.refresh, color: AppColors.primary, size: 26),
+              onPressed: () {
+                _loadTodayNutrition();
+                AppModal.showSuccessSnackBar(context, '數據已更新');
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
+  // 🔥 優化：期間選擇器 - 更明顯的選中效果
   Widget _buildPeriodSelector() {
     final periods = ['今日', '本週', '本月', '本年'];
     const selectedPeriod = '今日';
@@ -361,26 +425,31 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           final isSelected = period == selectedPeriod;
           return Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: InkWell(
-              onTap: () {
-                // TODO: 實作期間切換
-              },
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: isSelected ? AppShadows.small : null,
-                ),
-                child: Text(
-                  period,
-                  style: AppTextStyles.label.copyWith(
-                    color: isSelected ? AppColors.textOnPrimary : AppColors.textSecondary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            child: AnimatedContainer(
+              duration: AppAnimations.fast,
+              curve: AppAnimations.defaultCurve,
+              child: InkWell(
+                onTap: () {
+                  // TODO: 實作期間切換
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: isSelected ? AppColors.primaryGradient : null,
+                    color: isSelected ? null : AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: isSelected ? AppShadows.medium : AppShadows.small,
+                  ),
+                  child: Text(
+                    period,
+                    style: AppTextStyles.label.copyWith(
+                      color: isSelected ? AppColors.textOnPrimary : AppColors.textSecondary,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
                   ),
                 ),
               ),
@@ -391,15 +460,21 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // 🔥 優化：卡路里卡片 - 動態漸層 + 百分比陰影
   Widget _buildCalorieCard() {
     double percentage = targetCalories > 0 ? (todayCalories / targetCalories).clamp(0.0, 1.0) : 0.0;
     
-    return Container(
+    // 🎯 根據達成率選擇漸層
+    final cardGradient = AppColors.getProgressGradient(percentage);
+    
+    return AnimatedContainer(
+      duration: AppAnimations.normal,
+      curve: AppAnimations.defaultCurve,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: AppColors.secondaryGradient,
+        gradient: cardGradient,
         borderRadius: BorderRadius.circular(28),
-        boxShadow: AppShadows.medium,
+        boxShadow: AppShadows.emphasized,
       ),
       child: Column(
         children: [
@@ -409,7 +484,10 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               const SizedBox(width: 10),
               Text(
                 '每日結果',
-                style: AppTextStyles.h4.copyWith(color: Colors.white),
+                style: AppTextStyles.h4.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -417,12 +495,12 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              // 🔥 百分比數字加陰影
               Text(
                 '${(percentage * 100).toInt()}%',
-                style: AppTextStyles.h1.copyWith(
-                  fontSize: 48,
+                style: AppTextStyles.highlight.copyWith(
                   color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                  shadows: AppShadows.textShadow,
                 ),
               ),
               SizedBox(
@@ -434,12 +512,19 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                     SizedBox(
                       width: 130,
                       height: 130,
-                      child: CircularProgressIndicator(
-                        value: percentage,
-                        strokeWidth: 10,
-                        backgroundColor: Colors.white.withValues(alpha: 0.3),
-                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                        strokeCap: StrokeCap.round,
+                      child: TweenAnimationBuilder<double>(
+                        duration: AppAnimations.slow,
+                        curve: Curves.easeInOut,
+                        tween: Tween<double>(begin: 0.0, end: percentage),
+                        builder: (context, value, _) {
+                          return CircularProgressIndicator(
+                            value: value,
+                            strokeWidth: 12,
+                            backgroundColor: Colors.white.withValues(alpha: 0.25),
+                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                            strokeCap: StrokeCap.round,
+                          );
+                        },
                       ),
                     ),
                     Column(
@@ -456,7 +541,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                         Text(
                           '$targetCalories',
                           style: AppTextStyles.bodyMedium.copyWith(
-                            color: Colors.white.withValues(alpha: 0.8),
+                            color: Colors.white.withValues(alpha: 0.85),
                           ),
                         ),
                       ],
@@ -471,6 +556,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // 🔥 優化:營養素卡片 - 使用亮色高亮
   Widget _buildNutritionCard() {
     return InkWell(
       onTap: () {
@@ -482,12 +568,13 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
         );
       },
       borderRadius: BorderRadius.circular(28),
-      child: Container(
+      child: AnimatedContainer(
+        duration: AppAnimations.fast,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(28),
-          boxShadow: AppShadows.medium,
+          boxShadow: AppShadows.large,
         ),
         child: Column(
           children: [
@@ -496,19 +583,38 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.restaurant, size: 22, color: AppColors.primary),
-                    const SizedBox(width: 10),
-                    Text('營養素', style: AppTextStyles.h4),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.restaurant, 
+                        size: 22, 
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '營養素', 
+                      style: AppTextStyles.h4.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 Icon(Icons.arrow_forward_ios, size: 18, color: AppColors.textTertiary),
               ],
             ),
             const SizedBox(height: 24),
+            // 🔥 碳水化合物 - 活力橘
             _buildNutritionBar('碳水化合物', carbsPercent, AppColors.accent1, carbsAmount),
             const SizedBox(height: 18),
+            // 🔥 蛋白質 - 活力綠
             _buildNutritionBar('蛋白質', proteinPercent, AppColors.accent2, proteinAmount),
             const SizedBox(height: 18),
+            // 🔥 脂肪 - 柔和紫
             _buildNutritionBar('脂肪', fatPercent, AppColors.accent3, fatAmount),
           ],
         ),
@@ -516,6 +622,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // 🔥 優化：營養素進度條 - 更明顯的顏色
   Widget _buildNutritionBar(String label, double value, Color color, String amount) {
     return Column(
       children: [
@@ -528,38 +635,57 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                   label, 
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  '${(value * 100).toInt()}%',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: color,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${(value * 100).toInt()}%',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
                   ),
                 ),
               ],
             ),
             Text(
               amount,
-              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 10),
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: LinearProgressIndicator(
-            value: value,
-            backgroundColor: color.withValues(alpha: 0.15),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-            minHeight: 10,
+          child: TweenAnimationBuilder<double>(
+            duration: AppAnimations.normal,
+            curve: Curves.easeInOut,
+            tween: Tween<double>(begin: 0.0, end: value),
+            builder: (context, animatedValue, _) {
+              return LinearProgressIndicator(
+                value: animatedValue,
+                backgroundColor: color.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                minHeight: 12,
+              );
+            },
           ),
         ),
       ],
     );
   }
 
+  // 🔥 優化：飲水卡片 - 更清新的設計
   Widget _buildWaterIntakeCard() {
     return StreamBuilder<Map<String, dynamic>>(
       stream: _waterService.getTodayWaterStream(),
@@ -598,20 +724,32 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: AppColors.info.withValues(alpha: 0.1),
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.info.withValues(alpha: 0.08),
+                  AppColors.info.withValues(alpha: 0.04),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(28),
               border: Border.all(
-                color: AppColors.info.withValues(alpha: 0.25),
-                width: 1,
+                color: AppColors.info.withValues(alpha: 0.2),
+                width: 1.5,
               ),
-              boxShadow: AppShadows.small,
+              boxShadow: AppShadows.medium,
             ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.info.withValues(alpha: 0.15),
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.info.withValues(alpha: 0.2),
+                        AppColors.info.withValues(alpha: 0.1),
+                      ],
+                    ),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -632,6 +770,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                             '今日飲水量', 
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                           Icon(
@@ -644,28 +783,40 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       const SizedBox(height: 6),
                       Text(
                         '$waterIntake / $waterTarget ml',
-                        style: AppTextStyles.h4,
+                        style: AppTextStyles.h4.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: LinearProgressIndicator(
-                          value: waterPercentage,
-                          backgroundColor: Colors.white,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.info),
-                          minHeight: 8,
+                        child: TweenAnimationBuilder<double>(
+                          duration: AppAnimations.normal,
+                          curve: Curves.easeInOut,
+                          tween: Tween<double>(begin: 0.0, end: waterPercentage),
+                          builder: (context, value, _) {
+                            return LinearProgressIndicator(
+                              value: value,
+                              backgroundColor: Colors.white.withValues(alpha: 0.5),
+                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.info),
+                              minHeight: 10,
+                            );
+                          },
                         ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 12),
+                // 🔥 快速新增按鈕
                 IconButton(
                   onPressed: _showQuickAddWaterDialog,
                   icon: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.info,
+                      gradient: LinearGradient(
+                        colors: [AppColors.info, AppColors.info.withValues(alpha: 0.8)],
+                      ),
                       shape: BoxShape.circle,
                       boxShadow: AppShadows.small,
                     ),
@@ -688,11 +839,9 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppColors.info.withValues(alpha: 0.1),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: AppColors.info.withValues(alpha: 0.25),
-        ),
+        boxShadow: AppShadows.small,
       ),
       child: Row(
         children: [
@@ -734,7 +883,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
-  // ✅ 使用 AppModal 統一彈窗樣式
   void _showQuickAddWaterDialog() {
     AppModal.showBottomSheet(
       context: context,
@@ -757,10 +905,16 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppColors.info.withValues(alpha: 0.1),
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.info.withValues(alpha: 0.15),
+                          AppColors.info.withValues(alpha: 0.08),
+                        ],
+                      ),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: AppColors.info.withValues(alpha: 0.3),
+                        width: 1.5,
                       ),
                     ),
                     child: Column(
@@ -776,6 +930,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                           '${amount}ml',
                           style: AppTextStyles.bodyLarge.copyWith(
                             fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
                           ),
                         ),
                       ],
@@ -798,7 +953,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                   );
                 },
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary, width: 2),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -822,17 +977,16 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     try {
       await _waterService.addWaterLog(amount: amount);
       if (mounted) {
-        // ✅ 使用 AppModal 的成功提示
         AppModal.showSuccessSnackBar(context, '已記錄 ${amount}ml 💧');
       }
     } catch (e) {
       if (mounted) {
-        // ✅ 使用 AppModal 的錯誤提示
         AppModal.showErrorSnackBar(context, '記錄失敗: $e');
       }
     }
   }
 
+  // 🔥 優化：快速操作按鈕 - 使用活力漸層
   Widget _buildQuickActions() {
     return Row(
       children: [
@@ -856,7 +1010,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           child: _buildActionButton(
             icon: Icons.fitness_center,
             label: '開始訓練',
-            gradient: AppColors.secondaryGradient,
+            gradient: AppColors.energyGradient,
             onTap: () {
               Navigator.push(
                 context,
@@ -883,12 +1037,13 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
-      child: Container(
+      child: AnimatedContainer(
+        duration: AppAnimations.fast,
         padding: const EdgeInsets.symmetric(vertical: 28),
         decoration: BoxDecoration(
           gradient: gradient,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: AppShadows.medium,
+          boxShadow: AppShadows.large,
         ),
         child: Column(
           children: [
@@ -899,6 +1054,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               style: AppTextStyles.button.copyWith(
                 color: Colors.white,
                 fontSize: 15,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ],

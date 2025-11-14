@@ -1,7 +1,5 @@
 // lib/components/page_wrapper_with_navigation.dart
-// ✅ 修正版 - 整合訓練計畫管理功能 + 鍵盤處理優化
-// 🎯 修正：加入 resizeToAvoidBottomInset: false
-// 🎯 修正：移除 Positioned 包裹導航欄
+// 🎨 明亮版莫蘭迪風格 - 整合訓練計畫管理功能 + 優化設計
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -29,6 +27,9 @@ import '../pages/settings/notification_settings_page.dart';
 import '../pages/profile/coach_edit_page.dart';
 import '../pages/profile/trainee_edit_page.dart';
 
+// 🎨 引入明亮版莫蘭迪主題
+import '../theme/app_theme.dart';
+
 class PageWrapperWithNavigation extends StatefulWidget {
   final bool isCoach;
   final Widget? customHomePage;
@@ -43,33 +44,40 @@ class PageWrapperWithNavigation extends StatefulWidget {
   State<PageWrapperWithNavigation> createState() => _PageWrapperWithNavigationState();
 }
 
-class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
+class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
   late PageController _pageController;
   
-  // Firebase 實例
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
-  // 用戶資料
   String userName = '';
   String userEmail = '';
   bool isLoading = true;
+  
+  // 🔥 動畫控制器
+  late AnimationController _fabAnimationController;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
     _initializeUserData();
+    
+    // 🔥 初始化 FAB 動畫
+    _fabAnimationController = AnimationController(
+      duration: AppAnimations.normal,
+      vsync: this,
+    );
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _fabAnimationController.dispose();
     super.dispose();
   }
 
-  // 初始化用戶資料
   Future<void> _initializeUserData() async {
     try {
       final user = _auth.currentUser;
@@ -99,7 +107,6 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  // 處理底部導航點擊
   void _onNavTap(int index) {
     if (kDebugMode) {
       debugPrint('🔥 導航點擊: index=$index');
@@ -111,8 +118,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+      duration: AppAnimations.normal,
+      curve: AppAnimations.defaultCurve,
     );
   }
 
@@ -121,6 +128,11 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       debugPrint('🔥 中央按鈕點擊');
     }
     
+    // 🔥 FAB 動畫
+    _fabAnimationController.forward().then((_) {
+      _fabAnimationController.reverse();
+    });
+    
     if (widget.isCoach) {
       _showCoachQuickActions();
     } else {
@@ -128,48 +140,49 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  /// ✅ 教練快速操作
+  /// 🎨 教練快速操作 - 明亮莫蘭迪風格
   void _showCoachQuickActions() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: AppColors.backgroundGradient,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 🔥 頂部手柄
             Container(
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: AppColors.textTertiary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
+            const SizedBox(height: 24),
+            
+            // 🔥 標題
+            Text(
               '快速操作',
-              style: TextStyle(
-                fontSize: 18,
+              style: AppTextStyles.h3.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             
-            // ✅ 創建訓練計畫
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.add_chart, color: Colors.green),
-              ),
-              title: const Text('創建訓練計畫'),
-              subtitle: const Text('為學員建立新的訓練課程'),
+            // 🔥 創建訓練計畫
+            _buildQuickActionItem(
+              icon: Icons.add_chart,
+              title: '創建訓練計畫',
+              subtitle: '為學員建立新的訓練課程',
+              gradient: AppColors.secondaryGradient,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -180,19 +193,14 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 );
               },
             ),
+            const SizedBox(height: 16),
             
-            // ✅ 管理訓練計畫
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.list_alt, color: Colors.blue),
-              ),
-              title: const Text('管理訓練計畫'),
-              subtitle: const Text('查看和管理所有訓練計畫'),
+            // 🔥 管理訓練計畫
+            _buildQuickActionItem(
+              icon: Icons.list_alt,
+              title: '管理訓練計畫',
+              subtitle: '查看和管理所有訓練計畫',
+              gradient: AppColors.primaryGradient,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -204,55 +212,56 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
               },
             ),
             
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  /// ✅ 學員快速操作
+  /// 🎨 學員快速操作 - 明亮莫蘭迪風格
   void _showStudentQuickActions() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: AppColors.backgroundGradient,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 🔥 頂部手柄
             Container(
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: AppColors.textTertiary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
+            const SizedBox(height: 24),
+            
+            // 🔥 標題
+            Text(
               '快速操作',
-              style: TextStyle(
-                fontSize: 18,
+              style: AppTextStyles.h3.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             
-            // ✅ 記錄訓練
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.fitness_center, color: Colors.green),
-              ),
-              title: const Text('記錄訓練'),
-              subtitle: const Text('記錄今日自由訓練'),
+            // 🔥 記錄訓練
+            _buildQuickActionItem(
+              icon: Icons.fitness_center,
+              title: '記錄訓練',
+              subtitle: '記錄今日自由訓練',
+              gradient: AppColors.energyGradient,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -267,19 +276,14 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 );
               },
             ),
+            const SizedBox(height: 16),
             
-            // ✅ 查看訓練計畫
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.calendar_month, color: Colors.orange),
-              ),
-              title: const Text('訓練計畫'),
-              subtitle: const Text('查看教練分配的訓練計畫'),
+            // 🔥 查看訓練計畫
+            _buildQuickActionItem(
+              icon: Icons.calendar_month,
+              title: '訓練計畫',
+              subtitle: '查看教練分配的訓練計畫',
+              gradient: AppColors.warmGradient,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -290,251 +294,383 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                 );
               },
             ),
+            const SizedBox(height: 16),
             
-            // 營養掃描（暫未實作）
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.camera_alt, color: Color(0xFF3B82F6)),
-              ),
-              title: const Text('營養掃描'),
-              subtitle: const Text('拍照記錄飲食營養'),
+            // 🔥 營養掃描
+            _buildQuickActionItem(
+              icon: Icons.camera_alt,
+              title: '營養掃描',
+              subtitle: '拍照記錄飲食營養',
+              gradient: AppColors.primaryGradient,
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('營養掃描功能 (開發中)')),
+                  SnackBar(
+                    content: const Text('營養掃描功能 (開發中)'),
+                    backgroundColor: AppColors.info,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 );
               },
             ),
             
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  // ✅ 側邊欄內容
-  Widget _buildDrawer() {
-    return Drawer(
-      child: Column(
-        children: [
-          // 側邊欄頂部
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: widget.isCoach 
-                    ? [Colors.green[500]!, Colors.green[600]!]
-                    : [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+  /// 🎨 快速操作項目 - 莫蘭迪風格卡片
+  Widget _buildQuickActionItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Gradient gradient,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: AppShadows.medium,
+        ),
+        child: Row(
+          children: [
+            // 🔥 圖標
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                icon,
+                color: Colors.white,
+                size: 28,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 35,
-                  backgroundColor: Colors.white,
-                  child: Text(
-                    userName.isNotEmpty ? userName[0].toUpperCase() : '?',
-                    style: TextStyle(
-                      fontSize: 28,
+            const SizedBox(width: 16),
+            
+            // 🔥 文字內容
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTextStyles.h4.copyWith(
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  userName,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  userEmail,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // 側邊欄選項列表
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                // ✅ 教練專屬訓練管理選項
-                if (widget.isCoach) ...[
-                  _buildDrawerHeader('💪 訓練管理'),
-                  _buildDrawerItem(
-                    icon: Icons.add_chart,
-                    title: '創建訓練計畫',
-                    subtitle: '為學員安排訓練',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CreateWorkoutPlanPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDrawerItem(
-                    icon: Icons.list_alt,
-                    title: '管理訓練計畫',
-                    subtitle: '查看和管理所有計畫',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CoachPlansManagementPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  const Divider(),
                 ],
-
-                // 📊 統計相關選項
-                _buildDrawerHeader('📊 數據統計'),
-                _buildDrawerItem(
-                  icon: Icons.dashboard,
-                  title: '數據儀表板',
-                  subtitle: '查看整體數據總覽',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const DashboardPage(),
-                      ),
-                    );
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.fitness_center,
-                  title: '運動統計',
-                  subtitle: '查看訓練數據分析',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const WorkoutStatsPage(),
-                      ),
-                    );
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.restaurant,
-                  title: '營養統計',
-                  subtitle: '查看飲食數據分析',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const NutritionStatsPage(),
-                      ),
-                    );
-                  },
-                ),
-
-                const Divider(),
-
-                // ⚙️ 設定相關選項
-                _buildDrawerHeader('⚙️ 設定'),
-                _buildDrawerItem(
-                  icon: Icons.notifications,
-                  title: '通知設定',
-                  subtitle: '管理提醒通知',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const NotificationSettingsPage(),
-                      ),
-                    );
-                  },
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 側邊欄分組標題
-  Widget _buildDrawerHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.grey[600],
+            
+            // 🔥 箭頭
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  // 側邊欄選項項目
+  /// 🎨 側邊欄 - 明亮莫蘭迪風格
+  Widget _buildDrawer() {
+    return Drawer(
+      child: Container(
+        color: AppColors.background,
+        child: Column(
+          children: [
+            // 🔥 側邊欄頂部 - 明亮莫蘭迪漸層
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
+              decoration: BoxDecoration(
+                gradient: widget.isCoach 
+                    ? AppColors.secondaryGradient
+                    : AppColors.primaryGradient,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(28),
+                  bottomRight: Radius.circular(28),
+                ),
+                boxShadow: AppShadows.large,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 🔥 頭像 - 純白背景
+                  Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: AppShadows.medium,
+                    ),
+                    child: Center(
+                      child: Text(
+                        userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                        style: AppTextStyles.h1.copyWith(
+                          color: widget.isCoach ? AppColors.coach : AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // 🔥 用戶名
+                  Text(
+                    userName,
+                    style: AppTextStyles.h3.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  
+                  // 🔥 郵箱
+                  Text(
+                    userEmail,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 🔥 側邊欄選項列表
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                children: [
+                  // ✅ 教練專屬訓練管理選項
+                  if (widget.isCoach) ...[
+                    _buildDrawerHeader('💪 訓練管理'),
+                    _buildDrawerItem(
+                      icon: Icons.add_chart,
+                      title: '創建訓練計畫',
+                      subtitle: '為學員安排訓練',
+                      color: AppColors.coach,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CreateWorkoutPlanPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDrawerItem(
+                      icon: Icons.list_alt,
+                      title: '管理訓練計畫',
+                      subtitle: '查看和管理所有計畫',
+                      color: AppColors.coach,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CoachPlansManagementPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      child: Divider(height: 1),
+                    ),
+                  ],
+
+                  // 📊 統計相關選項
+                  _buildDrawerHeader('📊 數據統計'),
+                  _buildDrawerItem(
+                    icon: Icons.dashboard_outlined,
+                    title: '數據儀表板',
+                    subtitle: '查看整體數據總覽',
+                    color: AppColors.primary,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const DashboardPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.fitness_center,
+                    title: '運動統計',
+                    subtitle: '查看訓練數據分析',
+                    color: AppColors.success,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const WorkoutStatsPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.restaurant,
+                    title: '營養統計',
+                    subtitle: '查看飲食數據分析',
+                    color: AppColors.warning,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const NutritionStatsPage(),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    child: Divider(height: 1),
+                  ),
+
+                  // ⚙️ 設定相關選項
+                  _buildDrawerHeader('⚙️ 設定'),
+                  _buildDrawerItem(
+                    icon: Icons.notifications_outlined,
+                    title: '通知設定',
+                    subtitle: '管理提醒通知',
+                    color: AppColors.accent3,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationSettingsPage(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 🎨 側邊欄分組標題
+  Widget _buildDrawerHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+      child: Text(
+        title,
+        style: AppTextStyles.label.copyWith(
+          color: AppColors.textSecondary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  /// 🎨 側邊欄選項項目 - 莫蘭迪風格
   Widget _buildDrawerItem({
     required IconData icon,
     required String title,
     required String subtitle,
+    required Color color,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      leading: Icon(icon, color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6)),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-        ),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.small,
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 22),
         ),
+        title: Text(
+          title,
+          style: AppTextStyles.bodyLarge.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            subtitle,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.backgroundGradient,
+          ),
+          child: Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(
+                widget.isCoach ? AppColors.coach : AppColors.primary,
+              ),
+            ),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      // 🎯 新增：防止鍵盤推擠導航欄
+      backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false,
       drawer: _buildDrawer(),
       body: Stack(
@@ -555,7 +691,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             ],
           ),
           
-          // 🎯 底部導航（移除 Positioned，讓導航欄自行處理位置）
+          // 底部導航
           ModernBottomNavigation(
             currentIndex: _currentIndex,
             onTap: _onNavTap,
@@ -567,86 +703,93 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // ==================== 以下保持原有頁面內容不變 ====================
+  // ==================== 頁面內容 (保持原有邏輯,優化視覺) ====================
 
   Widget _buildHomePage() {
     if (widget.customHomePage != null) {
       return widget.customHomePage!;
     }
     
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 110),
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: widget.isCoach 
-                      ? [Colors.green[500]!, Colors.green[600]!]
-                      : [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+    // 預設主頁 (如果沒有自訂)
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.backgroundGradient,
+      ),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 110),
+          child: Column(
+            children: [
+              // 🔥 頂部歡迎卡片
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  gradient: widget.isCoach 
+                      ? AppColors.secondaryGradient
+                      : AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: AppShadows.emphasized,
                 ),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(30),
-                  bottomRight: Radius.circular(30),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '嗨,$userName!',
+                      style: AppTextStyles.h2.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.isCoach 
+                          ? '今天也要好好指導學員們！' 
+                          : '今天也要認真訓練！',
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 20),
-                  Text(
-                    '嗨，$userName！',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+              
+              // 內容區域
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.isCoach ? '近期活動' : '訓練進度',
+                      style: AppTextStyles.h3.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.isCoach 
-                        ? '今天也要好好指導學員們！' 
-                        : '今天也要認真訓練！',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white70,
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: AppShadows.medium,
+                      ),
+                      child: Text(
+                        widget.isCoach 
+                            ? '您的學員們本週總共完成了 45 次訓練,表現優秀！'
+                            : '本週已完成 5 次訓練,繼續保持！',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          height: 1.6,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.isCoach ? '近期活動' : '訓練進度',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    widget.isCoach 
-                        ? '您的學員們本週總共完成了 45 次訓練，表現優秀！'
-                        : '本週已完成 5 次訓練，繼續保持！',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -661,393 +804,423 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
   }
 
   Widget _buildChatPage() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 110, left: 24, right: 24, top: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '聊天',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.backgroundGradient,
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 110, left: 24, right: 24, top: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '聊天',
+                style: AppTextStyles.h2.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('chatRooms')
-                    .where('participants', arrayContains: _auth.currentUser?.uid)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                          const SizedBox(height: 16),
-                          Text('載入聊天時發生錯誤: ${snapshot.error}'),
-                        ],
-                      ),
-                    );
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.chat_bubble_outline,
-                            size: 80,
-                            color: Colors.grey.shade400,
+              const SizedBox(height: 24),
+              
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _firestore
+                      .collection('chatRooms')
+                      .where('participants', arrayContains: _auth.currentUser?.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            widget.isCoach ? AppColors.coach : AppColors.primary,
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            '尚無聊天記錄',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  List<QueryDocumentSnapshot> chatRooms = snapshot.data!.docs.toList();
-                  chatRooms.sort((a, b) {
-                    var aData = a.data() as Map<String, dynamic>;
-                    var bData = b.data() as Map<String, dynamic>;
-                    var aTime = aData['lastMessageTime'] as Timestamp?;
-                    var bTime = bData['lastMessageTime'] as Timestamp?;
-                    
-                    if (aTime == null && bTime == null) return 0;
-                    if (aTime == null) return 1;
-                    if (bTime == null) return -1;
-                    
-                    return bTime.compareTo(aTime);
-                  });
-
-                  return ListView.builder(
-                    itemCount: chatRooms.length,
-                    itemBuilder: (context, index) {
-                      var chatRoomDoc = chatRooms[index];
-                      Map<String, dynamic> chatRoomData = chatRoomDoc.data() as Map<String, dynamic>;
-                      
-                      List<dynamic> participants = chatRoomData['participants'] ?? [];
-                      String otherUserId = participants.firstWhere(
-                        (id) => id != _auth.currentUser?.uid,
-                        orElse: () => '',
+                        ),
                       );
+                    }
 
-                      return FutureBuilder<DocumentSnapshot>(
-                        future: _firestore.collection('users').doc(otherUserId).get(),
-                        builder: (context, userSnapshot) {
-                          String otherUserName = '未知用戶';
-                          bool otherUserIsCoach = false;
-                          
-                          if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                            Map<String, dynamic> otherUserData = userSnapshot.data!.data() as Map<String, dynamic>;
-                            otherUserName = otherUserData['displayName'] ?? '未知用戶';
-                            otherUserIsCoach = otherUserData['role'] == 'coach';
-                          }
-
-                          String lastMessage = chatRoomData['lastMessage'] ?? '';
-                          String lastMessageSenderId = chatRoomData['lastMessageSenderId'] ?? '';
-                          bool isMyLastMessage = lastMessageSenderId == _auth.currentUser?.uid;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: AppColors.error,
                             ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.all(12),
-                              leading: CircleAvatar(
-                                radius: 28,
-                                backgroundColor: otherUserIsCoach 
-                                    ? Colors.green 
-                                    : const Color(0xFF3B82F6),
-                                child: Text(
-                                  otherUserName.isNotEmpty 
-                                      ? otherUserName[0].toUpperCase() 
-                                      : '?',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20,
+                            const SizedBox(height: 16),
+                            Text(
+                              '載入聊天時發生錯誤',
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.chat_bubble_outline,
+                                size: 64,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              '尚無聊天記錄',
+                              style: AppTextStyles.h4.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    List<QueryDocumentSnapshot> chatRooms = snapshot.data!.docs.toList();
+                    chatRooms.sort((a, b) {
+                      var aData = a.data() as Map<String, dynamic>;
+                      var bData = b.data() as Map<String, dynamic>;
+                      var aTime = aData['lastMessageTime'] as Timestamp?;
+                      var bTime = bData['lastMessageTime'] as Timestamp?;
+                      
+                      if (aTime == null && bTime == null) return 0;
+                      if (aTime == null) return 1;
+                      if (bTime == null) return -1;
+                      
+                      return bTime.compareTo(aTime);
+                    });
+
+                    return ListView.builder(
+                      itemCount: chatRooms.length,
+                      itemBuilder: (context, index) {
+                        var chatRoomDoc = chatRooms[index];
+                        Map<String, dynamic> chatRoomData = chatRoomDoc.data() as Map<String, dynamic>;
+                        
+                        List<dynamic> participants = chatRoomData['participants'] ?? [];
+                        String otherUserId = participants.firstWhere(
+                          (id) => id != _auth.currentUser?.uid,
+                          orElse: () => '',
+                        );
+
+                        return FutureBuilder<DocumentSnapshot>(
+                          future: _firestore.collection('users').doc(otherUserId).get(),
+                          builder: (context, userSnapshot) {
+                            String otherUserName = '未知用戶';
+                            bool otherUserIsCoach = false;
+                            
+                            if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                              Map<String, dynamic> otherUserData = userSnapshot.data!.data() as Map<String, dynamic>;
+                              otherUserName = otherUserData['displayName'] ?? '未知用戶';
+                              otherUserIsCoach = otherUserData['role'] == 'coach';
+                            }
+
+                            String lastMessage = chatRoomData['lastMessage'] ?? '';
+                            String lastMessageSenderId = chatRoomData['lastMessageSenderId'] ?? '';
+                            bool isMyLastMessage = lastMessageSenderId == _auth.currentUser?.uid;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: AppShadows.medium,
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(16),
+                                leading: Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    gradient: otherUserIsCoach 
+                                        ? AppColors.secondaryGradient
+                                        : AppColors.primaryGradient,
+                                    shape: BoxShape.circle,
+                                    boxShadow: AppShadows.small,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      otherUserName.isNotEmpty 
+                                          ? otherUserName[0].toUpperCase() 
+                                          : '?',
+                                      style: AppTextStyles.h3.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      otherUserName,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: otherUserIsCoach 
-                                          ? Colors.green 
-                                          : const Color(0xFF3B82F6),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      otherUserIsCoach ? '教練' : '學員',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Row(
+                                title: Row(
                                   children: [
-                                    if (isMyLastMessage)
-                                      Container(
-                                        margin: const EdgeInsets.only(right: 4),
-                                        child: Text(
-                                          '我：',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey[500],
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
                                     Expanded(
                                       child: Text(
-                                        lastMessage.isNotEmpty 
-                                            ? lastMessage 
-                                            : '尚無訊息',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 14,
+                                        otherUserName,
+                                        style: AppTextStyles.bodyLarge.copyWith(
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: otherUserIsCoach 
+                                            ? AppColors.coach.withValues(alpha: 0.15)
+                                            : AppColors.primary.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        otherUserIsCoach ? '教練' : '學員',
+                                        style: AppTextStyles.caption.copyWith(
+                                          color: otherUserIsCoach ? AppColors.coach : AppColors.primary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              trailing: const Icon(
-                                Icons.arrow_forward_ios,
-                                size: 16,
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ChatDetailPage(
-                                      chatId: chatRoomDoc.id,
-                                      chatName: otherUserName,
-                                      lastMessage: lastMessage.isNotEmpty ? lastMessage : '開始對話...',
-                                      avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
-                                      isOnline: true,
-                                    ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Row(
+                                    children: [
+                                      if (isMyLastMessage)
+                                        Text(
+                                          '我：',
+                                          style: AppTextStyles.bodySmall.copyWith(
+                                            color: AppColors.textTertiary,
+                                          ),
+                                        ),
+                                      Expanded(
+                                        child: Text(
+                                          lastMessage.isNotEmpty 
+                                              ? lastMessage 
+                                              : '尚無訊息',
+                                          style: AppTextStyles.bodySmall.copyWith(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
+                                ),
+                                trailing: Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 16,
+                                  color: AppColors.textTertiary,
+                                ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ChatDetailPage(
+                                        chatId: chatRoomDoc.id,
+                                        chatName: otherUserName,
+                                        lastMessage: lastMessage.isNotEmpty ? lastMessage : '開始對話...',
+                                        avatarUrl: 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(otherUserName)}&background=${otherUserIsCoach ? '22C55E' : '3B82F6'}&color=fff',
+                                        isOnline: true,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildProfilePage() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 110, left: 24, right: 24, top: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '個人中心',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.backgroundGradient,
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 110, left: 24, right: 24, top: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '個人中心',
+                style: AppTextStyles.h2.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        userName.isNotEmpty ? userName[0].toUpperCase() : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+              const SizedBox(height: 24),
+              
+              // 🔥 用戶資訊卡片
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: widget.isCoach 
+                      ? AppColors.secondaryGradient
+                      : AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: AppShadows.emphasized,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: AppShadows.medium,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          userName,
-                          style: const TextStyle(
-                            fontSize: 18,
+                      child: Center(
+                        child: Text(
+                          userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                          style: AppTextStyles.h2.copyWith(
+                            color: widget.isCoach ? AppColors.coach : AppColors.primary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          userEmail,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: widget.isCoach 
-                                ? Colors.green 
-                                : const Color(0xFF3B82F6),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            widget.isCoach ? '教練' : '學員',
-                            style: const TextStyle(
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userName,
+                            style: AppTextStyles.h4.copyWith(
                               color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            userEmail,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              widget.isCoach ? '教練' : '學員',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: Column(
-                children: [
-                  _buildProfileOption(
-                    icon: Icons.edit_outlined,
-                    title: '編輯個人資料',
-                    onTap: () {
-                      if (widget.isCoach) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const CoachEditPage(),
+              const SizedBox(height: 24),
+              
+              // 🔥 選項列表
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildProfileOption(
+                      icon: Icons.edit_outlined,
+                      title: '編輯個人資料',
+                      color: AppColors.primary,
+                      onTap: () {
+                        if (widget.isCoach) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CoachEditPage(),
+                            ),
+                          ).then((_) {
+                            _initializeUserData();
+                          });
+                        } else {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const TraineeEditPage(),
+                            ),
+                          ).then((_) {
+                            _initializeUserData();
+                          });
+                        }
+                      },
+                    ),
+                    _buildProfileOption(
+                      icon: Icons.settings_outlined,
+                      title: '應用程式設定',
+                      color: AppColors.textSecondary,
+                      onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('應用程式設定功能 (開發中)'),
+                            backgroundColor: AppColors.info,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        ).then((_) {
-                          _initializeUserData();
-                        });
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const TraineeEditPage(),
-                          ),
-                        ).then((_) {
-                          _initializeUserData();
-                        });
-                      }
-                    },
-                  ),
-                  _buildProfileOption(
-                    icon: Icons.settings_outlined,
-                    title: '應用程式設定',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('應用程式設定功能 (開發中)')),
-                      );
-                    },
-                  ),
-                  _buildProfileOption(
-                    icon: Icons.restaurant_menu,
-                    title: '初始化食物資料庫',
-                    onTap: () {
-                      _initializeDatabase();
-                    },
-                  ),
-                  _buildProfileOption(
-                    icon: Icons.logout_outlined,
-                    title: '登出',
-                    onTap: () {
-                      _handleSignOut();
-                    },
-                    isDestructive: true,
-                  ),
-                ],
+                        );
+                      },
+                    ),
+                    _buildProfileOption(
+                      icon: Icons.restaurant_menu,
+                      title: '初始化食物資料庫',
+                      color: AppColors.warning,
+                      onTap: () {
+                        _initializeDatabase();
+                      },
+                    ),
+                    _buildProfileOption(
+                      icon: Icons.logout_outlined,
+                      title: '登出',
+                      color: AppColors.error,
+                      onTap: () {
+                        _handleSignOut();
+                      },
+                      isDestructive: true,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1056,6 +1229,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
   Widget _buildProfileOption({
     required IconData icon,
     required String title,
+    required Color color,
     required VoidCallback onTap,
     bool isDestructive = false,
   }) {
@@ -1063,41 +1237,38 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: AppShadows.medium,
           ),
           child: Row(
             children: [
-              Icon(
-                icon,
-                color: isDestructive ? Colors.red : Colors.grey[600],
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: isDestructive ? Colors.red : Colors.black87,
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: isDestructive ? color : AppColors.textPrimary,
                   ),
                 ),
               ),
               Icon(
                 Icons.arrow_forward_ios,
                 size: 16,
-                color: Colors.grey[400],
+                color: AppColors.textTertiary,
               ),
             ],
           ),
@@ -1112,28 +1283,41 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       builder: (BuildContext context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(20),
           ),
           title: Row(
             children: [
               Icon(
                 Icons.logout,
-                color: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
+                color: AppColors.error,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               const Text('確認登出'),
             ],
           ),
-          content: const Text('您確定要登出嗎？\n登出後需要重新登入才能使用。'),
+          content: Text(
+            '您確定要登出嗎？\n登出後需要重新登入才能使用。',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消', style: TextStyle(color: Colors.grey)),
+              child: Text(
+                '取消',
+                style: AppTextStyles.button.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: widget.isCoach ? Colors.green : const Color(0xFF3B82F6),
+                backgroundColor: AppColors.error,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text('確定登出'),
             ),
@@ -1151,7 +1335,10 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('登出失敗: $e')),
+            SnackBar(
+              content: Text('登出失敗: $e'),
+              backgroundColor: AppColors.error,
+            ),
           );
         }
       }
@@ -1164,29 +1351,40 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       builder: (BuildContext context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(20),
           ),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.restaurant_menu, color: Colors.orange),
-              SizedBox(width: 8),
-              Text('初始化食物資料庫'),
+              Icon(Icons.restaurant_menu, color: AppColors.warning),
+              const SizedBox(width: 12),
+              const Text('初始化食物資料庫'),
             ],
           ),
-          content: const Text(
+          content: Text(
             '這將會在 Firestore 中建立基礎食物資料庫。\n\n'
             '如果資料庫已存在,將不會重複建立。\n\n'
             '確定要執行嗎？',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消', style: TextStyle(color: Colors.grey)),
+              child: Text(
+                '取消',
+                style: AppTextStyles.button.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
+                backgroundColor: AppColors.warning,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text('確定'),
             ),
@@ -1200,18 +1398,26 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('正在初始化資料庫...'),
-              ],
-            ),
+      builder: (context) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: AppShadows.xLarge,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.warning),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                '正在初始化資料庫...',
+                style: AppTextStyles.bodyLarge,
+              ),
+            ],
           ),
         ),
       ),
@@ -1225,10 +1431,13 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('食物資料庫初始化成功！'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: const Text('食物資料庫初始化成功！'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
@@ -1239,14 +1448,17 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('初始化失敗: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
       
       if (kDebugMode) {
-        print('初始化食物資料庫失敗: $e');
+        debugPrint('初始化食物資料庫失敗: $e');
       }
     }
   }

@@ -1,11 +1,16 @@
+// lib/pages/coach_search_page.dart
+// 🎨 全新設計的教練搜尋頁面 - 參考現代 UI 設計
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/user_service.dart';
 import '../services/pair_request_service.dart';
 import '../widgets/pair_request_dialog.dart';
+import '../theme/app_theme.dart';
 
 class CoachSearchPage extends StatefulWidget {
-  final bool isEmbedded; // 新增：是否嵌入在 Tab 中
+  final bool isEmbedded;
   
   const CoachSearchPage({
     super.key,
@@ -27,7 +32,6 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
   bool _isLoading = true;
   bool _isSearching = false;
   
-  // 儲存已配對/待回應的教練 ID
   Set<String> _pairedCoachIds = {};
   Set<String> _pendingCoachIds = {};
   
@@ -57,20 +61,17 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     super.dispose();
   }
 
-  // 載入配對狀態
   Future<void> _loadPairStatus() async {
     try {
       final currentUserId = _userService.currentUserId;
       if (currentUserId == null) return;
 
-      // 查詢所有配對記錄
       final pairsSnapshot = await FirebaseFirestore.instance
           .collection('pairs')
           .where('traineeId', isEqualTo: currentUserId)
           .where('status', isEqualTo: 'active')
           .get();
 
-      // 查詢所有待處理的請求
       final requestsSnapshot = await FirebaseFirestore.instance
           .collection('pairRequests')
           .where('studentId', isEqualTo: currentUserId)
@@ -81,96 +82,75 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         _pairedCoachIds = pairsSnapshot.docs
             .map((doc) => doc.data()['coachId'] as String)
             .toSet();
-        
         _pendingCoachIds = requestsSnapshot.docs
             .map((doc) => doc.data()['coachId'] as String)
             .toSet();
       });
-
-      print('已配對教練: $_pairedCoachIds');
-      print('待回應教練: $_pendingCoachIds');
       
-      _loadRecommendedCoaches();
+      await _loadRecommendedCoaches();
     } catch (e) {
-      print('載入配對狀態失敗: $e');
-      _loadRecommendedCoaches();
+      if (kDebugMode) {
+        debugPrint('載入配對狀態失敗: $e');
+      }
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _loadRecommendedCoaches() async {
-    setState(() => _isLoading = true);
-    
     try {
-      final QuerySnapshot snapshot = await FirebaseFirestore.instance
+      setState(() => _isLoading = true);
+      
+      final allCoachesSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where('role', isEqualTo: 'coach')
-          .limit(50)
           .get();
       
-      // 過濾掉已配對和待回應的教練
-      List<DocumentSnapshot> coaches = snapshot.docs.where((doc) {
-        final coachId = doc.id;
+      final coaches = allCoachesSnapshot.docs;
+      
+      final availableCoaches = coaches.where((coach) {
+        final coachId = coach.id;
         return !_pairedCoachIds.contains(coachId) && 
                !_pendingCoachIds.contains(coachId);
       }).toList();
       
-      coaches.sort((a, b) {
-        final aData = a.data() as Map<String, dynamic>;
-        final bData = b.data() as Map<String, dynamic>;
-        final aName = aData['displayName'] ?? '';
-        final bName = bData['displayName'] ?? '';
-        return aName.compareTo(bName);
-      });
-      
       setState(() {
-        _coaches = coaches;
-        _filteredCoaches = coaches;
+        _coaches = availableCoaches;
+        _filteredCoaches = availableCoaches;
         _isLoading = false;
       });
-      
-      print('過濾後顯示 ${coaches.length} 個可配對教練');
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('載入教練列表失敗: $e');
+      }
       setState(() => _isLoading = false);
-      _showErrorSnackBar('載入教練列表失敗：$e');
     }
   }
 
   void _onSearchChanged() {
-    if (_searchController.text.trim().isEmpty && _selectedSpecialties.isEmpty) {
+    if (_searchController.text.isEmpty && _selectedSpecialties.isEmpty) {
       setState(() {
         _filteredCoaches = _coaches;
       });
-      return;
+    } else {
+      _performSearch();
     }
-    
-    _performSearch();
   }
 
-  Future<void> _performSearch() async {
+  void _performSearch() async {
     setState(() => _isSearching = true);
     
     try {
-      final QuerySnapshot snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'coach')
-          .limit(100)
-          .get();
+      await Future.delayed(const Duration(milliseconds: 300));
       
-      // 過濾掉已配對和待回應的教練
-      List<DocumentSnapshot> results = snapshot.docs.where((doc) {
-        final coachId = doc.id;
-        return !_pairedCoachIds.contains(coachId) && 
-               !_pendingCoachIds.contains(coachId);
-      }).toList();
+      List<DocumentSnapshot> results = _coaches;
       
-      final searchTerm = _searchController.text.toLowerCase().trim();
-      
-      if (searchTerm.isNotEmpty || _selectedSpecialties.isNotEmpty) {
-        results = results.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+      if (_searchController.text.isNotEmpty || _selectedSpecialties.isNotEmpty) {
+        results = _coaches.where((coach) {
+          final data = coach.data() as Map<String, dynamic>;
           
           bool matchesName = true;
-          if (searchTerm.isNotEmpty) {
+          if (_searchController.text.isNotEmpty) {
+            final searchTerm = _searchController.text.toLowerCase();
             final name = (data['displayName'] ?? '').toLowerCase();
             matchesName = name.contains(searchTerm);
           }
@@ -187,14 +167,6 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
           
           return matchesName && matchesSpecialty;
         }).toList();
-        
-        results.sort((a, b) {
-          final aData = a.data() as Map<String, dynamic>;
-          final bData = b.data() as Map<String, dynamic>;
-          final aName = aData['displayName'] ?? '';
-          final bName = bData['displayName'] ?? '';
-          return aName.compareTo(bName);
-        });
       }
       
       setState(() {
@@ -231,10 +203,14 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
         _loadRecommendedCoaches();
         
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('配對請求已發送！等待教練回應'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: const Text('配對請求已發送！等待教練回應'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+            ),
           ),
         );
       }
@@ -244,16 +220,16 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     }
   }
 
-  Future<void> _contactCoach(DocumentSnapshot coachDoc) async {
-    _showPairingDialog(coachDoc);
-  }
-
   void _showErrorSnackBar(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+          ),
         ),
       );
     }
@@ -261,108 +237,367 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 構建主要內容
-    final content = Column(
-      children: [
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: '搜索教練姓名...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _isSearching
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                ),
-              ),
-              const SizedBox(height: 12),
-              
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    const Text(
-                      '專業領域：',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ..._specialtyOptions.map((specialty) {
-                      final isSelected = _selectedSpecialties.contains(specialty);
-                      return Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(specialty),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedSpecialties.add(specialty);
-                              } else {
-                                _selectedSpecialties.remove(specialty);
-                              }
-                            });
-                            _onSearchChanged();
-                          },
-                          selectedColor: Colors.green.withOpacity(0.2),
-                          checkmarkColor: Colors.green,
+    // ✅ 關鍵修正：設定鍵盤行為
+    final content = Scaffold(
+      resizeToAvoidBottomInset: false, // ✅ 防止鍵盤推高整個頁面
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ✅ 固定在頂部的搜尋區域
+            _buildSearchHeader(),
+            
+            // ✅ 可滾動的教練列表
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredCoaches.isEmpty
+                      ? _buildEmptyState()
+                      : RefreshIndicator(
+                          onRefresh: _loadRecommendedCoaches,
+                          color: AppColors.primary,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(AppSizes.paddingMedium),
+                            itemCount: _filteredCoaches.length,
+                            itemBuilder: (context, index) {
+                              return _buildModernCoachCard(_filteredCoaches[index]);
+                            },
+                          ),
                         ),
-                      );
-                    }).toList(),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _filteredCoaches.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _filteredCoaches.length,
-                      itemBuilder: (context, index) {
-                        return _buildCoachCard(_filteredCoaches[index]);
-                      },
-                    ),
-        ),
-      ],
+      ),
     );
 
-    // 如果是嵌入模式（在 Tab 中），直接返回內容
     if (widget.isEmbedded) {
       return content;
     }
 
-    // 如果不是嵌入模式（獨立頁面），包裹 Scaffold
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: const Text('尋找教練'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        foregroundColor: Colors.black,
+    return content;
+  }
+
+  // ✅ 全新的搜尋頭部設計
+  Widget _buildSearchHeader() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      body: content,
+      child: Column(
+        children: [
+          // 搜尋框
+          Padding(
+            padding: const EdgeInsets.all(AppSizes.paddingMedium),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.2),
+                  width: 1.5,
+                ),
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: '搜索教練姓名...',
+                  hintStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: AppColors.primary,
+                    size: AppSizes.iconLarge,
+                  ),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear, color: AppColors.textTertiary),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.paddingMedium,
+                    vertical: AppSizes.paddingMedium,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // 專業領域 Chips（橫向滾動）
+          SizedBox(
+            height: 50,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(
+                left: AppSizes.paddingMedium,
+                right: AppSizes.paddingMedium,
+                bottom: AppSizes.paddingSmall,
+              ),
+              children: _specialtyOptions.map((specialty) {
+                final isSelected = _selectedSpecialties.contains(specialty);
+                return Padding(
+                  padding: const EdgeInsets.only(right: AppSizes.gapSmall),
+                  child: FilterChip(
+                    label: Text(specialty),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedSpecialties.add(specialty);
+                        } else {
+                          _selectedSpecialties.remove(specialty);
+                        }
+                      });
+                      _performSearch();
+                    },
+                    selectedColor: AppColors.accent2.withOpacity(0.3),
+                    backgroundColor: AppColors.background,
+                    labelStyle: AppTextStyles.caption.copyWith(
+                      color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                    side: BorderSide(
+                      color: isSelected 
+                          ? AppColors.accent2 
+                          : AppColors.accent2.withOpacity(0.3),
+                      width: 1.5,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.paddingMedium,
+                      vertical: AppSizes.paddingSmall,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ 全新的現代化教練卡片設計
+  Widget _buildModernCoachCard(DocumentSnapshot coachDoc) {
+    final coachData = coachDoc.data() as Map<String, dynamic>;
+    final coachName = coachData['displayName'] ?? '教練';
+    final coachBio = coachData['bio'] ?? '';
+    final experienceRaw = coachData['experience'];
+    final String experience = experienceRaw is String 
+        ? experienceRaw 
+        : (experienceRaw is int ? '${experienceRaw}年教學經驗' : '');
+    final specialties = List<String>.from(coachData['specialties'] ?? []);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.gapLarge),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radiusXXLarge),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // ✅ 頂部：頭像區域（參考範例的大頭像設計）
+          Container(
+            height: 120,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(AppSizes.radiusXXLarge),
+                topRight: Radius.circular(AppSizes.radiusXXLarge),
+              ),
+            ),
+            child: Center(
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: AppShadows.medium,
+                ),
+                child: Center(
+                  child: Text(
+                    coachName.isNotEmpty ? coachName[0].toUpperCase() : 'C',
+                    style: AppTextStyles.h1.copyWith(
+                      color: AppColors.primary,
+                      fontSize: 36,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // ✅ 內容區域
+          Padding(
+            padding: AppSizes.cardPaddingLarge,
+            child: Column(
+              children: [
+                // 教練名稱
+                Text(
+                  coachName,
+                  style: AppTextStyles.h3,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSizes.gapSmall),
+                
+                // 認證標籤
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.paddingMedium,
+                    vertical: AppSizes.paddingSmall,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.secondaryGradient.scale(0.3),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.verified, size: 16, color: AppColors.success),
+                      const SizedBox(width: 4),
+                      Text(
+                        '認證教練',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // 經驗
+                if (experience.isNotEmpty) ...[
+                  const SizedBox(height: AppSizes.gapMedium),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.work_outline, 
+                        size: AppSizes.iconSmall, 
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        experience,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                
+                // 簡介
+                if (coachBio.isNotEmpty) ...[
+                  const SizedBox(height: AppSizes.gapMedium),
+                  Text(
+                    coachBio,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                
+                // 專長標籤（參考範例的 tag 設計）
+                if (specialties.isNotEmpty) ...[
+                  const SizedBox(height: AppSizes.gapMedium),
+                  Wrap(
+                    spacing: AppSizes.gapSmall,
+                    runSpacing: AppSizes.gapSmall,
+                    alignment: WrapAlignment.center,
+                    children: specialties.take(3).map((specialty) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSizes.paddingMedium,
+                          vertical: AppSizes.paddingSmall,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent1.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+                        ),
+                        child: Text(
+                          specialty,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+                
+                const SizedBox(height: AppSizes.gapLarge),
+                
+                // ✅ 按鈕（參考範例的單一大按鈕設計）
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      _showPairingDialog(coachDoc);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.person_add, size: AppSizes.iconMedium),
+                        const SizedBox(width: AppSizes.gapSmall),
+                        Text(
+                          '發送配對請求',
+                          style: AppTextStyles.button,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                
+                // 查看詳情文字按鈕
+                TextButton(
+                  onPressed: () {
+                    _showCoachDetailDialog(coachDoc);
+                  },
+                  child: Text(
+                    '查看詳細資料',
+                    style: AppTextStyles.label.copyWith(
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -374,34 +609,31 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
           Icon(
             Icons.search_off,
             size: 80,
-            color: Colors.grey.shade400,
+            color: AppColors.textTertiary,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSizes.gapLarge),
           Text(
             _pairedCoachIds.isEmpty && _pendingCoachIds.isEmpty
                 ? '找不到符合條件的教練'
                 : '沒有更多可配對的教練',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
+            style: AppTextStyles.h3.copyWith(
+              color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSizes.gapSmall),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               _pairedCoachIds.isEmpty && _pendingCoachIds.isEmpty
                   ? '嘗試調整搜索條件或清除篩選'
                   : '您已配對或發送請求給所有符合條件的教練',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade500,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textTertiary,
               ),
               textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSizes.gapXLarge),
           if (_searchController.text.isNotEmpty || _selectedSpecialties.isNotEmpty)
             ElevatedButton(
               onPressed: () {
@@ -418,195 +650,91 @@ class _CoachSearchPageState extends State<CoachSearchPage> {
     );
   }
 
-  Widget _buildCoachCard(DocumentSnapshot coachDoc) {
+  void _showCoachDetailDialog(DocumentSnapshot coachDoc) {
     final coachData = coachDoc.data() as Map<String, dynamic>;
     final coachName = coachData['displayName'] ?? '教練';
-    final coachBio = coachData['bio'] ?? '';
-    
-    // ✅ 修正：安全處理 experience 欄位（支援數字和字串格式）
+    final coachBio = coachData['bio'] ?? '暫無簡介';
     final experienceRaw = coachData['experience'];
-    final int experienceYears = experienceRaw is int 
+    final String experience = experienceRaw is String 
         ? experienceRaw 
-        : (experienceRaw is String ? int.tryParse(experienceRaw) ?? 0 : 0);
-    
+        : (experienceRaw is int ? '${experienceRaw}年教學經驗' : '');
     final specialties = List<String>.from(coachData['specialties'] ?? []);
     final certifications = List<String>.from(coachData['certifications'] ?? []);
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Card(
-        elevation: 2,
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        title: Text(coachName, style: AppTextStyles.h3),
+        content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: const BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        coachName.isNotEmpty ? coachName[0].toUpperCase() : 'C',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          coachName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            '認證教練',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (experienceYears > 0) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            '$experienceYears年教學經驗',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              
-              if (coachBio.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  coachBio,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade700,
-                    height: 1.4,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              if (experience.isNotEmpty) ...[
+                Text('經驗：', style: AppTextStyles.label),
+                const SizedBox(height: 4),
+                Text(experience, style: AppTextStyles.bodyMedium),
+                const SizedBox(height: AppSizes.gapMedium),
               ],
               
+              Text('簡介：', style: AppTextStyles.label),
+              const SizedBox(height: 4),
+              Text(coachBio, style: AppTextStyles.bodyMedium),
+              
               if (specialties.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  '專業領域：',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 6),
+                const SizedBox(height: AppSizes.gapMedium),
+                Text('專長：', style: AppTextStyles.label),
+                const SizedBox(height: 4),
                 Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: specialties.take(3).map((specialty) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        border: Border.all(color: Colors.green),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        specialty,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.green,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                  spacing: AppSizes.gapSmall,
+                  runSpacing: AppSizes.gapSmall,
+                  children: specialties.map((s) => Chip(
+                    label: Text(s, style: AppTextStyles.caption),
+                    backgroundColor: AppColors.accent2.withOpacity(0.2),
+                  )).toList(),
                 ),
               ],
               
               if (certifications.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.verified,
-                      size: 14,
-                      color: Colors.orange,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      certifications.first,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.orange,
-                        fontWeight: FontWeight.w500,
+                const SizedBox(height: AppSizes.gapMedium),
+                Text('證照：', style: AppTextStyles.label),
+                const SizedBox(height: 4),
+                ...certifications.map((cert) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.verified, size: 16, color: AppColors.success),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(cert, style: AppTextStyles.bodySmall),
                       ),
-                    ),
-                    if (certifications.length > 1)
-                      Text(
-                        ' +${certifications.length - 1}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-              
-              const SizedBox(height: 16),
-              
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _contactCoach(coachDoc),
-                  icon: const Icon(Icons.send, size: 18),
-                  label: const Text('發送配對請求'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    ],
                   ),
-                ),
-              ),
+                )),
+              ],
             ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('關閉'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showPairingDialog(coachDoc);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('發送請求'),
+          ),
+        ],
       ),
     );
   }

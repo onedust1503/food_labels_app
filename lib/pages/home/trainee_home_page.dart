@@ -1,5 +1,5 @@
 // lib/pages/home/trainee_home_page.dart
-// ✅ 已整合新的訓練記錄功能 + 保留所有原有功能
+// ✅ 整合新設計系統 + 保留所有原有功能
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -13,9 +13,10 @@ import '../../services/water_service.dart';
 import '../../components/weekly_summary_card.dart';
 import '../../services/workout_service.dart';
 import 'dart:async';
-
-// ✅ 新增：導入新的訓練記錄頁面
 import '../improved_workout_log_page.dart';
+
+// ✅ 新增：引入設計系統
+import '../../theme/app_theme.dart';
 
 class TraineeHomePage extends StatefulWidget {
   const TraineeHomePage({super.key});
@@ -64,7 +65,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
       
       firebaseUser = _auth.currentUser;
       if (firebaseUser != null) {
-        // 載入用戶資料
         try {
           DocumentSnapshot userDoc = await _firestore
               .collection('users')
@@ -84,7 +84,6 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           realUserName = firebaseUser!.displayName ?? '學員';
         }
         
-        // 實時監聽營養資料
         _listenToTodayNutrition();
       }
       
@@ -195,159 +194,187 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
 
     return PageWrapperWithNavigation(
       isCoach: false,
-      customHomePage: _buildEnhancedHomePage(),
+      customHomePage: _buildHomeContent(),
     );
   }
 
-  Widget _buildEnhancedHomePage() {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 110),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 頂部用戶資訊 + 漢堡選單
-              Row(
-                children: [
-                  // 漢堡選單按鈕
-                  Builder(
-                    builder: (context) => IconButton(
-                      icon: const Icon(Icons.menu, size: 28),
-                      onPressed: () {
-                        Scaffold.of(context).openDrawer();
-                      },
-                      tooltip: '打開選單',
-                    ),
+  Widget _buildHomeContent() {
+    return Container(
+      // ✅ 使用設計系統的背景漸層
+      decoration: const BoxDecoration(
+        gradient: AppColors.backgroundGradient,
+      ),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 110),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSizes.paddingMedium),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 頂部用戶資訊
+                _buildUserHeader(),
+                const SizedBox(height: AppSizes.gapXXLarge),
+                
+                // 標題
+                Text(
+                  '追蹤你的卡路里',
+                  style: AppTextStyles.h1.copyWith(
+                    color: AppColors.textPrimary,
                   ),
-                  // 頭像
-                  CircleAvatar(
-                    radius: 25,
-                    backgroundColor: const Color(0xFF3B82F6),
-                    child: Text(
-                      realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'S',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // 用戶名稱
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          realUserName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '保持健康生活',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // 刷新按鈕
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: () {
-                      _loadTodayNutrition();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('數據已更新'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              
-              // 標題
-              const Text(
-                '追蹤你的卡路里',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
                 ),
-              ),
-              const SizedBox(height: 16),
-              
-              // 期間選擇器
-              _buildPeriodSelector(),
-              const SizedBox(height: 20),
+                const SizedBox(height: AppSizes.gapMedium),
+                
+                // 期間選擇器
+                _buildPeriodSelector(),
+                const SizedBox(height: AppSizes.gapXLarge),
 
-              // 本週統計卡片
-              FutureBuilder<Map<String, dynamic>>(
-                future: _loadWeeklyStats(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const SizedBox.shrink();
-                  }
-                  
-                  final stats = snapshot.data!;
-                  return WeeklySummaryCard(
-                    daysCompleted: stats['daysCompleted'],
-                    totalDays: stats['totalDays'],
-                    avgCalories: stats['avgCalories'],
-                    avgWater: stats['avgWater'],
-                    workoutDays: stats['workoutDays'],
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              
-              // 卡路里卡片
-              _buildCalorieCard(),
-              const SizedBox(height: 20),
-              
-              // 營養素卡片
-              _buildNutritionCard(),
-              const SizedBox(height: 20),
-              
-              // 喝水卡片
-              _buildWaterIntakeCard(),
-              const SizedBox(height: 20),
-              
-              // 快速操作按鈕
-              _buildQuickActions(),
-            ],
+                // 本週統計卡片
+                FutureBuilder<Map<String, dynamic>>(
+                  future: _loadWeeklyStats(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox.shrink();
+                    }
+                    
+                    final stats = snapshot.data!;
+                    return WeeklySummaryCard(
+                      daysCompleted: stats['daysCompleted'],
+                      totalDays: stats['totalDays'],
+                      avgCalories: stats['avgCalories'],
+                      avgWater: stats['avgWater'],
+                      workoutDays: stats['workoutDays'],
+                    );
+                  },
+                ),
+                const SizedBox(height: AppSizes.gapLarge),
+                
+                // 卡路里卡片
+                _buildCalorieCard(),
+                const SizedBox(height: AppSizes.gapLarge),
+                
+                // 營養素卡片
+                _buildNutritionCard(),
+                const SizedBox(height: AppSizes.gapLarge),
+                
+                // 喝水卡片
+                _buildWaterIntakeCard(),
+                const SizedBox(height: AppSizes.gapLarge),
+                
+                // 快速操作按鈕
+                _buildQuickActions(),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  // ✅ 使用新設計系統的用戶頭部
+  Widget _buildUserHeader() {
+    return Row(
+      children: [
+        Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu, size: AppSizes.iconLarge, color: AppColors.textPrimary),
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
+            },
+            tooltip: '打開選單',
+          ),
+        ),
+        // 頭像 - 使用漸層
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            gradient: AppColors.primaryGradient,
+            shape: BoxShape.circle,
+            boxShadow: AppShadows.small,
+          ),
+          child: Center(
+            child: Text(
+              realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'S',
+              style: AppTextStyles.h3.copyWith(
+                color: AppColors.textOnPrimary,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSizes.gapMedium),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                realUserName,
+                style: AppTextStyles.h4,
+              ),
+              Text(
+                '保持健康生活',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: Icon(Icons.refresh, color: AppColors.primary, size: AppSizes.iconLarge),
+          onPressed: () {
+            _loadTodayNutrition();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('數據已更新'),
+                duration: const Duration(seconds: 1),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // ✅ 使用新設計系統的期間選擇器
   Widget _buildPeriodSelector() {
+    final periods = ['今日', '本週', '本月', '本年'];
+    const selectedPeriod = '今日';
+    
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
-        children: ['今日', '本週', '本月', '本年'].map((period) {
-          bool isSelected = period == '今日';
+        children: periods.map((period) {
+          final isSelected = period == selectedPeriod;
           return Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: ChoiceChip(
-              label: Text(period),
-              selected: isSelected,
-              onSelected: (selected) {},
-              selectedColor: Colors.white,
-              backgroundColor: Colors.grey[200],
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.black : Colors.grey[600],
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            padding: const EdgeInsets.only(right: AppSizes.gapSmall),
+            child: InkWell(
+              onTap: () {
+                // TODO: 實作期間切換
+              },
+              borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.paddingLarge,
+                  vertical: AppSizes.paddingSmall,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary : AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
+                  boxShadow: isSelected ? AppShadows.small : null,
+                ),
+                child: Text(
+                  period,
+                  style: AppTextStyles.label.copyWith(
+                    color: isSelected ? AppColors.textOnPrimary : AppColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
           );
         }).toList(),
@@ -355,39 +382,38 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // ✅ 使用新設計系統的卡路里卡片
   Widget _buildCalorieCard() {
     double percentage = targetCalories > 0 ? (todayCalories / targetCalories).clamp(0.0, 1.0) : 0.0;
     
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: AppSizes.cardPaddingLarge,
       decoration: BoxDecoration(
-        color: const Color(0xFFD4F4DD),
-        borderRadius: BorderRadius.circular(20),
+        gradient: AppColors.secondaryGradient,
+        borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
+        boxShadow: AppShadows.medium,
       ),
       child: Column(
         children: [
           Row(
             children: [
-              const Icon(Icons.track_changes, size: 20),
-              const SizedBox(width: 8),
-              const Text(
+              Icon(Icons.track_changes, size: AppSizes.iconMedium, color: Colors.white),
+              const SizedBox(width: AppSizes.gapSmall),
+              Text(
                 '每日結果',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: AppTextStyles.h4.copyWith(color: Colors.white),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSizes.gapLarge),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               Text(
                 '${(percentage * 100).toInt()}%',
-                style: const TextStyle(
+                style: AppTextStyles.h1.copyWith(
                   fontSize: 48,
-                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
               SizedBox(
@@ -403,9 +429,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                         value: percentage,
                         strokeWidth: 12,
                         backgroundColor: Colors.white.withOpacity(0.3),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFF7FD957),
-                        ),
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     ),
                     Column(
@@ -413,16 +437,12 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       children: [
                         Text(
                           '$todayCalories',
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: AppTextStyles.h2.copyWith(color: Colors.white),
                         ),
                         Text(
                           '$targetCalories',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: Colors.white.withOpacity(0.8),
                           ),
                         ),
                       ],
@@ -437,6 +457,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // ✅ 使用新設計系統的營養素卡片
   Widget _buildNutritionCard() {
     return InkWell(
       onTap: () {
@@ -447,47 +468,35 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           ),
         );
       },
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: AppSizes.cardPaddingLarge,
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 1,
-              blurRadius: 10,
-            ),
-          ],
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
+          boxShadow: AppShadows.medium,
         ),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.restaurant, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      '營養素',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    Icon(Icons.restaurant, size: AppSizes.iconMedium, color: AppColors.primary),
+                    const SizedBox(width: AppSizes.gapSmall),
+                    Text('營養素', style: AppTextStyles.h4),
                   ],
                 ),
-                Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
+                Icon(Icons.arrow_forward_ios, size: AppSizes.iconSmall, color: AppColors.textTertiary),
               ],
             ),
-            const SizedBox(height: 20),
-            _buildNutritionBar('碳水化合物', carbsPercent, Colors.red[300]!, carbsAmount),
-            const SizedBox(height: 12),
-            _buildNutritionBar('蛋白質', proteinPercent, Colors.green[300]!, proteinAmount),
-            const SizedBox(height: 12),
-            _buildNutritionBar('脂肪', fatPercent, Colors.purple[300]!, fatAmount),
+            const SizedBox(height: AppSizes.gapLarge),
+            _buildNutritionBar('碳水化合物', carbsPercent, AppColors.accent1, carbsAmount),
+            const SizedBox(height: AppSizes.gapMedium),
+            _buildNutritionBar('蛋白質', proteinPercent, AppColors.accent2, proteinAmount),
+            const SizedBox(height: AppSizes.gapMedium),
+            _buildNutritionBar('脂肪', fatPercent, AppColors.accent3, fatAmount),
           ],
         ),
       ),
@@ -502,29 +511,26 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           children: [
             Row(
               children: [
-                Text(
-                  label,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                ),
-                const SizedBox(width: 8),
+                Text(label, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(width: AppSizes.gapSmall),
                 Text(
                   '${(value * 100).toInt()}%',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             Text(
               amount,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSizes.gapSmall),
         ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
           child: LinearProgressIndicator(
             value: value,
-            backgroundColor: Colors.grey[200],
+            backgroundColor: color.withOpacity(0.2),
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 8,
           ),
@@ -533,6 +539,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
     );
   }
 
+  // ✅ 使用新設計系統的喝水卡片
   Widget _buildWaterIntakeCard() {
     return StreamBuilder<Map<String, dynamic>>(
       stream: _waterService.getTodayWaterStream(),
@@ -567,25 +574,26 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               ),
             );
           },
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
           child: Container(
-            padding: const EdgeInsets.all(20),
+            padding: AppSizes.cardPaddingLarge,
             decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.blue[100]!),
+              color: AppColors.info.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
+              border: Border.all(color: AppColors.info.withOpacity(0.2)),
+              boxShadow: AppShadows.small,
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(AppSizes.paddingMedium),
                   decoration: BoxDecoration(
-                    color: Colors.blue[100],
+                    color: AppColors.info.withOpacity(0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.water_drop, color: Colors.blue, size: 28),
+                  child: Icon(Icons.water_drop, color: AppColors.info, size: AppSizes.iconLarge),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: AppSizes.gapMedium),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,47 +601,39 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            '今日飲水量',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey[400]),
+                          Text('今日飲水量', style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                          Icon(Icons.arrow_forward_ios, size: AppSizes.iconSmall, color: AppColors.textTertiary),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '$waterIntake / $waterTarget ml',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: AppTextStyles.h4,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSizes.gapSmall),
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
                         child: LinearProgressIndicator(
                           value: waterPercentage,
                           backgroundColor: Colors.white,
-                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.info),
                           minHeight: 6,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSizes.gapSmall),
                 IconButton(
                   onPressed: _showQuickAddWaterDialog,
                   icon: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Colors.blue,
+                    padding: const EdgeInsets.all(AppSizes.paddingSmall),
+                    decoration: BoxDecoration(
+                      color: AppColors.info,
                       shape: BoxShape.circle,
+                      boxShadow: AppShadows.small,
                     ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 20),
+                    child: Icon(Icons.add, color: Colors.white, size: AppSizes.iconMedium),
                   ),
                 ),
               ],
@@ -646,11 +646,11 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
 
   Widget _buildWaterCardSkeleton() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: AppSizes.cardPaddingLarge,
       decoration: BoxDecoration(
-        color: Colors.blue[50],
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.blue[100]!),
+        color: AppColors.info.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
+        border: Border.all(color: AppColors.info.withOpacity(0.2)),
       ),
       child: Row(
         children: [
@@ -662,7 +662,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: AppSizes.gapMedium),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -672,16 +672,16 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                   height: 14,
                   decoration: BoxDecoration(
                     color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSizes.gapSmall),
                 Container(
                   width: 150,
                   height: 18,
                   decoration: BoxDecoration(
                     color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
                   ),
                 ),
               ],
@@ -695,11 +695,11 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   void _showQuickAddWaterDialog() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSizes.radiusXXLarge),
       ),
       builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
+        padding: AppSizes.cardPaddingLarge,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -707,48 +707,39 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: AppColors.textTertiary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
-              '快速記錄喝水',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSizes.gapLarge),
+            Text('快速記錄喝水', style: AppTextStyles.h3),
+            const SizedBox(height: AppSizes.gapLarge),
             GridView.count(
               crossAxisCount: 3,
               shrinkWrap: true,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
+              mainAxisSpacing: AppSizes.gapMedium,
+              crossAxisSpacing: AppSizes.gapMedium,
               children: [100, 200, 300, 400, 500, 600].map((amount) {
                 return InkWell(
                   onTap: () async {
                     Navigator.pop(context);
                     await _quickAddWater(amount);
                   },
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      color: AppColors.info.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+                      border: Border.all(color: AppColors.info.withOpacity(0.3)),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.water_drop, color: Colors.blue, size: 32),
-                        const SizedBox(height: 8),
+                        Icon(Icons.water_drop, color: AppColors.info, size: AppSizes.iconXLarge),
+                        const SizedBox(height: AppSizes.gapSmall),
                         Text(
                           '${amount}ml',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -756,7 +747,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSizes.gapMedium),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
@@ -769,7 +760,14 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
                     ),
                   );
                 },
-                child: const Text('查看詳細記錄'),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.primary),
+                  padding: const EdgeInsets.symmetric(vertical: AppSizes.paddingMedium),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+                  ),
+                ),
+                child: Text('查看詳細記錄', style: AppTextStyles.button.copyWith(color: AppColors.primary)),
               ),
             ),
           ],
@@ -787,15 +785,15 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
             content: Row(
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSizes.gapSmall),
                 Text('已記錄 ${amount}ml 💧'),
               ],
             ),
-            backgroundColor: Colors.blue,
+            backgroundColor: AppColors.success,
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
             ),
           ),
         );
@@ -805,13 +803,14 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('記錄失敗: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
     }
   }
 
+  // ✅ 使用新設計系統的快速操作按鈕
   Widget _buildQuickActions() {
     return Row(
       children: [
@@ -819,7 +818,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
           child: _buildActionButton(
             icon: Icons.restaurant_menu,
             label: '記錄飲食',
-            color: Colors.orange,
+            gradient: AppColors.warmGradient,
             onTap: () {
               Navigator.push(
                 context,
@@ -830,13 +829,12 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
             },
           ),
         ),
-        const SizedBox(width: 12),
-        // ✅ 修改：改用新的訓練記錄頁面
+        const SizedBox(width: AppSizes.gapMedium),
         Expanded(
           child: _buildActionButton(
             icon: Icons.fitness_center,
             label: '開始訓練',
-            color: Colors.green,
+            gradient: AppColors.secondaryGradient,
             onTap: () {
               Navigator.push(
                 context,
@@ -857,29 +855,26 @@ class _TraineeHomePageState extends State<TraineeHomePage> {
   Widget _buildActionButton({
     required IconData icon,
     required String label,
-    required Color color,
+    required Gradient gradient,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: AppSizes.paddingLarge),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.3)),
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+          boxShadow: AppShadows.medium,
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
+            Icon(icon, color: Colors.white, size: AppSizes.iconXLarge),
+            const SizedBox(height: AppSizes.gapSmall),
             Text(
               label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+              style: AppTextStyles.button.copyWith(color: Colors.white),
             ),
           ],
         ),

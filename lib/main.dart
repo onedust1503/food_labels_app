@@ -20,6 +20,8 @@ import 'pages/profile/coach_setup_page.dart';
 
 import 'tools/food_data_importer.dart';
 
+import 'theme/app_theme.dart';
+
 // 全域導航鍵
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -114,10 +116,7 @@ class MyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
         title: 'Flutter Demo',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.lightTheme,
         home: const SplashScreen(),
         routes: {
           '/login': (context) => const LoginScreen(),

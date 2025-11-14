@@ -1,72 +1,79 @@
 // lib/theme/app_theme.dart
-// 🎨 App 設計系統 - 統一的視覺風格定義
+// 🎨 App 設計系統 - 莫蘭迪風格視覺定義
 
 import 'package:flutter/material.dart';
 
-/// 🎨 App 配色方案
+/// 🎨 App 配色方案 - 莫蘭迪色系
 class AppColors {
-  // ===== 主色調 =====
-  static const Color primary = Color(0xFF6C63FF);        // 紫藍色
-  static const Color primaryLight = Color(0xFF9B95FF);
-  static const Color primaryDark = Color(0xFF4D46CC);
+  // ===== 主色調（莫蘭迪藍灰） =====
+  static const Color primary = Color(0xFF7B8FA3);        // 霧霾藍
+  static const Color primaryLight = Color(0xFFA3B5C7);   // 淺霧藍
+  static const Color primaryDark = Color(0xFF5D6F82);    // 深霧藍
   
-  static const Color secondary = Color(0xFF22C55E);      // 綠色
-  static const Color secondaryLight = Color(0xFF7FD957);
-  static const Color secondaryDark = Color(0xFF16A34A);
+  static const Color secondary = Color(0xFF8FA88E);      // 霧灰綠
+  static const Color secondaryLight = Color(0xFFB4C7B3);
+  static const Color secondaryDark = Color(0xFF6D8A6C);
   
-  // ===== 輔助色（Pastel 柔色） =====
-  static const Color accent1 = Color(0xFFFFB84D);        // 柔和橘
-  static const Color accent2 = Color(0xFF7DCFB6);        // 柔和綠
-  static const Color accent3 = Color(0xFFA996FF);        // 柔和紫
-  static const Color accent4 = Color(0xFFFF8FA3);        // 柔和粉
+  // ===== 輔助色（莫蘭迪柔色系） =====
+  static const Color accent1 = Color(0xFFD4A373);        // 駝色調
+  static const Color accent2 = Color(0xFF9FB8AD);        // 灰綠調
+  static const Color accent3 = Color(0xFFB09DB0);        // 藕粉調
+  static const Color accent4 = Color(0xFFD4A5A5);        // 豆沙調
   
-  // ===== 背景色（淡色漸層背景） =====
-  static const Color background = Color(0xFFF5F6FA);     // 淡灰紫
-  static const Color backgroundAlt = Color(0xFFF8F9FC);  // 更淡的替代背景
+  // ===== 背景色（淡雅背景） =====
+  static const Color background = Color(0xFFF5F3F0);     // 米白底
+  static const Color backgroundAlt = Color(0xFFF8F6F4);  // 更淡的米白
   
   // ===== 卡片與表面 =====
-  static const Color surface = Color(0xFFFFFFFF);        // 白色卡片
-  static const Color surfaceLight = Color(0xFFFAFAFC);   // 淡色卡片
+  static const Color surface = Color(0xFFFCFBFA);        // 暖白卡片
+  static const Color surfaceLight = Color(0xFFF9F7F5);   // 淡米色卡片
   
   // ===== 文字顏色 =====
-  static const Color textPrimary = Color(0xFF1F2933);    // 深灰 - 主要文字
-  static const Color textSecondary = Color(0xFF6B7280);  // 中灰 - 次要文字
-  static const Color textTertiary = Color(0xFF9CA3AF);   // 淺灰 - 輔助文字
-  static const Color textOnPrimary = Color(0xFFFFFFFF);  // 白色 - 用在深色背景上
+  static const Color textPrimary = Color(0xFF4A4A4A);    // 柔和深灰
+  static const Color textSecondary = Color(0xFF7A7A7A);  // 中灰
+  static const Color textTertiary = Color(0xFFA5A5A5);   // 淺灰
+  static const Color textOnPrimary = Color(0xFFFCFBFA);  // 暖白
   
-  // ===== 狀態色 =====
-  static const Color success = Color(0xFF22C55E);        // 成功/活躍
-  static const Color warning = Color(0xFFFFB84D);        // 警告/需關注
-  static const Color error = Color(0xFFEF4444);          // 錯誤/危險
-  static const Color info = Color(0xFF3B82F6);           // 資訊
+  // ===== 狀態色（莫蘭迪版本） =====
+  static const Color success = Color(0xFF8FA88E);        // 柔和綠
+  static const Color warning = Color(0xFFD4A373);        // 柔和橘
+  static const Color error = Color(0xFFD4A5A5);          // 柔和粉紅
+  static const Color info = Color(0xFF7B8FA3);           // 霧霾藍
   
-  // ===== 語義化顏色（用於特定場景） =====
-  static const Color coach = Color(0xFF22C55E);          // 教練色
-  static const Color trainee = Color(0xFF3B82F6);        // 學員色
+  // ===== 語義化顏色 =====
+  static const Color coach = Color(0xFF8FA88E);          // 教練色（霧灰綠）
+  static const Color trainee = Color(0xFF7B8FA3);        // 學員色（霧霾藍）
   
-  // ===== 漸層定義 =====
+  // ===== 漸層定義（莫蘭迪漸層） =====
   static const Gradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF6C63FF), Color(0xFF9B95FF)],
+    colors: [Color(0xFF7B8FA3), Color(0xFFA3B5C7)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const Gradient secondaryGradient = LinearGradient(
-    colors: [Color(0xFF22C55E), Color(0xFF7FD957)],
+    colors: [Color(0xFF8FA88E), Color(0xFFB4C7B3)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const Gradient warmGradient = LinearGradient(
-    colors: [Color(0xFFFFB84D), Color(0xFFFF8FA3)],
+    colors: [Color(0xFFD4A373), Color(0xFFD4A5A5)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const Gradient backgroundGradient = LinearGradient(
-    colors: [Color(0xFFF8F9FC), Color(0xFFF5F6FA)],
+    colors: [Color(0xFFF8F6F4), Color(0xFFF5F3F0)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
+  );
+  
+  // ===== 新增：漸層組合（用於卡片背景） =====
+  static const Gradient cardGradient = LinearGradient(
+    colors: [Color(0xFFFCFBFA), Color(0xFFF9F7F5)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
   );
 }
 
@@ -106,48 +113,48 @@ class AppSizes {
   static const double iconXXLarge = 48.0;
 }
 
-/// 🌟 App 陰影規範
+/// 🌟 App 陰影規範（莫蘭迪風格 - 更柔和）
 class AppShadows {
-  /// 小陰影 - 用於懸浮的小元件（chip, tag）
+  /// 小陰影 - 極淡
   static List<BoxShadow> get small => [
     BoxShadow(
-      color: Colors.black.withValues(alpha: 0.04),
+      color: const Color(0xFF4A4A4A).withValues(alpha: 0.03),
       blurRadius: 8,
       offset: const Offset(0, 2),
     ),
   ];
   
-  /// 中等陰影 - 用於卡片
+  /// 中等陰影 - 柔和
   static List<BoxShadow> get medium => [
     BoxShadow(
-      color: Colors.black.withValues(alpha: 0.06),
+      color: const Color(0xFF4A4A4A).withValues(alpha: 0.05),
       blurRadius: 16,
       offset: const Offset(0, 4),
     ),
   ];
   
-  /// 大陰影 - 用於重要卡片或彈窗
+  /// 大陰影 - 適中
   static List<BoxShadow> get large => [
     BoxShadow(
-      color: Colors.black.withValues(alpha: 0.08),
+      color: const Color(0xFF4A4A4A).withValues(alpha: 0.06),
       blurRadius: 24,
       offset: const Offset(0, 8),
     ),
   ];
   
-  /// 超大陰影 - 用於 modal 或底部彈窗
+  /// 超大陰影
   static List<BoxShadow> get xLarge => [
     BoxShadow(
-      color: Colors.black.withValues(alpha: 0.12),
+      color: const Color(0xFF4A4A4A).withValues(alpha: 0.08),
       blurRadius: 32,
       offset: const Offset(0, 12),
     ),
   ];
   
-  /// 彩色陰影 - 用於主色按鈕或特殊卡片
+  /// 彩色陰影 - 莫蘭迪版本（更柔和）
   static List<BoxShadow> coloredShadow(Color color) => [
     BoxShadow(
-      color: color.withValues(alpha: 0.3),
+      color: color.withValues(alpha: 0.15),
       blurRadius: 20,
       offset: const Offset(0, 8),
     ),
@@ -164,6 +171,7 @@ class AppTextStyles {
     fontWeight: FontWeight.bold,
     color: AppColors.textPrimary,
     height: 1.2,
+    letterSpacing: -0.5,
   );
   
   static const TextStyle h2 = TextStyle(
@@ -171,6 +179,7 @@ class AppTextStyles {
     fontWeight: FontWeight.bold,
     color: AppColors.textPrimary,
     height: 1.3,
+    letterSpacing: -0.3,
   );
   
   static const TextStyle h3 = TextStyle(
@@ -178,6 +187,7 @@ class AppTextStyles {
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     height: 1.4,
+    letterSpacing: -0.2,
   );
   
   static const TextStyle h4 = TextStyle(
@@ -185,6 +195,7 @@ class AppTextStyles {
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     height: 1.4,
+    letterSpacing: -0.1,
   );
   
   // ===== 內文樣式 =====
@@ -192,14 +203,16 @@ class AppTextStyles {
     fontSize: 16,
     fontWeight: FontWeight.normal,
     color: AppColors.textPrimary,
-    height: 1.5,
+    height: 1.6,
+    letterSpacing: 0.1,
   );
   
   static const TextStyle bodyMedium = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.normal,
     color: AppColors.textPrimary,
-    height: 1.5,
+    height: 1.6,
+    letterSpacing: 0.1,
   );
   
   static const TextStyle bodySmall = TextStyle(
@@ -207,6 +220,7 @@ class AppTextStyles {
     fontWeight: FontWeight.normal,
     color: AppColors.textSecondary,
     height: 1.5,
+    letterSpacing: 0.2,
   );
   
   // ===== 輔助樣式 =====
@@ -215,6 +229,7 @@ class AppTextStyles {
     fontWeight: FontWeight.normal,
     color: AppColors.textTertiary,
     height: 1.4,
+    letterSpacing: 0.3,
   );
   
   static const TextStyle label = TextStyle(
@@ -222,6 +237,7 @@ class AppTextStyles {
     fontWeight: FontWeight.w500,
     color: AppColors.textSecondary,
     height: 1.4,
+    letterSpacing: 0.2,
   );
   
   // ===== 按鈕文字 =====
@@ -230,6 +246,7 @@ class AppTextStyles {
     fontWeight: FontWeight.w600,
     color: AppColors.textOnPrimary,
     height: 1.2,
+    letterSpacing: 0.5,
   );
   
   static const TextStyle buttonSmall = TextStyle(
@@ -237,6 +254,7 @@ class AppTextStyles {
     fontWeight: FontWeight.w600,
     color: AppColors.textOnPrimary,
     height: 1.2,
+    letterSpacing: 0.3,
   );
 }
 
@@ -253,6 +271,10 @@ class AppTheme {
         surface: AppColors.surface,
         background: AppColors.background,
         error: AppColors.error,
+        onPrimary: AppColors.textOnPrimary,
+        onSecondary: AppColors.textOnPrimary,
+        onSurface: AppColors.textPrimary,
+        onBackground: AppColors.textPrimary,
       ),
       
       // Scaffold 背景
@@ -273,7 +295,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSizes.radiusXLarge),
         ),
-        shadowColor: Colors.black.withValues(alpha: 0.06),
+        shadowColor: const Color(0xFF4A4A4A).withValues(alpha: 0.05),
       ),
       
       // 輸入框樣式
@@ -295,6 +317,9 @@ class AppTheme {
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSizes.paddingLarge,
           vertical: AppSizes.paddingMedium,
+        ),
+        hintStyle: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textTertiary,
         ),
       ),
       
@@ -328,10 +353,10 @@ class AppTheme {
         ),
       ),
       
-      // 修正：Chip 樣式
+      // Chip 樣式
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceLight,
-        selectedColor: AppColors.primary.withValues(alpha: 0.1),
+        selectedColor: AppColors.primary.withValues(alpha: 0.15),
         labelStyle: AppTextStyles.label,
         padding: const EdgeInsets.symmetric(
           horizontal: AppSizes.paddingMedium,
@@ -354,6 +379,13 @@ class AppTheme {
         labelLarge: AppTextStyles.button,
         labelMedium: AppTextStyles.label,
         labelSmall: AppTextStyles.caption,
+      ),
+      
+      // Divider 樣式
+      dividerTheme: DividerThemeData(
+        color: AppColors.textTertiary.withValues(alpha: 0.2),
+        thickness: 1,
+        space: 1,
       ),
     );
   }

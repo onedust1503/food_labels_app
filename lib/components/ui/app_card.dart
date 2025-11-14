@@ -1,5 +1,5 @@
 // lib/components/ui/app_card.dart
-// 🎴 統一的卡片組件 - 讓所有卡片風格一致
+// 🎴 統一的卡片組件 - 讓所有卡片風格一致（莫蘭迪風格優化版）
 
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
@@ -29,11 +29,14 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBorderRadius = borderRadius ?? AppSizes.radiusXLarge;
+    // 🎯 重點改動：預設圓角改為 24（更圓潤）
+    final effectiveBorderRadius = borderRadius ?? 24.0;
     
     Widget cardContent = Container(
-      margin: margin ?? const EdgeInsets.symmetric(vertical: 8),
-      padding: padding ?? AppSizes.cardPadding,
+      // 🎯 重點改動：增加垂直間距到 12
+      margin: margin ?? const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+      // 🎯 重點改動：增加內邊距到 20
+      padding: padding ?? const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: gradient == null ? (color ?? AppColors.surface) : null,
         gradient: gradient,
@@ -86,8 +89,8 @@ class StatCard extends StatelessWidget {
           Row(
             children: [
               if (icon != null) ...[
-                Icon(icon, size: AppSizes.iconMedium, color: AppColors.textSecondary),
-                const SizedBox(width: AppSizes.gapSmall),
+                Icon(icon, size: 22, color: AppColors.textSecondary),
+                const SizedBox(width: 12),
               ],
               Expanded(
                 child: Column(
@@ -95,7 +98,7 @@ class StatCard extends StatelessWidget {
                   children: [
                     Text(title, style: AppTextStyles.h4),
                     if (subtitle != null) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(subtitle!, style: AppTextStyles.caption),
                     ],
                   ],
@@ -103,7 +106,8 @@ class StatCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppSizes.gapLarge),
+          // 🎯 重點改動：增加內容區間距
+          const SizedBox(height: 20),
           // 內容區
           content,
         ],
@@ -132,22 +136,25 @@ class InfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      // 🎯 重點改動：增加內邊距
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: backgroundColor ?? iconColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+        color: backgroundColor ?? iconColor.withValues(alpha: 0.1),
+        // 🎯 重點改動：圓角改為 20
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: [
+          // 🎯 簡化層級：移除多餘的 Container 包覆
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.2),
+              color: iconColor.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: AppSizes.iconMedium, color: iconColor),
+            child: Icon(icon, size: 22, color: iconColor),
           ),
-          const SizedBox(width: AppSizes.gapMedium),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,7 +165,7 @@ class InfoCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   value,
                   style: AppTextStyles.h4.copyWith(color: iconColor),
@@ -197,12 +204,13 @@ class ListItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       color: backgroundColor,
-      padding: const EdgeInsets.all(12),
+      // 🎯 重點改動：增加內邊距
+      padding: const EdgeInsets.all(16),
       onTap: onTap,
       child: Row(
         children: [
           leading,
-          const SizedBox(width: AppSizes.gapMedium),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,7 +224,7 @@ class ListItemCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     subtitle!,
                     style: AppTextStyles.bodySmall,
@@ -228,7 +236,7 @@ class ListItemCard extends StatelessWidget {
             ),
           ),
           if (trailing != null) ...[
-            const SizedBox(width: AppSizes.gapSmall),
+            const SizedBox(width: 12),
             trailing!,
           ],
         ],
@@ -238,6 +246,7 @@ class ListItemCard extends StatelessWidget {
 }
 
 /// 行動卡片 - 用於快速操作按鈕（像「記錄飲食」「開始訓練」）
+/// 🎯 重點改動：這個組件最需要改進 - 參考圖片的圓潤卡片
 class ActionCard extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -256,24 +265,96 @@ class ActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+      // 🎯 圓角改為 24（超圓潤）
+      borderRadius: BorderRadius.circular(24),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        // 🎯 增加垂直內邊距
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
-          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(24),
+          // 🎯 簡化邊框 - 更淡
+          border: Border.all(
+            color: color.withValues(alpha: 0.25),
+            width: 1,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: AppSizes.iconXLarge),
-            const SizedBox(height: AppSizes.gapSmall),
+            // 🎯 簡化 icon - 移除多餘包覆
+            Icon(icon, color: color, size: 40),
+            const SizedBox(height: 12),
             Text(
               label,
               style: AppTextStyles.label.copyWith(
                 color: color,
                 fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 🆕 學習卡片 - 像參考圖片中的 Geography、Geometry 卡片
+class SubjectCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback? onTap;
+  
+  const SubjectCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon 容器
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, size: 32, color: color),
+            ),
+            const SizedBox(height: 16),
+            // 標題
+            Text(
+              title,
+              style: AppTextStyles.h4.copyWith(
+                color: color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            // 副標題
+            Text(
+              subtitle,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
               ),
             ),
           ],

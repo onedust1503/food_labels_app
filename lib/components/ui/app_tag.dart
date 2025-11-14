@@ -1,5 +1,5 @@
 // lib/components/ui/app_tag.dart
-// 🏷️ 統一的標籤與徽章組件
+// 🏷️ 統一的標籤與徽章組件（莫蘭迪風格優化版）
 
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
@@ -71,14 +71,16 @@ class AppTag extends StatelessWidget {
         (outlined ? color : AppColors.textOnPrimary);
     
     return Container(
+      // 🎯 增加內邊距
       padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 6,
+        horizontal: 14,
+        vertical: 8,
       ),
       decoration: BoxDecoration(
         color: outlined ? Colors.transparent : color,
         border: outlined ? Border.all(color: color, width: 1.5) : null,
-        borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
+        // 🎯 圓角改為 16（更圓潤）
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -86,16 +88,17 @@ class AppTag extends StatelessWidget {
           if (icon != null) ...[
             Icon(
               icon,
-              size: 14,
+              size: 16,
               color: effectiveTextColor,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
           ],
           Text(
             label,
             style: AppTextStyles.caption.copyWith(
               color: effectiveTextColor,
               fontWeight: FontWeight.w600,
+              fontSize: 13,
             ),
           ),
         ],
@@ -126,11 +129,12 @@ class AppBadge extends StatelessWidget {
     final displayCount = count > 99 ? '99+' : count.toString();
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
       decoration: BoxDecoration(
         color: color ?? AppColors.error,
-        borderRadius: BorderRadius.circular(10),
+        // 🎯 圓角改為 12
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Center(
         child: Text(
@@ -138,7 +142,7 @@ class AppBadge extends StatelessWidget {
           style: AppTextStyles.caption.copyWith(
             color: AppColors.textOnPrimary,
             fontWeight: FontWeight.bold,
-            fontSize: 10,
+            fontSize: 11,
           ),
         ),
       ),
@@ -156,7 +160,7 @@ class StatusDot extends StatelessWidget {
     super.key,
     required this.isActive,
     this.activeColor,
-    this.size = 8.0,
+    this.size = 10.0,
   });
 
   @override
@@ -206,23 +210,26 @@ class PercentageTag extends StatelessWidget {
     }
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      // 🎯 增加內邊距
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: tagColor.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
+        color: tagColor.withValues(alpha: 0.15),
+        // 🎯 圓角改為 14
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (showIcon && icon != null) ...[
-            Icon(icon, size: 14, color: tagColor),
-            const SizedBox(width: 4),
+            Icon(icon, size: 16, color: tagColor),
+            const SizedBox(width: 6),
           ],
           Text(
             '$percentage%',
             style: AppTextStyles.caption.copyWith(
               color: tagColor,
               fontWeight: FontWeight.bold,
+              fontSize: 13,
             ),
           ),
         ],

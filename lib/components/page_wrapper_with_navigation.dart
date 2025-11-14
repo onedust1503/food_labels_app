@@ -1,8 +1,7 @@
 // lib/components/page_wrapper_with_navigation.dart
-// ✅ 修正版 - 整合訓練計畫管理功能
-// 📌 教練端：快速操作加入「創建計畫」和「管理計畫」
-// 📌 學員端：快速操作加入「查看計畫」和「記錄訓練」
-// 📌 側邊欄：加入訓練管理專區（僅教練）
+// ✅ 修正版 - 整合訓練計畫管理功能 + 鍵盤處理優化
+// 🎯 修正：加入 resizeToAvoidBottomInset: false
+// 🎯 修正：移除 Positioned 包裹導航欄
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -14,7 +13,7 @@ import '../pages/student_management_page.dart';
 import '../pages/student_coach_management_page.dart';
 import '../services/food_database_service.dart';
 
-// ✅ 修改：使用新的訓練記錄頁面和訓練計畫頁面
+// ✅ 訓練相關頁面
 import '../pages/improved_workout_log_page.dart';
 import '../pages/workout/workout_plan_list_page.dart';
 import '../pages/workout/create_workout_plan_page.dart';
@@ -129,7 +128,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     }
   }
 
-  /// ✅ 教練快速操作 - 修正版
+  /// ✅ 教練快速操作
   void _showCoachQuickActions() {
     showModalBottomSheet(
       context: context,
@@ -212,7 +211,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  /// ✅ 學員快速操作 - 修正版
+  /// ✅ 學員快速操作
   void _showStudentQuickActions() {
     showModalBottomSheet(
       context: context,
@@ -242,7 +241,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             ),
             const SizedBox(height: 20),
             
-            // ✅ 記錄訓練（自由訓練，不帶 planId）
+            // ✅ 記錄訓練
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -262,7 +261,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
                     builder: (context) => const ImprovedWorkoutLogPage(
                       isCoach: false,
                       traineeId: null,
-                      planId: null,  // ✅ 自由訓練，沒有 planId
+                      planId: null,
                     ),
                   ),
                 );
@@ -319,7 +318,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
     );
   }
 
-  // ✅ 側邊欄內容 - 修正版
+  // ✅ 側邊欄內容
   Widget _buildDrawer() {
     return Drawer(
       child: Column(
@@ -535,6 +534,8 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
+      // 🎯 新增：防止鍵盤推擠導航欄
+      resizeToAvoidBottomInset: false,
       drawer: _buildDrawer(),
       body: Stack(
         children: [
@@ -554,17 +555,12 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> {
             ],
           ),
           
-          // 底部導航
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: ModernBottomNavigation(
-              currentIndex: _currentIndex,
-              onTap: _onNavTap,
-              onCenterButtonPressed: _onCenterButtonPressed,
-              isCoach: widget.isCoach,
-            ),
+          // 🎯 底部導航（移除 Positioned，讓導航欄自行處理位置）
+          ModernBottomNavigation(
+            currentIndex: _currentIndex,
+            onTap: _onNavTap,
+            onCenterButtonPressed: _onCenterButtonPressed,
+            isCoach: widget.isCoach,
           ),
         ],
       ),

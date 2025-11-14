@@ -1,5 +1,8 @@
 // lib/components/weekly_summary_card.dart
+// ✅ 莫蘭迪風格優化版 - 更圓潤、更舒適的本週統計卡片
+
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class WeeklySummaryCard extends StatelessWidget {
   final int daysCompleted;
@@ -9,13 +12,13 @@ class WeeklySummaryCard extends StatelessWidget {
   final int workoutDays;
 
   const WeeklySummaryCard({
-    Key? key,
+    super.key,
     required this.daysCompleted,
     required this.totalDays,
     required this.avgCalories,
     required this.avgWater,
     required this.workoutDays,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,120 +27,138 @@ class WeeklySummaryCard extends StatelessWidget {
         : 0;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
+      // 🎯 移除 margin，由父組件統一控制
+      padding: const EdgeInsets.all(24), // 增加 padding
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.purple[400]!, Colors.purple[600]!],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
-            spreadRadius: 2,
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        // 🎯 使用莫蘭迪漸層
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(28), // 更大的圓角
+        boxShadow: AppShadows.medium,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 標題
+          // 🎯 標題區 - 增加間距
           Row(
             children: [
-              const Icon(
-                Icons.calendar_today,
-                color: Colors.white,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                '本週表現',
-                style: TextStyle(
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.calendar_today,
                   color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+                  size: 22,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  '本週表現',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+                  horizontal: 14,
+                  vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   '$completionRate%',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
           
-          // 統計數據
+          const SizedBox(height: 24), // 增加間距
+          
+          // 🎯 統計數據 - 使用更好的排版
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildStatItem(
-                icon: Icons.check_circle,
+                icon: Icons.check_circle_outline,
                 label: '達標天數',
                 value: '$daysCompleted/$totalDays',
               ),
+              Container(
+                width: 1,
+                height: 50,
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
               _buildStatItem(
-                icon: Icons.local_fire_department,
+                icon: Icons.local_fire_department_outlined,
                 label: '平均熱量',
                 value: '${avgCalories.toInt()}',
                 unit: '卡',
               ),
+              Container(
+                width: 1,
+                height: 50,
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
               _buildStatItem(
-                icon: Icons.water_drop,
+                icon: Icons.water_drop_outlined,
                 label: '平均喝水',
                 value: '${avgWater.toInt()}',
                 unit: 'ml',
               ),
             ],
           ),
-          const SizedBox(height: 16),
           
-          // 運動天數
+          const SizedBox(height: 20),
+          
+          // 🎯 運動天數 - 更好的視覺層次
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.fitness_center,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  '本週運動 $workoutDays 天',
-                  style: const TextStyle(
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.fitness_center,
                     color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    size: 20,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    '本週運動 $workoutDays 天',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
                 Icon(
                   workoutDays >= 3 ? Icons.emoji_events : Icons.trending_up,
-                  color: Colors.amber,
-                  size: 20,
+                  color: Colors.amber[300],
+                  size: 24,
                 ),
               ],
             ),
@@ -153,43 +174,49 @@ class WeeklySummaryCard extends StatelessWidget {
     required String value,
     String? unit,
   }) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.white, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.8),
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white, size: 28),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12,
             ),
-            if (unit != null) ...[
-              const SizedBox(width: 2),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
-                unit,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 12,
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+              if (unit != null) ...[
+                const SizedBox(width: 3),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    unit,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,5 +1,5 @@
 // lib/components/ui/page_header.dart
-// 📱 統一的頁面頭部組件
+// 📱 統一的頁面頭部組件（莫蘭迪風格優化版）
 
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
@@ -23,9 +23,10 @@ class SimplePageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
+      // 🎯 增加水平和垂直內邊距
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.paddingLarge,
-        vertical: AppSizes.paddingMedium,
+        horizontal: 24,
+        vertical: 20,
       ),
       child: Row(
         children: [
@@ -34,6 +35,7 @@ class SimplePageHeader extends StatelessWidget {
               onPressed: onBack,
               icon: const Icon(Icons.arrow_back_ios_new),
               color: AppColors.textPrimary,
+              iconSize: 22,
             ),
           Expanded(
             child: Column(
@@ -41,7 +43,7 @@ class SimplePageHeader extends StatelessWidget {
               children: [
                 Text(title, style: AppTextStyles.h2),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(subtitle!, style: AppTextStyles.caption),
                 ],
               ],
@@ -80,7 +82,8 @@ class HomePageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppSizes.paddingLarge),
+      // 🎯 增加內邊距
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
       child: Row(
         children: [
           // 左側：頭像 + 名字
@@ -95,32 +98,29 @@ class HomePageHeader extends StatelessWidget {
                     color: AppColors.textPrimary,
                   ),
                 
-                // 頭像
-                Hero(
-                  tag: 'user_avatar',
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: isCoach 
-                          ? AppColors.secondaryGradient 
-                          : AppColors.primaryGradient,
-                      boxShadow: AppShadows.medium,
-                    ),
-                    child: Center(
-                      child: Text(
-                        userName.isNotEmpty ? userName[0].toUpperCase() : '?',
-                        style: AppTextStyles.h3.copyWith(
-                          color: AppColors.textOnPrimary,
-                          fontWeight: FontWeight.bold,
-                        ),
+                // 🎯 簡化頭像 - 移除 Hero 包覆（如果不需要動畫）
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: isCoach 
+                        ? AppColors.secondaryGradient 
+                        : AppColors.primaryGradient,
+                    boxShadow: AppShadows.medium,
+                  ),
+                  child: Center(
+                    child: Text(
+                      userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                      style: AppTextStyles.h3.copyWith(
+                        color: AppColors.textOnPrimary,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
                 ),
                 
-                const SizedBox(width: AppSizes.gapMedium),
+                const SizedBox(width: 16),
                 
                 // 問候語
                 Expanded(
@@ -133,7 +133,7 @@ class HomePageHeader extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         greetingMessage,
                         style: AppTextStyles.caption,
@@ -156,6 +156,7 @@ class HomePageHeader extends StatelessWidget {
                   onPressed: onRefresh,
                   icon: const Icon(Icons.refresh_rounded),
                   color: AppColors.textSecondary,
+                  iconSize: 24,
                   tooltip: '刷新',
                 ),
               
@@ -167,12 +168,13 @@ class HomePageHeader extends StatelessWidget {
                       onPressed: onNotificationTap,
                       icon: const Icon(Icons.notifications_outlined),
                       color: AppColors.textSecondary,
+                      iconSize: 24,
                       tooltip: '通知',
                     ),
                     if (notificationCount != null && notificationCount! > 0)
                       Positioned(
-                        right: 8,
-                        top: 8,
+                        right: 6,
+                        top: 6,
                         child: AppBadge(count: notificationCount!),
                       ),
                   ],
@@ -205,17 +207,14 @@ class GradientPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        AppSizes.paddingLarge,
-        AppSizes.paddingXXLarge,
-        AppSizes.paddingLarge,
-        AppSizes.paddingLarge,
-      ),
+      // 🎯 增加內邊距
+      padding: const EdgeInsets.fromLTRB(24, 60, 24, 28),
       decoration: BoxDecoration(
         gradient: gradient,
+        // 🎯 底部圓角改為 32（超圓潤）
         borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(AppSizes.radiusXXLarge),
-          bottomRight: Radius.circular(AppSizes.radiusXXLarge),
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
         ),
         boxShadow: AppShadows.large,
       ),
@@ -224,23 +223,25 @@ class GradientPageHeader extends StatelessWidget {
         children: [
           // 頂部行：返回按鈕 + trailing
           if (onBack != null || trailing != null)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (onBack != null)
-                  IconButton(
-                    onPressed: onBack,
-                    icon: const Icon(Icons.arrow_back_ios_new),
-                    color: AppColors.textOnPrimary,
-                  )
-                else
-                  const SizedBox(width: 48),
-                
-                if (trailing != null) trailing!,
-              ],
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (onBack != null)
+                    IconButton(
+                      onPressed: onBack,
+                      icon: const Icon(Icons.arrow_back_ios_new),
+                      color: AppColors.textOnPrimary,
+                      iconSize: 22,
+                    )
+                  else
+                    const SizedBox(width: 48),
+                  
+                  if (trailing != null) trailing!,
+                ],
+              ),
             ),
-          
-          const SizedBox(height: AppSizes.gapLarge),
           
           // 標題
           Text(
@@ -251,11 +252,11 @@ class GradientPageHeader extends StatelessWidget {
           ),
           
           if (subtitle != null) ...[
-            const SizedBox(height: AppSizes.gapSmall),
+            const SizedBox(height: 10),
             Text(
               subtitle!,
               style: AppTextStyles.bodyLarge.copyWith(
-                color: AppColors.textOnPrimary.withOpacity(0.9),
+                color: AppColors.textOnPrimary.withValues(alpha: 0.9),
               ),
             ),
           ],
@@ -283,15 +284,16 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
+      // 🎯 增加內邊距
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.paddingLarge,
-        vertical: AppSizes.paddingMedium,
+        horizontal: 24,
+        vertical: 16,
       ),
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: AppSizes.iconMedium, color: AppColors.textSecondary),
-            const SizedBox(width: AppSizes.gapSmall),
+            Icon(icon, size: 22, color: AppColors.textSecondary),
+            const SizedBox(width: 10),
           ],
           Expanded(
             child: Text(title, style: AppTextStyles.h3),

@@ -18,6 +18,8 @@ import 'components/network_banner.dart';
 import 'pages/profile/trainee_setup_page.dart';
 import 'pages/profile/coach_setup_page.dart';
 
+import 'tools/food_data_importer.dart';
+
 // 全域導航鍵
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -44,9 +46,13 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+
     if (kDebugMode) {
       debugPrint('[init] Firebase initialized successfully');
     }
+
+
 
     // 初始化通知服務
     await NotificationService().initialize();
@@ -66,6 +72,30 @@ void main() async {
       debugPrint('[init] Firebase initialization failed: $e');
     }
   }
+
+  //導入食物資料（在開發模式下執行)
+  /*
+  if (kDebugMode) {
+    debugPrint('[init] ========================================');
+    debugPrint('[init] 🗑️ 清除舊資料...');
+    try {
+      await FoodDataImporter().clearSystemFoods();
+      debugPrint('[init] ✅ 舊資料清除完成!');
+    } catch (e) {
+      debugPrint('[init] ❌ 清除失敗: $e');
+    }
+    
+    debugPrint('[init] ========================================');
+    debugPrint('[init] 🚀 開始導入新資料...');
+    try {
+      await FoodDataImporter().importFoodData();
+      debugPrint('[init] ✅ 新資料導入完成!');
+    } catch (e) {
+      debugPrint('[init] ❌ 導入失敗: $e');
+    }
+    debugPrint('[init] ========================================');
+  }
+  */
   
   if (kDebugMode) {
     debugPrint('[init] done');

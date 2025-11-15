@@ -49,7 +49,11 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
   // Stream 訂閱
   StreamSubscription<DocumentSnapshot>? _nutritionStreamSubscription;
   
-  // 🔥 新增：動畫控制器
+  // ✨ 自訂水杯
+  List<int> customCups = [100, 200, 300, 500];
+  bool _isLoadingCups = true;
+  
+  // 🔥 新增:動畫控制器
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -59,6 +63,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     super.initState();
     _initializeAnimations();
     _initializeData();
+    _loadCustomCups();  // ✨ 新增
   }
 
   @override
@@ -68,7 +73,24 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     super.dispose();
   }
 
-  // 🔥 新增：初始化動畫
+  // ✨ 新增:載入自訂水杯
+  Future<void> _loadCustomCups() async {
+    try {
+      final cups = await _waterService.getCustomCups();
+      if (mounted) {
+        setState(() {
+          customCups = cups;
+          _isLoadingCups = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingCups = false);
+      }
+    }
+  }
+
+  // 🔥 新增:初始化動畫
   void _initializeAnimations() {
     _animationController = AnimationController(
       duration: AppAnimations.slow,
@@ -190,7 +212,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
 
   Future<void> _loadTodayNutrition() async {
     if (kDebugMode) {
-      debugPrint('手動刷新（資料已自動同步）');
+      debugPrint('手動刷新(資料已自動同步)');
     }
   }
 
@@ -340,7 +362,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
-  // 🔥 優化：用戶頭部 - 更明亮的設計
+  // 🔥 優化:用戶頭部 - 更明亮的設計
   Widget _buildUserHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 24, 12),
@@ -413,7 +435,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
-  // 🔥 優化：期間選擇器 - 更明顯的選中效果
+  // 🔥 優化:期間選擇器 - 更明顯的選中效果
   Widget _buildPeriodSelector() {
     final periods = ['今日', '本週', '本月', '本年'];
     const selectedPeriod = '今日';
@@ -460,7 +482,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
-  // 🔥 優化：卡路里卡片 - 動態漸層 + 百分比陰影
+  // 🔥 優化:卡路里卡片 - 動態漸層 + 百分比陰影
   Widget _buildCalorieCard() {
     double percentage = targetCalories > 0 ? (todayCalories / targetCalories).clamp(0.0, 1.0) : 0.0;
     
@@ -622,7 +644,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
-  // 🔥 優化：營養素進度條 - 更明顯的顏色
+  // 🔥 優化:營養素進度條 - 更明顯的顏色
   Widget _buildNutritionBar(String label, double value, Color color, String amount) {
     return Column(
       children: [
@@ -685,7 +707,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
-  // 🔥 優化：飲水卡片 - 更清新的設計
+  // 🔥 優化:飲水卡片 - 更清新的設計
   Widget _buildWaterIntakeCard() {
     return StreamBuilder<Map<String, dynamic>>(
       stream: _waterService.getTodayWaterStream(),
@@ -883,6 +905,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
+  // ✨ 修改:快速記錄對話框 - 4個自訂水杯 + 自訂按鈕 + 手動按鈕
   void _showQuickAddWaterDialog() {
     AppModal.showBottomSheet(
       context: context,
@@ -891,54 +914,144 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              children: [100, 200, 300, 400, 500, 600].map((amount) {
-                return InkWell(
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _quickAddWater(amount);
-                  },
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.info.withValues(alpha: 0.15),
-                          AppColors.info.withValues(alpha: 0.08),
-                        ],
-                      ),
+            if (_isLoadingCups)
+              const CircularProgressIndicator()
+            else
+              GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                children: [
+                  // 4個自訂水杯按鈕
+                  ...customCups.map((amount) {
+                    return InkWell(
+                      onTap: () async {
+                        Navigator.pop(context);
+                        await _quickAddWater(amount);
+                      },
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.info.withValues(alpha: 0.3),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.water_drop, 
-                          color: AppColors.info, 
-                          size: 36,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${amount}ml',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.info.withValues(alpha: 0.15),
+                              AppColors.info.withValues(alpha: 0.08),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.info.withValues(alpha: 0.3),
+                            width: 1.5,
                           ),
                         ),
-                      ],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.water_drop, 
+                              color: AppColors.info, 
+                              size: 36,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${amount}ml',
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                  
+                  // 自訂按鈕
+                  InkWell(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showCustomCupsDialog();
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.warning.withValues(alpha: 0.15),
+                            AppColors.warning.withValues(alpha: 0.08),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.warning.withValues(alpha: 0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.tune, 
+                            color: AppColors.warning, 
+                            size: 36,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '自訂',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                );
-              }).toList(),
-            ),
+                  
+                  // 手動記錄按鈕
+                  InkWell(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showManualAddWaterDialog();
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.success.withValues(alpha: 0.15),
+                            AppColors.success.withValues(alpha: 0.08),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.edit, 
+                            color: AppColors.success, 
+                            size: 36,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '手動',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -973,9 +1086,170 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     );
   }
 
-  Future<void> _quickAddWater(int amount) async {
+  // ✨ 新增:手動記錄對話框
+  void _showManualAddWaterDialog() {
+    final TextEditingController amountController = TextEditingController();
+    final TextEditingController noteController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.water_drop, color: AppColors.info),
+            const SizedBox(width: 12),
+            const Text('記錄喝水'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: '水量(毫升)',
+                hintText: '例如:200',
+                suffixText: 'ml',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.info, width: 2),
+                ),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: noteController,
+              decoration: InputDecoration(
+                labelText: '備註(選填)',
+                hintText: '例如:早餐後',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.info, width: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('取消', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final amount = int.tryParse(amountController.text);
+              if (amount != null && amount > 0) {
+                Navigator.pop(context);
+                _quickAddWater(amount, note: noteController.text);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.info,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('確定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✨ 新增:自訂水杯對話框
+  void _showCustomCupsDialog() {
+    final controllers = customCups.map((amount) {
+      return TextEditingController(text: amount.toString());
+    }).toList();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.local_drink, color: AppColors.info),
+            const SizedBox(width: 12),
+            const Text('自訂水杯容量'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(4, (index) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: TextField(
+                    controller: controllers[index],
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: '水杯 ${index + 1}',
+                      suffixText: 'ml',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.info, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('取消', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newCups = controllers
+                  .map((c) => int.tryParse(c.text) ?? 100)
+                  .where((amount) => amount > 0)
+                  .toList();
+              
+              if (newCups.length == 4) {
+                Navigator.pop(context);
+                try {
+                  await _waterService.updateCustomCups(newCups);
+                  if (mounted) {
+                    setState(() {
+                      customCups = newCups;
+                    });
+                    AppModal.showSuccessSnackBar(context, '水杯設定已更新');
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    AppModal.showErrorSnackBar(context, '更新失敗: $e');
+                  }
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.info,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('儲存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✨ 修改:支援備註參數
+  Future<void> _quickAddWater(int amount, {String? note}) async {
     try {
-      await _waterService.addWaterLog(amount: amount);
+      await _waterService.addWaterLog(amount: amount, note: note);
       if (mounted) {
         AppModal.showSuccessSnackBar(context, '已記錄 ${amount}ml 💧');
       }
@@ -986,7 +1260,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
     }
   }
 
-  // 🔥 優化：快速操作按鈕 - 使用活力漸層
+  // 🔥 優化:快速操作按鈕 - 使用活力漸層
   Widget _buildQuickActions() {
     return Row(
       children: [

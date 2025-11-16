@@ -75,6 +75,9 @@ dependencies:
   # HTTP 請求
   http: ^1.2.0
 
+  # 動畫效果
+  flutter_animate: ^4.5.0
+
 
 
 dev_dependencies:

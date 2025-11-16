@@ -5,13 +5,13 @@ class FoodDatabaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // 初始化基礎食物資料庫（只需執行一次）
-  // 建議：在 APP 第一次啟動時，或在管理後台執行
+  // 初始化基礎食物資料庫(只需執行一次)
+  // 建議:在 APP 第一次啟動時,或在管理後台執行
   Future<void> initializeFoodDatabase() async {
     // 檢查是否已經初始化過
     QuerySnapshot existing = await _firestore.collection('foods').limit(1).get();
     if (existing.docs.isNotEmpty) {
-      print('食物資料庫已存在，跳過初始化');
+      print('食物資料庫已存在,跳過初始化');
       return;
     }
 
@@ -222,23 +222,33 @@ class FoodDatabaseService {
     }
 
     await batch.commit();
-    print('食物資料庫初始化完成！共新增 ${basicFoods.length} 項食物');
+    print('食物資料庫初始化完成!共新增 ${basicFoods.length} 項食物');
   }
 
-  // 搜尋食物（所有人共用）
+  // ✅ 修復: 搜尋食物(所有人共用)
   Future<List<Map<String, dynamic>>> searchFoods(String query) async {
-    if (query.isEmpty) return [];
-
-    // Firestore 不支援 LIKE 查詢，這裡使用前綴搜尋
-    // 更好的方案：整合 Algolia 或使用 Cloud Functions
-    QuerySnapshot snapshot = await _firestore
-        .collection('foods')
-        .where('isPublic', isEqualTo: true)
-        .orderBy('name')
-        .startAt([query])
-        .endAt(['$query\uf8ff'])
-        .limit(20)
-        .get();
+    QuerySnapshot snapshot;
+    
+    // ✅ 空字串時返回所有食物(用於分類篩選)
+    if (query.isEmpty) {
+      snapshot = await _firestore
+          .collection('foods')
+          .where('isPublic', isEqualTo: true)
+          .orderBy('name')
+          .limit(300)
+          .get();
+    } else {
+      // Firestore 不支援 LIKE 查詢,這裡使用前綴搜尋
+      // 更好的方案:整合 Algolia 或使用 Cloud Functions
+      snapshot = await _firestore
+          .collection('foods')
+          .where('isPublic', isEqualTo: true)
+          .orderBy('name')
+          .startAt([query])
+          .endAt(['$query\uf8ff'])
+          .limit(20)
+          .get();
+    }
 
     return snapshot.docs.map((doc) {
       return {
@@ -248,7 +258,7 @@ class FoodDatabaseService {
     }).toList();
   }
 
-  // 獲取所有食物（分類）
+  // 獲取所有食物(分類)
   Future<Map<String, List<Map<String, dynamic>>>> getAllFoodsByCategory() async {
     QuerySnapshot snapshot = await _firestore
         .collection('foods')
@@ -275,7 +285,7 @@ class FoodDatabaseService {
     return foodsByCategory;
   }
 
-  // 新增自訂食物（使用者可以新增）
+  // 新增自訂食物(使用者可以新增)
   Future<void> addCustomFood({
     required String name,
     required String category,

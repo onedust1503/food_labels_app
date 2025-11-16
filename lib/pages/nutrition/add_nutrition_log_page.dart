@@ -1,5 +1,5 @@
 // lib/pages/nutrition/add_nutrition_log_page.dart
-// Soft UI 風格的飲食記錄頁面 - 改進份量顯示
+// Soft UI 風格的飲食記錄頁面 - 修復導航問題
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -34,7 +34,8 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
       );
 
       if (mounted) {
-        Navigator.pop(context);
+        // ✅ 修復: 只返回一層,回到搜尋頁面
+        // 不要用兩次 pop,這樣會直接回到主頁
         Navigator.pop(context);
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -105,6 +106,8 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
     double totalFat = (widget.foodData['fat'] ?? 0) * _servings;
 
     return Scaffold(
+      // ✅ 防止鍵盤推擠UI
+      resizeToAvoidBottomInset: true,
       backgroundColor: AppColors.background,
       
       appBar: AppBar(
@@ -459,7 +462,7 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
 
           const SizedBox(height: 16),
 
-          // ✅ 改進後的份量顯示 - 使用乘號
+          // 份量顯示
           Center(
             child: Container(
               padding: const EdgeInsets.symmetric(
@@ -491,17 +494,15 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
                   RichText(
                     text: TextSpan(
                       children: [
-                        // 數量 (大且粗)
                         TextSpan(
                           text: _servings.toStringAsFixed(1),
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: AppColors.primary,
-                            fontFamily: 'Roboto', // 確保跨平台一致
+                            fontFamily: 'Roboto',
                           ),
                         ),
-                        // 乘號 (中等大小,半透明)
                         TextSpan(
                           text: ' × ',
                           style: TextStyle(
@@ -511,7 +512,6 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
                             fontFamily: 'Roboto',
                           ),
                         ),
-                        // 單位 (較小,次要色)
                         TextSpan(
                           text: widget.foodData['servingSize'] ?? '份',
                           style: const TextStyle(

@@ -1,5 +1,5 @@
 // lib/services/nutrition_service.dart
-// 飲食記錄服務層 - 改進版本（保留所有原有功能）
+// 飲食記錄服務層 - 完整版本（支援詳細營養素 + 快速新增）
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,9 +10,9 @@ class NutritionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // ========== 原有功能（保留並改進）==========
+  // ========== 核心功能 ==========
 
-  /// 新增飲食記錄（原有方法）
+  /// 新增飲食記錄（從食物資料庫選擇）
   Future<void> addFoodLog({
     required Map<String, dynamic> foodData,
     required double servings,
@@ -21,12 +21,21 @@ class NutritionService {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
 
+    // 計算基本營養素
     double totalCalories = (foodData['calories'] ?? 0) * servings;
     double totalProtein = (foodData['protein'] ?? 0) * servings;
     double totalCarbs = (foodData['carbs'] ?? 0) * servings;
     double totalFat = (foodData['fat'] ?? 0) * servings;
 
-    // ✅ 使用 Collections 常量
+    // ✅ 計算詳細營養素
+    double totalSaturatedFat = (foodData['saturatedFat'] ?? 0) * servings;
+    double totalTransFat = (foodData['transFat'] ?? 0) * servings;
+    double totalFiber = (foodData['fiber'] ?? 0) * servings;
+    double totalSugar = (foodData['sugar'] ?? 0) * servings;
+    double totalSodium = (foodData['sodium'] ?? 0) * servings;
+    double totalCholesterol = (foodData['cholesterol'] ?? 0) * servings;
+
+    // 儲存到 Firestore
     await _firestore.collection(Collections.nutritionLogs).add({
       'userId': userId,
       'date': today,
@@ -35,11 +44,22 @@ class NutritionService {
       'foodId': foodData['id'],
       'servings': servings,
       'servingSize': foodData['servingSize'],
+      
+      // 基本營養素
       'calories': totalCalories,
       'protein': totalProtein,
       'carbs': totalCarbs,
       'fat': totalFat,
-      'recordMethod': 'search',
+      
+      // ✅ 詳細營養素 (新增)
+      'saturatedFat': totalSaturatedFat,
+      'transFat': totalTransFat,
+      'fiber': totalFiber,
+      'sugar': totalSugar,
+      'sodium': totalSodium,
+      'cholesterol': totalCholesterol,
+      
+      'recordMethod': foodData['category'] ?? 'search',
       'createdAt': FieldValue.serverTimestamp(),
     });
 
@@ -52,13 +72,92 @@ class NutritionService {
     });
   }
 
-  /// 更新每日總計（原有方法）
+  /// 🆕 快速新增飲食記錄（手動輸入/OCR掃描）
+  /// 
+  /// 使用場景:
+  /// - 手動輸入營養素
+  /// - OCR 掃描食品標籤
+  /// - 一次性食物記錄（不加入食物庫）
+  /// 
+  /// 所有營養素都是「每份」的數值,會自動乘以份數計算總量
+  Future<void> addQuickLog({
+    required String foodName,
+    required String mealType,
+    required double servings,
+    required String servingSize,
+    // 基本營養素 (每份的量)
+    required double calories,
+    required double protein,
+    required double carbs,
+    required double fat,
+    // ✅ 詳細營養素 (每份的量,選填)
+    double saturatedFat = 0,
+    double transFat = 0,
+    double fiber = 0,
+    double sugar = 0,
+    double sodium = 0,
+    double cholesterol = 0,
+  }) async {
+    String userId = _auth.currentUser!.uid;
+    String today = DateTime.now().toIso8601String().split('T')[0];
+
+    // 計算實際攝取總量 (每份 × 份數)
+    double totalCalories = calories * servings;
+    double totalProtein = protein * servings;
+    double totalCarbs = carbs * servings;
+    double totalFat = fat * servings;
+    double totalSaturatedFat = saturatedFat * servings;
+    double totalTransFat = transFat * servings;
+    double totalFiber = fiber * servings;
+    double totalSugar = sugar * servings;
+    double totalSodium = sodium * servings;
+    double totalCholesterol = cholesterol * servings;
+
+    // 儲存到 Firestore nutritionLogs
+    await _firestore.collection(Collections.nutritionLogs).add({
+      'userId': userId,
+      'date': today,
+      'mealType': mealType,
+      'foodName': foodName,
+      'foodId': null, // 快速新增沒有 foodId
+      'servings': servings,
+      'servingSize': servingSize,
+      
+      // 基本營養素 (總量)
+      'calories': totalCalories,
+      'protein': totalProtein,
+      'carbs': totalCarbs,
+      'fat': totalFat,
+      
+      // ✅ 詳細營養素 (總量)
+      'saturatedFat': totalSaturatedFat,
+      'transFat': totalTransFat,
+      'fiber': totalFiber,
+      'sugar': totalSugar,
+      'sodium': totalSodium,
+      'cholesterol': totalCholesterol,
+      
+      'recordMethod': 'quick', // 標記為快速新增
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // 更新當日總計
+    await _updateDailySummary(userId, today, {
+      'calories': totalCalories,
+      'protein': totalProtein,
+      'carbs': totalCarbs,
+      'fat': totalFat,
+    });
+
+    print('✅ 快速新增成功: $foodName (${servings} ${servingSize})');
+  }
+
+  /// 更新每日總計
   Future<void> _updateDailySummary(
     String userId,
     String date,
     Map<String, double> nutrients,
   ) async {
-    // ✅ 使用 Collections 常量
     DocumentReference summaryRef = _firestore
         .collection(Collections.users)
         .doc(userId)
@@ -97,12 +196,11 @@ class NutritionService {
     });
   }
 
-  /// 獲取今日營養總計（原有方法）
+  /// 獲取今日營養總計
   Future<Map<String, dynamic>> getTodayNutrition() async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
 
-    // ✅ 使用 Collections 常量
     DocumentSnapshot doc = await _firestore
         .collection(Collections.users)
         .doc(userId)
@@ -127,12 +225,11 @@ class NutritionService {
     };
   }
 
-  /// 獲取今日飲食記錄（原有方法）
+  /// 獲取今日飲食記錄（Map 版本）
   Future<List<Map<String, dynamic>>> getTodayLogs() async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
 
-    // ✅ 使用 Collections 常量
     QuerySnapshot snapshot = await _firestore
         .collection(Collections.nutritionLogs)
         .where('userId', isEqualTo: userId)
@@ -148,9 +245,9 @@ class NutritionService {
     }).toList();
   }
 
-  // ========== 新增功能（使用模型）==========
+  // ========== 型別安全版本（使用模型）==========
 
-  /// 🆕 獲取今日飲食記錄（返回模型）- 型別安全版本
+  /// 獲取今日飲食記錄（返回模型）
   Future<List<NutritionLog>> getTodayLogsTyped() async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -167,7 +264,7 @@ class NutritionService {
         .toList();
   }
 
-  /// 🆕 獲取今日飲食記錄（即時串流）
+  /// 獲取今日飲食記錄（即時串流）
   Stream<List<NutritionLog>> getTodayLogsStream() {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -185,7 +282,7 @@ class NutritionService {
         });
   }
 
-  /// 🆕 獲取使用者的所有記錄（即時串流）
+  /// 獲取使用者的所有記錄（即時串流）
   Stream<List<NutritionLog>> getUserLogsStream(String userId) {
     return _firestore
         .collection(Collections.nutritionLogs)
@@ -200,7 +297,7 @@ class NutritionService {
         });
   }
 
-  /// 🆕 獲取最近 N 天的記錄
+  /// 獲取最近 N 天的記錄
   Stream<List<NutritionLog>> getRecentLogs(String userId, {int days = 30}) {
     final startDate = DateTime.now().subtract(Duration(days: days));
     final startDateStr = startDate.toIso8601String().split('T')[0];
@@ -219,7 +316,7 @@ class NutritionService {
         });
   }
 
-  /// 🆕 獲取特定日期的記錄
+  /// 獲取特定日期的記錄
   Stream<List<NutritionLog>> getLogsForDate(String userId, DateTime date) {
     final dateStr = date.toIso8601String().split('T')[0];
 
@@ -236,7 +333,9 @@ class NutritionService {
         });
   }
 
-  /// 🆕 刪除記錄（會更新 dailySummary）
+  // ========== 記錄管理 ==========
+
+  /// 刪除記錄（會更新 dailySummary）
   Future<void> deleteLog(String logId) async {
     try {
       // 先獲取記錄資料
@@ -278,7 +377,7 @@ class NutritionService {
     }
   }
 
-  /// 🆕 更新記錄
+  /// 更新記錄
   Future<void> updateLog(String logId, Map<String, dynamic> data) async {
     try {
       await _firestore
@@ -295,7 +394,7 @@ class NutritionService {
 
   // ========== 統計查詢 ==========
 
-  /// 🆕 計算某天的總熱量（從 nutritionLogs 計算）
+  /// 計算某天的總熱量（從 nutritionLogs 計算）
   Future<int> getTotalCaloriesForDate(String userId, String date) async {
     try {
       final snapshot = await _firestore
@@ -315,7 +414,7 @@ class NutritionService {
     }
   }
 
-  /// 🆕 獲取特定日期的營養總計（從 dailySummary）
+  /// 獲取特定日期的營養總計（從 dailySummary）
   Future<Map<String, dynamic>> getNutritionForDate(String userId, String date) async {
     try {
       DocumentSnapshot doc = await _firestore

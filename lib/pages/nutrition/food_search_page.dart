@@ -8,6 +8,7 @@ import '../../services/food_database_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
 import 'add_nutrition_log_page.dart';
+import 'manual_nutrition_log_page.dart'; // ✅ 新增導入
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -298,11 +299,11 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '手動記錄',
                 color: const Color(0xFFFA709A),
                 onTap: () {
-                  // TODO: 導航到手動記錄頁面
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('手動記錄功能開發中...'),
-                      backgroundColor: AppColors.info,
+                  // ✅ 導航到手動記錄頁面
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ManualNutritionLogPage(),
                     ),
                   );
                 },

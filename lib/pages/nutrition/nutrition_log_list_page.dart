@@ -1,5 +1,5 @@
 // lib/pages/nutrition/nutrition_log_list_page.dart
-// Soft UI 風格的今日飲食記錄列表頁面 - 包含宵夜支援
+// Soft UI 風格的今日飲食記錄列表頁面 - 修正展開觸發版
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -20,6 +20,9 @@ class NutritionLogListPage extends StatefulWidget {
 class _NutritionLogListPageState extends State<NutritionLogListPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  
+  // 🎯 展開狀態管理
+  final Set<String> _expandedCards = {};
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +32,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       
-      // 🎨 Soft UI 風格的 AppBar
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -86,20 +88,18 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             return _buildEmptyState();
           }
 
-          // 🌙 按餐別分組 (包含宵夜)
           Map<String, List<QueryDocumentSnapshot>> groupedLogs = {
             'breakfast': [],
             'lunch': [],
             'dinner': [],
             'snack': [],
-            'latenight': [],  // 🌙 新增宵夜
+            'latenight': [],
           };
 
           for (var doc in snapshot.data!.docs) {
             Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
             String mealType = (data['mealType'] ?? 'snack').toLowerCase();
             
-            // 🌙 處理可能的 late_night 格式
             if (mealType == 'late_night') {
               mealType = 'latenight';
             }
@@ -109,7 +109,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             }
           }
 
-          // 計算總營養
           double totalCalories = 0;
           double totalProtein = 0;
           double totalCarbs = 0;
@@ -127,7 +126,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.all(20),
             children: [
-              // 📊 每日營養總覽
               _buildDailySummary(
                 totalCalories,
                 totalProtein,
@@ -140,7 +138,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
               
               const SizedBox(height: 24),
 
-              // 🍽️ 各餐別記錄
               _buildMealSection('早餐', 'breakfast', groupedLogs['breakfast']!)
                   .animate(delay: 100.ms)
                   .fadeIn(duration: 400.ms)
@@ -161,7 +158,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                   .fadeIn(duration: 400.ms)
                   .slideY(begin: 0.2, end: 0, duration: 400.ms),
               
-              // 🌙 宵夜區塊
               _buildMealSection('宵夜', 'latenight', groupedLogs['latenight']!)
                   .animate(delay: 300.ms)
                   .fadeIn(duration: 400.ms)
@@ -175,7 +171,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 📊 每日營養總覽卡片
   Widget _buildDailySummary(
     double calories,
     double protein,
@@ -218,7 +213,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
           ),
           const SizedBox(height: 16),
           
-          // 營養數據網格
           Row(
             children: [
               Expanded(
@@ -271,7 +265,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 營養數據小方塊
   Widget _buildNutrientBox(
     String label,
     String value,
@@ -330,7 +323,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🍽️ 餐別區塊
   Widget _buildMealSection(
     String title,
     String mealType,
@@ -338,7 +330,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
   ) {
     if (logs.isEmpty) return const SizedBox.shrink();
 
-    // 計算該餐總熱量
     double totalCalories = logs.fold(0, (sum, doc) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
       return sum + (data['calories'] ?? 0);
@@ -347,7 +338,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 餐別標題
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Row(
@@ -388,7 +378,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
           ),
         ),
 
-        // 食物記錄列表
         ...logs.map((doc) => _buildFoodLogCard(doc, mealType)),
         
         const SizedBox(height: 16),
@@ -396,9 +385,11 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🍱 單筆食物記錄卡片
+  /// 🍱 單筆食物記錄卡片 (可展開詳細營養素)
   Widget _buildFoodLogCard(QueryDocumentSnapshot doc, String mealType) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    String docId = doc.id;
+    bool isExpanded = _expandedCards.contains(docId);
     
     String foodName = data['foodName'] ?? '未知食物';
     double servings = (data['servings'] ?? 1).toDouble();
@@ -408,120 +399,412 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     double carbs = (data['carbs'] ?? 0).toDouble();
     double fat = (data['fat'] ?? 0).toDouble();
     
+    // 🎯 額外營養素
+    double saturatedFat = (data['saturatedFat'] ?? 0).toDouble();
+    double transFat = (data['transFat'] ?? 0).toDouble();
+    double fiber = (data['fiber'] ?? 0).toDouble();
+    double sugar = (data['sugar'] ?? 0).toDouble();
+    double sodium = (data['sodium'] ?? 0).toDouble();
+    double cholesterol = (data['cholesterol'] ?? 0).toDouble();
+    
     String timeStr = _formatTime(data['createdAt']);
+    
+    // ✅ 檢查是否有詳細營養素
+    bool hasDetails = _hasDetailedNutrients(data);
 
     return SoftCard(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
+      child: Column(
         children: [
-          // 左側顏色條
-          Container(
-            width: 4,
-            height: 60,
-            decoration: BoxDecoration(
-              color: AppColors.getMealColor(mealType),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 16),
+          // 🎯 主要資訊區
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: AppColors.getMealColor(mealType),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 16),
 
-          // 食物資訊
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        foodName,
-                        style: const TextStyle(
-                          fontSize: 16,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            foodName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryPale,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${servings.toStringAsFixed(1)} $servingSize',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.local_fire_department,
+                          size: 14,
+                          color: AppColors.calories,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$calories 大卡',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    
+                    Row(
+                      children: [
+                        _buildMiniNutrient('P', protein, AppColors.protein),
+                        const SizedBox(width: 8),
+                        _buildMiniNutrient('C', carbs, AppColors.carbs),
+                        const SizedBox(width: 8),
+                        _buildMiniNutrient('F', fat, AppColors.fat),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.error,
+                  size: 20,
+                ),
+                onPressed: () => _confirmDelete(doc),
+              ),
+            ],
+          ),
+          
+          // 🎯 展開按鈕 - 加強觸發範圍和視覺回饋
+          if (hasDetails)
+            GestureDetector(
+              onTap: () {
+                if (kDebugMode) {
+                  debugPrint('🔵 展開按鈕被點擊: $docId, 當前狀態: $isExpanded');
+                }
+                setState(() {
+                  if (isExpanded) {
+                    _expandedCards.remove(docId);
+                  } else {
+                    _expandedCards.add(docId);
+                  }
+                });
+                if (kDebugMode) {
+                  debugPrint('🟢 更新後狀態: ${_expandedCards.contains(docId)}');
+                }
+              },
+              child: Container(
+                margin: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,  // 加大觸控範圍
+                  horizontal: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: isExpanded 
+                      ? AppColors.primary.withOpacity(0.15)  // 展開時顏色更深
+                      : AppColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isExpanded
+                        ? AppColors.primary.withOpacity(0.3)  // 展開時邊框更明顯
+                        : AppColors.primary.withOpacity(0.15),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isExpanded ? Icons.visibility : Icons.visibility_outlined,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      isExpanded ? '隱藏詳細營養素' : '查看詳細營養素',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          
+          // 🎯 詳細營養素展開區
+          if (isExpanded)
+            Container(
+              margin: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.background,
+                    AppColors.primary.withOpacity(0.02),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.15),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.science_outlined,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        '詳細營養成分',
+                        style: TextStyle(
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary,
                         ),
                       ),
-                    ),
-                    Text(
-                      timeStr,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                
-                // 份量和熱量
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryPale,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '${servings.toStringAsFixed(1)} $servingSize',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.local_fire_department,
-                      size: 14,
-                      color: AppColors.calories,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$calories 大卡',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                
-                // 三大營養素
-                Row(
-                  children: [
-                    _buildMiniNutrient('P', protein, AppColors.protein),
-                    const SizedBox(width: 8),
-                    _buildMiniNutrient('C', carbs, AppColors.carbs),
-                    const SizedBox(width: 8),
-                    _buildMiniNutrient('F', fat, AppColors.fat),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildDetailedNutrients(
+                    saturatedFat,
+                    transFat,
+                    fiber,
+                    sugar,
+                    sodium,
+                    cholesterol,
+                  ),
+                ],
+              ),
+            )
+                .animate()
+                .fadeIn(duration: 250.ms)
+                .slideY(begin: -0.05, end: 0, duration: 250.ms)
+                .scale(begin: const Offset(0.98, 0.98), end: const Offset(1, 1)),
+        ],
+      ),
+    );
+  }
+
+  /// 🎯 檢查是否有詳細營養素資料
+  bool _hasDetailedNutrients(Map<String, dynamic> data) {
+    bool hasData = (data['saturatedFat'] ?? 0) > 0 ||
+                   (data['transFat'] ?? 0) > 0 ||
+                   (data['fiber'] ?? 0) > 0 ||
+                   (data['sugar'] ?? 0) > 0 ||
+                   (data['sodium'] ?? 0) > 0 ||
+                   (data['cholesterol'] ?? 0) > 0;
+    
+    if (kDebugMode && hasData) {
+      debugPrint('✅ 食物 ${data['foodName']} 有詳細營養素');
+    }
+    
+    return hasData;
+  }
+
+  /// 🎯 顯示詳細營養素
+  Widget _buildDetailedNutrients(
+    double saturatedFat,
+    double transFat,
+    double fiber,
+    double sugar,
+    double sodium,
+    double cholesterol,
+  ) {
+    List<Widget> nutrients = [];
+
+    if (saturatedFat > 0) {
+      nutrients.add(_buildDetailedNutrientRow(
+        '飽和脂肪',
+        saturatedFat,
+        'g',
+        const Color(0xFFE57373),
+        Icons.opacity,
+      ));
+    }
+
+    if (transFat > 0) {
+      nutrients.add(_buildDetailedNutrientRow(
+        '反式脂肪',
+        transFat,
+        'g',
+        const Color(0xFFEF5350),
+        Icons.warning_amber_rounded,
+      ));
+    }
+
+    if (fiber > 0) {
+      nutrients.add(_buildDetailedNutrientRow(
+        '膳食纖維',
+        fiber,
+        'g',
+        const Color(0xFF66BB6A),
+        Icons.spa,
+      ));
+    }
+
+    if (sugar > 0) {
+      nutrients.add(_buildDetailedNutrientRow(
+        '糖',
+        sugar,
+        'g',
+        const Color(0xFFFF9800),
+        Icons.cake,
+      ));
+    }
+
+    if (sodium > 0) {
+      nutrients.add(_buildDetailedNutrientRow(
+        '鈉',
+        sodium,
+        'mg',
+        const Color(0xFF42A5F5),
+        Icons.grain,
+      ));
+    }
+
+    if (cholesterol > 0) {
+      nutrients.add(_buildDetailedNutrientRow(
+        '膽固醇',
+        cholesterol,
+        'mg',
+        const Color(0xFFAB47BC),
+        Icons.favorite_border,
+      ));
+    }
+
+    if (nutrients.isEmpty) {
+      return const Text(
+        '無詳細營養資料',
+        style: TextStyle(
+          fontSize: 12,
+          color: AppColors.textTertiary,
+        ),
+      );
+    }
+
+    return Column(
+      children: nutrients,
+    );
+  }
+
+  Widget _buildDetailedNutrientRow(
+    String label,
+    double value,
+    String unit,
+    Color color,
+    IconData icon,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: color),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-
-          // 刪除按鈕
-          IconButton(
-            icon: const Icon(
-              Icons.delete_outline,
-              color: AppColors.error,
-              size: 20,
+          Text(
+            value.toStringAsFixed(1),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
-            onPressed: () => _confirmDelete(doc),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            unit,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textTertiary,
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 小型營養素標籤
   Widget _buildMiniNutrient(String label, double value, Color color) {
     return Row(
       children: [
@@ -545,7 +828,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🕐 時間格式化
   String _formatTime(dynamic timestamp) {
     if (timestamp == null) return '--:--';
     
@@ -565,7 +847,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     }
   }
 
-  /// 🔄 載入中狀態
   Widget _buildLoadingState() {
     return Center(
       child: Column(
@@ -601,7 +882,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ⚠️ 錯誤狀態
   Widget _buildErrorState(String error) {
     return Center(
       child: Padding(
@@ -640,7 +920,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 📭 空狀態
   Widget _buildEmptyState() {
     return Center(
       child: Padding(
@@ -692,7 +971,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ❌ 確認刪除對話框
   void _confirmDelete(QueryDocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     String foodName = data['foodName'] ?? '此記錄';
@@ -728,7 +1006,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🗑️ 刪除記錄
   Future<void> _deleteLog(QueryDocumentSnapshot doc) async {
     try {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
@@ -737,7 +1014,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
 
       await doc.reference.delete();
 
-      // 更新每日總計
       DocumentReference summaryRef = _firestore
           .collection('users')
           .doc(userId)

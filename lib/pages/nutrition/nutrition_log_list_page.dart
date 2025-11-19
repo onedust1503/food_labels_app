@@ -1,5 +1,5 @@
 // lib/pages/nutrition/nutrition_log_list_page.dart
-// Soft UI 風格的今日飲食記錄列表頁面 - 新增快速編輯功能
+// Soft UI 風格的今日飲食記錄列表頁面 - 新增分析標籤頁
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
+import 'nutrition_analysis_page.dart';
 
 class NutritionLogListPage extends StatefulWidget {
   const NutritionLogListPage({super.key});
@@ -22,6 +23,111 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
   
   // 🎯 展開狀態管理
   final Set<String> _expandedCards = {};
+  
+  // 🎯 滾動控制器
+  final ScrollController _scrollController = ScrollController();
+  
+  // 🎯 餐別對應的 GlobalKey (用於定位)
+  final Map<String, GlobalKey> _mealKeys = {
+    'breakfast': GlobalKey(),
+    'lunch': GlobalKey(),
+    'dinner': GlobalKey(),
+    'snack': GlobalKey(),
+    'latenight': GlobalKey(),
+  };
+  
+  // 🎯 當前選中的餐別
+  String _selectedMeal = '';
+  
+  // 🎯 當前選中的標籤頁 (0=記錄, 1=分析)
+  int _currentTabIndex = 0;
+  
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 🎨 Soft UI 風格的標籤按鈕
+  Widget _buildSoftTab({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primary.withOpacity(0.95),
+                    AppColors.primaryLight,
+                  ],
+                )
+              : null,
+          color: isSelected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 🎯 滾動到指定餐別
+  void _scrollToMeal(String mealType) {
+    setState(() {
+      _selectedMeal = mealType;
+    });
+
+    final GlobalKey? key = _mealKeys[mealType];
+    if (key?.currentContext != null) {
+      final RenderBox renderBox = key!.currentContext!.findRenderObject() as RenderBox;
+      final position = renderBox.localToGlobal(Offset.zero);
+      final targetPosition = position.dy + _scrollController.offset - 180;
+
+      _scrollController.animateTo(
+        targetPosition.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,120 +137,262 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.cardBackground,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.shadowLight,
-                  offset: const Offset(0, 2),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 18,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          '今日飲食記錄',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
-      ),
-
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('nutritionLogs')
-            .where('userId', isEqualTo: userId)
-            .where('date', isEqualTo: today)
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildLoadingState();
-          }
-
-          if (snapshot.hasError) {
-            return _buildErrorState(snapshot.error.toString());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return _buildEmptyState();
-          }
-
-          Map<String, List<QueryDocumentSnapshot>> groupedLogs = {
-            'breakfast': [],
-            'lunch': [],
-            'dinner': [],
-            'snack': [],
-            'latenight': [],
-          };
-
-          for (var doc in snapshot.data!.docs) {
-            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-            String mealType = (data['mealType'] ?? 'snack').toLowerCase();
-            
-            if (mealType == 'late_night') {
-              mealType = 'latenight';
-            }
-            
-            if (groupedLogs.containsKey(mealType)) {
-              groupedLogs[mealType]!.add(doc);
-            }
-          }
-
-          double totalCalories = 0;
-          double totalProtein = 0;
-          double totalCarbs = 0;
-          double totalFat = 0;
-
-          for (var doc in snapshot.data!.docs) {
-            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-            totalCalories += (data['calories'] ?? 0);
-            totalProtein += (data['protein'] ?? 0);
-            totalCarbs += (data['carbs'] ?? 0);
-            totalFat += (data['fat'] ?? 0);
-          }
-
-          return ListView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.all(20),
-            children: [
-              _buildDailySummary(
-                totalCalories,
-                totalProtein,
-                totalCarbs,
-                totalFat,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(106),
+        child: Container(
+          color: AppColors.background,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // 頂部:返回按鈕 + 標題
+                  SizedBox(
+                    height: 42,
+                    child: Stack(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: AppColors.cardBackground,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.shadowDark,
+                                    offset: const Offset(3, 3),
+                                    blurRadius: 6,
+                                  ),
+                                  BoxShadow(
+                                    color: AppColors.shadowLight,
+                                    offset: const Offset(-3, -3),
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 18,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Center(
+                          child: Text(
+                            '飲食記錄',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  // Soft UI 風格的標籤切換
+                  Container(
+                    height: 42,
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.shadowDark,
+                          offset: const Offset(3, 3),
+                          blurRadius: 6,
+                        ),
+                        BoxShadow(
+                          color: AppColors.shadowLight,
+                          offset: const Offset(-3, -3),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildSoftTab(
+                            icon: Icons.receipt_long,
+                            label: '記錄',
+                            isSelected: _currentTabIndex == 0,
+                            onTap: () {
+                              setState(() {
+                                _currentTabIndex = 0;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: _buildSoftTab(
+                            icon: Icons.analytics,
+                            label: '分析',
+                            isSelected: _currentTabIndex == 1,
+                            onTap: () {
+                              setState(() {
+                                _currentTabIndex = 1;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              
-              const SizedBox(height: 24),
-
-              _buildMealSection('早餐', 'breakfast', groupedLogs['breakfast']!),
-              _buildMealSection('午餐', 'lunch', groupedLogs['lunch']!),
-              _buildMealSection('晚餐', 'dinner', groupedLogs['dinner']!),
-              _buildMealSection('點心', 'snack', groupedLogs['snack']!),
-              _buildMealSection('宵夜', 'latenight', groupedLogs['latenight']!),
-
-              const SizedBox(height: 100),
-            ],
-          );
-        },
+            ),
+          ),
+        ),
       ),
+
+      body: IndexedStack(
+        index: _currentTabIndex,
+        children: [
+          // 📝 記錄標籤頁
+          _buildRecordsTab(userId, today),
+          
+          // 📊 分析標籤頁
+          NutritionAnalysisPage(userId: userId),
+        ],
+      ),
+    );
+  }
+
+  /// 📝 記錄標籤頁
+  Widget _buildRecordsTab(String userId, String today) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('nutritionLogs')
+          .where('userId', isEqualTo: userId)
+          .where('date', isEqualTo: today)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingState();
+        }
+
+        if (snapshot.hasError) {
+          return _buildErrorState(snapshot.error.toString());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        Map<String, List<QueryDocumentSnapshot>> groupedLogs = {
+          'breakfast': [],
+          'lunch': [],
+          'dinner': [],
+          'snack': [],
+          'latenight': [],
+        };
+
+        for (var doc in snapshot.data!.docs) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          String mealType = (data['mealType'] ?? 'snack').toLowerCase();
+          
+          if (mealType == 'late_night') {
+            mealType = 'latenight';
+          }
+          
+          if (groupedLogs.containsKey(mealType)) {
+            groupedLogs[mealType]!.add(doc);
+          }
+        }
+
+        Map<String, double> mealCalories = {
+          'breakfast': 0,
+          'lunch': 0,
+          'dinner': 0,
+          'snack': 0,
+          'latenight': 0,
+        };
+
+        for (var entry in groupedLogs.entries) {
+          for (var doc in entry.value) {
+            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+            mealCalories[entry.key] = (mealCalories[entry.key] ?? 0) + (data['calories'] ?? 0);
+          }
+        }
+
+        double totalCalories = 0;
+        double totalProtein = 0;
+        double totalCarbs = 0;
+        double totalFat = 0;
+
+        for (var doc in snapshot.data!.docs) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          totalCalories += (data['calories'] ?? 0);
+          totalProtein += (data['protein'] ?? 0);
+          totalCarbs += (data['carbs'] ?? 0);
+          totalFat += (data['fat'] ?? 0);
+        }
+
+        return Column(
+          children: [
+            Expanded(
+              child: ListView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                children: [
+                  _buildDailySummary(
+                    totalCalories,
+                    totalProtein,
+                    totalCarbs,
+                    totalFat,
+                  ),
+                  
+                  const SizedBox(height: 24),
+
+                  if (groupedLogs['breakfast']!.isNotEmpty)
+                    Container(
+                      key: _mealKeys['breakfast'],
+                      child: _buildMealSection('早餐', 'breakfast', groupedLogs['breakfast']!),
+                    ),
+                  
+                  if (groupedLogs['lunch']!.isNotEmpty)
+                    Container(
+                      key: _mealKeys['lunch'],
+                      child: _buildMealSection('午餐', 'lunch', groupedLogs['lunch']!),
+                    ),
+                  
+                  if (groupedLogs['dinner']!.isNotEmpty)
+                    Container(
+                      key: _mealKeys['dinner'],
+                      child: _buildMealSection('晚餐', 'dinner', groupedLogs['dinner']!),
+                    ),
+                  
+                  if (groupedLogs['snack']!.isNotEmpty)
+                    Container(
+                      key: _mealKeys['snack'],
+                      child: _buildMealSection('點心', 'snack', groupedLogs['snack']!),
+                    ),
+                  
+                  if (groupedLogs['latenight']!.isNotEmpty)
+                    Container(
+                      key: _mealKeys['latenight'],
+                      child: _buildMealSection('宵夜', 'latenight', groupedLogs['latenight']!),
+                    ),
+
+                  const SizedBox(height: 100),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -362,7 +610,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🍱 單筆食物記錄卡片 (可展開詳細營養素 + ✨ 快速編輯)
   Widget _buildFoodLogCard(QueryDocumentSnapshot doc, String mealType) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     String docId = doc.id;
@@ -376,7 +623,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     double carbs = (data['carbs'] ?? 0).toDouble();
     double fat = (data['fat'] ?? 0).toDouble();
     
-    // 🎯 額外營養素
     double saturatedFat = (data['saturatedFat'] ?? 0).toDouble();
     double transFat = (data['transFat'] ?? 0).toDouble();
     double fiber = (data['fiber'] ?? 0).toDouble();
@@ -386,7 +632,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     
     String timeStr = _formatTime(data['createdAt']);
     
-    // ✅ 只要有任何營養素資料就顯示按鈕
     bool hasDetails = protein > 0 || carbs > 0 || fat > 0 || 
                       saturatedFat > 0 || transFat > 0 || fiber > 0 || 
                       sugar > 0 || sodium > 0 || cholesterol > 0;
@@ -395,7 +640,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
         children: [
-          // 🎯 主要資訊區
           Row(
             children: [
               Container(
@@ -474,7 +718,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     ),
                     const SizedBox(height: 4),
                     
-                    // ✅ P/C/F 快速預覽
                     Row(
                       children: [
                         _buildMiniNutrient('P', protein, AppColors.protein),
@@ -488,7 +731,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                 ),
               ),
 
-              // ✨ 編輯按鈕 (新增)
               IconButton(
                 icon: const Icon(
                   Icons.edit_outlined,
@@ -498,7 +740,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                 onPressed: () => _showEditDialog(doc),
               ),
 
-              // 刪除按鈕
               IconButton(
                 icon: const Icon(
                   Icons.delete_outline,
@@ -510,7 +751,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             ],
           ),
           
-          // 🎯 展開按鈕
           if (hasDetails)
             GestureDetector(
               onTap: () {
@@ -568,7 +808,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
               ),
             ),
           
-          // 🎯 詳細營養素展開區
           if (isExpanded)
             Container(
               margin: const EdgeInsets.only(top: 16),
@@ -618,30 +857,10 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // ✅ 三大營養素 (永遠顯示)
-                  _buildNutrientRow(
-                    '蛋白質',
-                    protein,
-                    'g',
-                    AppColors.protein,
-                    Icons.fitness_center,
-                  ),
-                  _buildNutrientRow(
-                    '碳水化合物',
-                    carbs,
-                    'g',
-                    AppColors.carbs,
-                    Icons.grain,
-                  ),
-                  _buildNutrientRow(
-                    '脂肪',
-                    fat,
-                    'g',
-                    AppColors.fat,
-                    Icons.water_drop,
-                  ),
+                  _buildNutrientRow('蛋白質', protein, 'g', AppColors.protein, Icons.fitness_center),
+                  _buildNutrientRow('碳水化合物', carbs, 'g', AppColors.carbs, Icons.grain),
+                  _buildNutrientRow('脂肪', fat, 'g', AppColors.fat, Icons.water_drop),
                   
-                  // ✅ 詳細營養素 (有值才顯示)
                   if (saturatedFat > 0 || transFat > 0) ...[
                     const SizedBox(height: 8),
                     Divider(color: AppColors.divider.withOpacity(0.5)),
@@ -649,22 +868,10 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                   ],
                   
                   if (saturatedFat > 0)
-                    _buildNutrientRow(
-                      '飽和脂肪',
-                      saturatedFat,
-                      'g',
-                      const Color(0xFFE57373),
-                      Icons.opacity,
-                    ),
+                    _buildNutrientRow('飽和脂肪', saturatedFat, 'g', const Color(0xFFE57373), Icons.opacity),
                   
                   if (transFat > 0)
-                    _buildNutrientRow(
-                      '反式脂肪',
-                      transFat,
-                      'g',
-                      const Color(0xFFEF5350),
-                      Icons.warning_amber_rounded,
-                    ),
+                    _buildNutrientRow('反式脂肪', transFat, 'g', const Color(0xFFEF5350), Icons.warning_amber_rounded),
                   
                   if (fiber > 0 || sugar > 0 || sodium > 0 || cholesterol > 0) ...[
                     const SizedBox(height: 8),
@@ -673,40 +880,16 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                   ],
                   
                   if (fiber > 0)
-                    _buildNutrientRow(
-                      '膳食纖維',
-                      fiber,
-                      'g',
-                      const Color(0xFF66BB6A),
-                      Icons.spa,
-                    ),
+                    _buildNutrientRow('膳食纖維', fiber, 'g', const Color(0xFF66BB6A), Icons.spa),
                   
                   if (sugar > 0)
-                    _buildNutrientRow(
-                      '糖',
-                      sugar,
-                      'g',
-                      const Color(0xFFFF9800),
-                      Icons.cake,
-                    ),
+                    _buildNutrientRow('糖', sugar, 'g', const Color(0xFFFF9800), Icons.cake),
                   
                   if (sodium > 0)
-                    _buildNutrientRow(
-                      '鈉',
-                      sodium,
-                      'mg',
-                      const Color(0xFF42A5F5),
-                      Icons.grain,
-                    ),
+                    _buildNutrientRow('鈉', sodium, 'mg', const Color(0xFF42A5F5), Icons.grain),
                   
                   if (cholesterol > 0)
-                    _buildNutrientRow(
-                      '膽固醇',
-                      cholesterol,
-                      'mg',
-                      const Color(0xFFAB47BC),
-                      Icons.favorite_border,
-                    ),
+                    _buildNutrientRow('膽固醇', cholesterol, 'mg', const Color(0xFFAB47BC), Icons.favorite_border),
                 ],
               ),
             ),
@@ -715,23 +898,19 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ✨ 快速編輯對話框 (新增)
   void _showEditDialog(QueryDocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     
-    // 原始數據
     String foodName = data['foodName'] ?? '未知食物';
     double originalServings = (data['servings'] ?? 1).toDouble();
     String servingSize = data['servingSize'] ?? '份';
     String originalMealType = (data['mealType'] ?? 'breakfast').toLowerCase();
     
-    // 每份營養數據
     double perServingCalories = (data['calories'] ?? 0) / originalServings;
     double perServingProtein = (data['protein'] ?? 0) / originalServings;
     double perServingCarbs = (data['carbs'] ?? 0) / originalServings;
     double perServingFat = (data['fat'] ?? 0) / originalServings;
     
-    // 可編輯的狀態
     double editedServings = originalServings;
     String editedMealType = originalMealType;
     
@@ -739,7 +918,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          // 計算新的總營養素
           int newCalories = (perServingCalories * editedServings).round();
           double newProtein = perServingProtein * editedServings;
           double newCarbs = perServingCarbs * editedServings;
@@ -774,7 +952,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 標題
                     Row(
                       children: [
                         Container(
@@ -815,7 +992,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     
                     const SizedBox(height: 20),
                     
-                    // 食物名稱
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -846,7 +1022,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     
                     const SizedBox(height: 20),
                     
-                    // 餐別選擇
                     const Text(
                       '餐別',
                       style: TextStyle(
@@ -860,32 +1035,16 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        _buildMealTypeChipForDialog(
-                          'breakfast', '早餐', editedMealType,
-                          (type) => setDialogState(() => editedMealType = type),
-                        ),
-                        _buildMealTypeChipForDialog(
-                          'lunch', '午餐', editedMealType,
-                          (type) => setDialogState(() => editedMealType = type),
-                        ),
-                        _buildMealTypeChipForDialog(
-                          'dinner', '晚餐', editedMealType,
-                          (type) => setDialogState(() => editedMealType = type),
-                        ),
-                        _buildMealTypeChipForDialog(
-                          'snack', '點心', editedMealType,
-                          (type) => setDialogState(() => editedMealType = type),
-                        ),
-                        _buildMealTypeChipForDialog(
-                          'latenight', '宵夜', editedMealType,
-                          (type) => setDialogState(() => editedMealType = type),
-                        ),
+                        _buildMealTypeChipForDialog('breakfast', '早餐', editedMealType, (type) => setDialogState(() => editedMealType = type)),
+                        _buildMealTypeChipForDialog('lunch', '午餐', editedMealType, (type) => setDialogState(() => editedMealType = type)),
+                        _buildMealTypeChipForDialog('dinner', '晚餐', editedMealType, (type) => setDialogState(() => editedMealType = type)),
+                        _buildMealTypeChipForDialog('snack', '點心', editedMealType, (type) => setDialogState(() => editedMealType = type)),
+                        _buildMealTypeChipForDialog('latenight', '宵夜', editedMealType, (type) => setDialogState(() => editedMealType = type)),
                       ],
                     ),
                     
                     const SizedBox(height: 20),
                     
-                    // 份量調整
                     const Text(
                       '份量',
                       style: TextStyle(
@@ -898,26 +1057,16 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     
                     Row(
                       children: [
-                        // 減少按鈕
-                        _buildServingButton(
-                          Icons.remove,
-                          editedServings > 0.5,
-                          () => setDialogState(() => editedServings -= 0.5),
-                        ),
+                        _buildServingButton(Icons.remove, editedServings > 0.5, () => setDialogState(() => editedServings -= 0.5)),
                         
-                        // 滑桿
                         Expanded(
                           child: Column(
                             children: [
                               SliderTheme(
                                 data: SliderThemeData(
                                   trackHeight: 6,
-                                  thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 12,
-                                  ),
-                                  overlayShape: const RoundSliderOverlayShape(
-                                    overlayRadius: 20,
-                                  ),
+                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
+                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
                                   activeTrackColor: AppColors.primary,
                                   inactiveTrackColor: AppColors.primary.withOpacity(0.2),
                                   thumbColor: AppColors.primary,
@@ -931,12 +1080,8 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                                   onChanged: (value) => setDialogState(() => editedServings = value),
                                 ),
                               ),
-                              // 份量顯示
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: AppColors.primary.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
@@ -954,18 +1099,12 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                           ),
                         ),
                         
-                        // 增加按鈕
-                        _buildServingButton(
-                          Icons.add,
-                          editedServings < 5.0,
-                          () => setDialogState(() => editedServings += 0.5),
-                        ),
+                        _buildServingButton(Icons.add, editedServings < 5.0, () => setDialogState(() => editedServings += 0.5)),
                       ],
                     ),
                     
                     const SizedBox(height: 20),
                     
-                    // 營養預覽
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -986,11 +1125,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                         children: [
                           const Row(
                             children: [
-                              Icon(
-                                Icons.preview,
-                                color: AppColors.primary,
-                                size: 18,
-                              ),
+                              Icon(Icons.preview, color: AppColors.primary, size: 18),
                               SizedBox(width: 8),
                               Text(
                                 '修改後營養素',
@@ -1005,45 +1140,17 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                           const SizedBox(height: 12),
                           Row(
                             children: [
-                              Expanded(
-                                child: _buildNutrientPreview(
-                                  '熱量',
-                                  newCalories.toString(),
-                                  '大卡',
-                                  AppColors.calories,
-                                ),
-                              ),
+                              Expanded(child: _buildNutrientPreview('熱量', newCalories.toString(), '大卡', AppColors.calories)),
                               const SizedBox(width: 8),
-                              Expanded(
-                                child: _buildNutrientPreview(
-                                  '蛋白質',
-                                  newProtein.toStringAsFixed(1),
-                                  'g',
-                                  AppColors.protein,
-                                ),
-                              ),
+                              Expanded(child: _buildNutrientPreview('蛋白質', newProtein.toStringAsFixed(1), 'g', AppColors.protein)),
                             ],
                           ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Expanded(
-                                child: _buildNutrientPreview(
-                                  '碳水',
-                                  newCarbs.toStringAsFixed(1),
-                                  'g',
-                                  AppColors.carbs,
-                                ),
-                              ),
+                              Expanded(child: _buildNutrientPreview('碳水', newCarbs.toStringAsFixed(1), 'g', AppColors.carbs)),
                               const SizedBox(width: 8),
-                              Expanded(
-                                child: _buildNutrientPreview(
-                                  '脂肪',
-                                  newFat.toStringAsFixed(1),
-                                  'g',
-                                  AppColors.fat,
-                                ),
-                              ),
+                              Expanded(child: _buildNutrientPreview('脂肪', newFat.toStringAsFixed(1), 'g', AppColors.fat)),
                             ],
                           ),
                         ],
@@ -1052,7 +1159,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     
                     const SizedBox(height: 24),
                     
-                    // 按鈕
                     Row(
                       children: [
                         Expanded(
@@ -1061,9 +1167,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               backgroundColor: AppColors.background,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                             child: const Text(
                               '取消',
@@ -1081,22 +1185,12 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                           child: ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context);
-                              _updateLog(
-                                doc,
-                                editedServings,
-                                editedMealType,
-                                newCalories.toDouble(),
-                                newProtein,
-                                newCarbs,
-                                newFat,
-                              );
+                              _updateLog(doc, editedServings, editedMealType, newCalories.toDouble(), newProtein, newCarbs, newFat);
                             },
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               backgroundColor: AppColors.primary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               elevation: 0,
                             ),
                             child: const Text(
@@ -1121,13 +1215,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ✨ 對話框中的餐別選擇按鈕
-  Widget _buildMealTypeChipForDialog(
-    String mealType,
-    String label,
-    String selectedMealType,
-    Function(String) onTap,
-  ) {
+  Widget _buildMealTypeChipForDialog(String mealType, String label, String selectedMealType, Function(String) onTap) {
     final bool isSelected = selectedMealType == mealType;
     
     return GestureDetector(
@@ -1136,24 +1224,17 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected 
-              ? AppColors.getMealColor(mealType) 
-              : AppColors.background,
+          color: isSelected ? AppColors.getMealColor(mealType) : AppColors.background,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isSelected 
-                ? AppColors.getMealColor(mealType) 
-                : AppColors.divider,
+            color: isSelected ? AppColors.getMealColor(mealType) : AppColors.divider,
             width: isSelected ? 2 : 1,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              AppColors.getMealEmoji(mealType),
-              style: const TextStyle(fontSize: 14),
-            ),
+            Text(AppColors.getMealEmoji(mealType), style: const TextStyle(fontSize: 14)),
             const SizedBox(width: 6),
             Text(
               label,
@@ -1169,7 +1250,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ✨ 份量調整按鈕
   Widget _buildServingButton(IconData icon, bool enabled, VoidCallback onTap) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
@@ -1181,35 +1261,17 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
           shape: BoxShape.circle,
           boxShadow: enabled
               ? [
-                  BoxShadow(
-                    color: AppColors.shadowDark,
-                    offset: const Offset(3, 3),
-                    blurRadius: 6,
-                  ),
-                  BoxShadow(
-                    color: AppColors.shadowLight,
-                    offset: const Offset(-3, -3),
-                    blurRadius: 6,
-                  ),
+                  BoxShadow(color: AppColors.shadowDark, offset: const Offset(3, 3), blurRadius: 6),
+                  BoxShadow(color: AppColors.shadowLight, offset: const Offset(-3, -3), blurRadius: 6),
                 ]
               : null,
         ),
-        child: Icon(
-          icon,
-          color: enabled ? AppColors.primary : AppColors.textTertiary,
-          size: 20,
-        ),
+        child: Icon(icon, color: enabled ? AppColors.primary : AppColors.textTertiary, size: 20),
       ),
     );
   }
 
-  /// ✨ 營養素預覽卡片
-  Widget _buildNutrientPreview(
-    String label,
-    String value,
-    String unit,
-    Color color,
-  ) {
+  Widget _buildNutrientPreview(String label, String value, String unit, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
       decoration: BoxDecoration(
@@ -1255,7 +1317,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ✨ 更新記錄到 Firebase
   Future<void> _updateLog(
     QueryDocumentSnapshot doc,
     double newServings,
@@ -1270,13 +1331,11 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
       String userId = _auth.currentUser!.uid;
       String today = DateTime.now().toIso8601String().split('T')[0];
 
-      // 計算差異 (用於更新每日總計)
       double caloriesDiff = newCalories - (oldData['calories'] ?? 0);
       double proteinDiff = newProtein - (oldData['protein'] ?? 0);
       double carbsDiff = newCarbs - (oldData['carbs'] ?? 0);
       double fatDiff = newFat - (oldData['fat'] ?? 0);
 
-      // 更新記錄
       await doc.reference.update({
         'servings': newServings,
         'mealType': newMealType,
@@ -1287,12 +1346,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 更新每日總計
-      DocumentReference summaryRef = _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('dailySummary')
-          .doc(today);
+      DocumentReference summaryRef = _firestore.collection('users').doc(userId).collection('dailySummary').doc(today);
 
       await _firestore.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(summaryRef);
@@ -1321,11 +1375,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
-                    Icons.check_circle,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                  child: const Icon(Icons.check_circle, color: Colors.white, size: 20),
                 ),
                 const SizedBox(width: 12),
                 const Text('已更新記錄'),
@@ -1333,9 +1383,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             margin: const EdgeInsets.all(16),
           ),
         );
@@ -1350,9 +1398,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             content: Text('更新失敗: $e'),
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             margin: const EdgeInsets.all(16),
           ),
         );
@@ -1360,7 +1406,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     }
   }
 
-  /// ✅ P/C/F 小標示 (快速預覽)
   Widget _buildMiniNutrient(String label, double value, Color color) {
     return Row(
       children: [
@@ -1384,14 +1429,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// ✅ 營養素行 - 類似 Samsung Health 的專業排版
-  Widget _buildNutrientRow(
-    String label,
-    double value,
-    String unit,
-    Color color,
-    IconData icon,
-  ) {
+  Widget _buildNutrientRow(String label, double value, String unit, Color color, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -1499,11 +1537,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.error_outline,
-                size: 64,
-                color: AppColors.error,
-              ),
+              const Icon(Icons.error_outline, size: 64, color: AppColors.error),
               const SizedBox(height: 16),
               const Text(
                 '載入失敗',
@@ -1587,9 +1621,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('確認刪除'),
         content: Text('確定要刪除「$foodName」嗎?'),
         actions: [
@@ -1604,9 +1636,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('刪除'),
           ),
@@ -1623,11 +1653,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
 
       await doc.reference.delete();
 
-      DocumentReference summaryRef = _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('dailySummary')
-          .doc(today);
+      DocumentReference summaryRef = _firestore.collection('users').doc(userId).collection('dailySummary').doc(today);
 
       await _firestore.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(summaryRef);
@@ -1656,11 +1682,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
-                    Icons.check_circle,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                  child: const Icon(Icons.check_circle, color: Colors.white, size: 20),
                 ),
                 const SizedBox(width: 12),
                 const Text('已刪除記錄'),
@@ -1668,9 +1690,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             margin: const EdgeInsets.all(16),
           ),
         );
@@ -1685,9 +1705,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             content: Text('刪除失敗: $e'),
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             margin: const EdgeInsets.all(16),
           ),
         );

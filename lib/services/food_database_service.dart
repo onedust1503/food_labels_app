@@ -1,367 +1,172 @@
 // lib/services/food_database_service.dart
-// 食物資料庫服務 - 完整版本(包含詳細營養素)
+// 食物資料庫服務 - 修復版(支援 JSON 導入的資料 + 優雅處理權限錯誤)
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 class FoodDatabaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// 初始化基礎食物資料庫（只需執行一次）
-  /// ✅ 現在包含完整營養素資料
-  Future<void> initializeFoodDatabase() async {
-    // 檢查是否已經初始化過
-    QuerySnapshot existing = await _firestore.collection('foods').limit(1).get();
-    if (existing.docs.isNotEmpty) {
-      print('食物資料庫已存在，跳過初始化');
-      return;
-    }
-
-    print('開始初始化食物資料庫...');
-
-    List<Map<String, dynamic>> basicFoods = [
-      // ========== 主食類 ==========
-      {
-        'name': '白飯',
-        'category': '主食',
-        'servingSize': '1碗',
-        'servingSizeGram': 200,
-        'calories': 280,
-        'protein': 5.2,
-        'carbs': 62.0,
-        'fat': 0.6,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.2,
-        'transFat': 0.0,
-        'fiber': 0.6,
-        'sugar': 0.1,
-        'sodium': 2.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '糙米飯',
-        'category': '主食',
-        'servingSize': '1碗',
-        'servingSizeGram': 200,
-        'calories': 296,
-        'protein': 6.4,
-        'carbs': 64.0,
-        'fat': 2.0,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.4,
-        'transFat': 0.0,
-        'fiber': 3.2,
-        'sugar': 0.8,
-        'sodium': 4.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '地瓜',
-        'category': '主食',
-        'servingSize': '1條',
-        'servingSizeGram': 150,
-        'calories': 128,
-        'protein': 1.5,
-        'carbs': 30.0,
-        'fat': 0.2,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.0,
-        'transFat': 0.0,
-        'fiber': 3.3,
-        'sugar': 6.5,
-        'sodium': 55.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '燕麥',
-        'category': '主食',
-        'servingSize': '1碗',
-        'servingSizeGram': 50,
-        'calories': 185,
-        'protein': 6.5,
-        'carbs': 33.0,
-        'fat': 3.5,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.6,
-        'transFat': 0.0,
-        'fiber': 5.0,
-        'sugar': 0.4,
-        'sodium': 3.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-
-      // ========== 蛋白質類 ==========
-      {
-        'name': '雞胸肉',
-        'category': '蛋白質',
-        'servingSize': '1份',
-        'servingSizeGram': 100,
-        'calories': 165,
-        'protein': 31.0,
-        'carbs': 0.0,
-        'fat': 3.6,
-        // ✅ 詳細營養素
-        'saturatedFat': 1.0,
-        'transFat': 0.0,
-        'fiber': 0.0,
-        'sugar': 0.0,
-        'sodium': 74.0,
-        'cholesterol': 85.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '雞蛋',
-        'category': '蛋白質',
-        'servingSize': '1顆',
-        'servingSizeGram': 50,
-        'calories': 72,
-        'protein': 6.3,
-        'carbs': 0.4,
-        'fat': 4.8,
-        // ✅ 詳細營養素
-        'saturatedFat': 1.6,
-        'transFat': 0.0,
-        'fiber': 0.0,
-        'sugar': 0.2,
-        'sodium': 71.0,
-        'cholesterol': 186.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '鮭魚',
-        'category': '蛋白質',
-        'servingSize': '1片',
-        'servingSizeGram': 100,
-        'calories': 208,
-        'protein': 20.0,
-        'carbs': 0.0,
-        'fat': 13.4,
-        // ✅ 詳細營養素
-        'saturatedFat': 3.1,
-        'transFat': 0.0,
-        'fiber': 0.0,
-        'sugar': 0.0,
-        'sodium': 59.0,
-        'cholesterol': 55.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '豆腐',
-        'category': '蛋白質',
-        'servingSize': '1塊',
-        'servingSizeGram': 100,
-        'calories': 76,
-        'protein': 8.1,
-        'carbs': 1.9,
-        'fat': 4.8,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.7,
-        'transFat': 0.0,
-        'fiber': 0.3,
-        'sugar': 0.6,
-        'sodium': 7.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '牛肉',
-        'category': '蛋白質',
-        'servingSize': '1份',
-        'servingSizeGram': 100,
-        'calories': 250,
-        'protein': 26.0,
-        'carbs': 0.0,
-        'fat': 15.0,
-        // ✅ 詳細營養素
-        'saturatedFat': 6.0,
-        'transFat': 0.7,
-        'fiber': 0.0,
-        'sugar': 0.0,
-        'sodium': 72.0,
-        'cholesterol': 90.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-
-      // ========== 蔬菜類 ==========
-      {
-        'name': '花椰菜',
-        'category': '蔬菜',
-        'servingSize': '1碗',
-        'servingSizeGram': 100,
-        'calories': 34,
-        'protein': 2.8,
-        'carbs': 6.6,
-        'fat': 0.4,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.1,
-        'transFat': 0.0,
-        'fiber': 2.6,
-        'sugar': 1.7,
-        'sodium': 33.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '菠菜',
-        'category': '蔬菜',
-        'servingSize': '1碗',
-        'servingSizeGram': 100,
-        'calories': 23,
-        'protein': 2.9,
-        'carbs': 3.6,
-        'fat': 0.4,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.1,
-        'transFat': 0.0,
-        'fiber': 2.2,
-        'sugar': 0.4,
-        'sodium': 79.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-
-      // ========== 水果類 ==========
-      {
-        'name': '香蕉',
-        'category': '水果',
-        'servingSize': '1根',
-        'servingSizeGram': 100,
-        'calories': 89,
-        'protein': 1.1,
-        'carbs': 22.8,
-        'fat': 0.3,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.1,
-        'transFat': 0.0,
-        'fiber': 2.6,
-        'sugar': 12.2,
-        'sodium': 1.0,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-      {
-        'name': '蘋果',
-        'category': '水果',
-        'servingSize': '1顆',
-        'servingSizeGram': 150,
-        'calories': 78,
-        'protein': 0.4,
-        'carbs': 20.8,
-        'fat': 0.3,
-        // ✅ 詳細營養素
-        'saturatedFat': 0.1,
-        'transFat': 0.0,
-        'fiber': 3.6,
-        'sugar': 15.6,
-        'sodium': 1.5,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-
-      // ========== 堅果類 ==========
-      {
-        'name': '杏仁',
-        'category': '堅果',
-        'servingSize': '1把',
-        'servingSizeGram': 30,
-        'calories': 173,
-        'protein': 6.3,
-        'carbs': 6.1,
-        'fat': 14.9,
-        // ✅ 詳細營養素
-        'saturatedFat': 1.1,
-        'transFat': 0.0,
-        'fiber': 3.5,
-        'sugar': 1.2,
-        'sodium': 0.3,
-        'cholesterol': 0.0,
-        'isPublic': true,
-        'createdBy': 'system',
-      },
-    ];
-
-    // 批次寫入
-    WriteBatch batch = _firestore.batch();
-    for (var food in basicFoods) {
-      DocumentReference docRef = _firestore.collection('foods').doc();
-      batch.set(docRef, {
-        ...food,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-
-    await batch.commit();
-    print('✅ 食物資料庫初始化完成！共新增 ${basicFoods.length} 項食物');
-  }
-
-  /// 搜尋食物（所有人共用）
-  Future<List<Map<String, dynamic>>> searchFoods(String query) async {
-    if (query.isEmpty) return [];
-
-    QuerySnapshot snapshot = await _firestore
-        .collection('foods')
-        .where('isPublic', isEqualTo: true)
-        .orderBy('name')
-        .startAt([query])
-        .endAt(['$query\uf8ff'])
-        .limit(20)
-        .get();
-
-    return snapshot.docs.map((doc) {
-      return {
-        'id': doc.id,
-        ...doc.data() as Map<String, dynamic>,
-      };
-    }).toList();
-  }
-
-  /// 獲取所有食物（分類）
-  Future<Map<String, List<Map<String, dynamic>>>> getAllFoodsByCategory() async {
-    QuerySnapshot snapshot = await _firestore
-        .collection('foods')
-        .where('isPublic', isEqualTo: true)
-        .orderBy('category')
-        .orderBy('name')
-        .get();
-
-    Map<String, List<Map<String, dynamic>>> foodsByCategory = {};
-
-    for (var doc in snapshot.docs) {
-      Map<String, dynamic> food = {
-        'id': doc.id,
-        ...doc.data() as Map<String, dynamic>,
-      };
-      String category = food['category'] ?? '其他';
-
-      if (!foodsByCategory.containsKey(category)) {
-        foodsByCategory[category] = [];
+  /// ✅ 獲取所有食物 - 修復版(移除 isPublic 限制 + 優雅處理 customFoods 錯誤)
+  Future<List<Map<String, dynamic>>> getAllFoods() async {
+    try {
+      if (kDebugMode) {
+        print('🔍 開始獲取所有食物...');
       }
-      foodsByCategory[category]!.add(food);
-    }
 
-    return foodsByCategory;
+      // ✅ 移除 isPublic 限制,因為 JSON 導入的資料沒有這個欄位
+      QuerySnapshot snapshot = await _firestore
+          .collection('foods')
+          .orderBy('name')
+          .limit(500)
+          .get();
+
+      if (kDebugMode) {
+        print('📊 從 Firestore 獲取到 ${snapshot.docs.length} 筆食物');
+      }
+
+      List<Map<String, dynamic>> allFoods = snapshot.docs.map((doc) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
+      // ✅ 如果使用者已登入,嘗試獲取使用者的自訂食物 (但不強制)
+      if (_auth.currentUser != null) {
+        String userId = _auth.currentUser!.uid;
+        
+        try {
+          // ✅ 嘗試讀取自訂食物
+          QuerySnapshot customSnapshot = await _firestore
+              .collection('users')
+              .doc(userId)
+              .collection('customFoods')
+              .orderBy('name')
+              .get();
+
+          if (kDebugMode) {
+            print('👤 使用者自訂食物: ${customSnapshot.docs.length} 筆');
+          }
+
+          List<Map<String, dynamic>> customFoods = customSnapshot.docs.map((doc) {
+            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+            data['id'] = doc.id;
+            data['isCustom'] = true;
+            return data;
+          }).toList();
+
+          allFoods.addAll(customFoods);
+          
+        } catch (e) {
+          // ✅ 關鍵修改: 如果讀取 customFoods 失敗,只記錄警告,不影響主功能
+          if (kDebugMode) {
+            print('⚠️ 無法讀取自訂食物 (可能是權限問題): $e');
+            print('   → 繼續使用系統食物 (${allFoods.length} 筆)');
+          }
+          // ✅ 不拋出異常,繼續執行
+        }
+      }
+
+      if (kDebugMode) {
+        print('✅ getAllFoods 成功: 共 ${allFoods.length} 項食物');
+        if (allFoods.isNotEmpty) {
+          print('📝 範例食物: ${allFoods.first['name']} (${allFoods.first['category']})');
+        }
+      }
+      
+      return allFoods;
+      
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取所有食物失敗: $e');
+        debugPrint('Stack trace: ${StackTrace.current}');
+      }
+      return [];
+    }
   }
 
-  /// 新增自訂食物（使用者可以新增到共用資料庫）
-  /// ✅ 現在支援完整營養素
+  /// ✅ 搜尋食物 - 修復版(支援中文模糊搜尋)
+  Future<List<Map<String, dynamic>>> searchFoods(String query) async {
+    try {
+      // 1️⃣ 先獲取所有食物
+      List<Map<String, dynamic>> allFoods = await getAllFoods();
+      
+      if (kDebugMode) {
+        print('🔍 搜尋: "$query", 資料庫共 ${allFoods.length} 項食物');
+      }
+
+      // 2️⃣ 如果沒有輸入關鍵字,返回所有食物
+      if (query.isEmpty || query.trim().isEmpty) {
+        if (kDebugMode) {
+          print('✅ 返回所有 ${allFoods.length} 項食物');
+        }
+        return allFoods;
+      }
+
+      // 3️⃣ 客戶端模糊搜尋 (支援中文)
+      String lowerQuery = query.toLowerCase().trim();
+      
+      List<Map<String, dynamic>> results = allFoods.where((food) {
+        String foodName = (food['name'] ?? '').toString().toLowerCase();
+        String category = (food['category'] ?? '').toString().toLowerCase();
+        
+        // 搜尋名稱或分類包含關鍵字
+        return foodName.contains(lowerQuery) || 
+               category.contains(lowerQuery);
+      }).toList();
+
+      if (kDebugMode) {
+        print('✅ 找到 ${results.length} 項符合 "$query" 的食物');
+        if (results.isNotEmpty) {
+          print('📝 範例結果: ${results.first['name']}');
+        }
+      }
+      
+      return results;
+      
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 搜尋食物失敗: $e');
+      }
+      return [];
+    }
+  }
+
+  /// 獲取所有食物(分類)
+  Future<Map<String, List<Map<String, dynamic>>>> getAllFoodsByCategory() async {
+    try {
+      List<Map<String, dynamic>> allFoods = await getAllFoods();
+      
+      Map<String, List<Map<String, dynamic>>> foodsByCategory = {};
+
+      for (var food in allFoods) {
+        String category = food['category'] ?? '其他';
+
+        if (!foodsByCategory.containsKey(category)) {
+          foodsByCategory[category] = [];
+        }
+        foodsByCategory[category]!.add(food);
+      }
+
+      if (kDebugMode) {
+        print('📂 共 ${foodsByCategory.length} 個分類');
+        foodsByCategory.forEach((category, foods) {
+          print('  - $category: ${foods.length} 項');
+        });
+      }
+
+      return foodsByCategory;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取分類失敗: $e');
+      }
+      return {};
+    }
+  }
+
+  /// 新增自訂食物
   Future<void> addCustomFood({
     required String name,
     required String category,
@@ -371,14 +176,13 @@ class FoodDatabaseService {
     required double protein,
     required double carbs,
     required double fat,
-    // ✅ 詳細營養素 (選填)
     double saturatedFat = 0,
     double transFat = 0,
     double fiber = 0,
     double sugar = 0,
     double sodium = 0,
     double cholesterol = 0,
-    bool isPublic = false, // 預設為私人食物
+    bool isPublic = false,
   }) async {
     String userId = _auth.currentUser!.uid;
 
@@ -391,7 +195,6 @@ class FoodDatabaseService {
       'protein': protein,
       'carbs': carbs,
       'fat': fat,
-      // ✅ 詳細營養素
       'saturatedFat': saturatedFat,
       'transFat': transFat,
       'fiber': fiber,
@@ -402,39 +205,132 @@ class FoodDatabaseService {
       'createdBy': userId,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    if (kDebugMode) {
+      print('✅ 新增自訂食物: $name');
+    }
   }
 
   /// 獲取食物詳細資訊
   Future<Map<String, dynamic>?> getFoodById(String foodId) async {
-    DocumentSnapshot doc = await _firestore
-        .collection('foods')
-        .doc(foodId)
-        .get();
+    try {
+      DocumentSnapshot doc = await _firestore
+          .collection('foods')
+          .doc(foodId)
+          .get();
 
-    if (doc.exists) {
-      return {
-        'id': doc.id,
-        ...doc.data() as Map<String, dynamic>,
-      };
+      if (doc.exists) {
+        return {
+          'id': doc.id,
+          ...doc.data() as Map<String, dynamic>,
+        };
+      }
+      return null;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取食物詳情失敗: $e');
+      }
+      return null;
     }
-    return null;
   }
 
   /// 獲取我的自訂食物
   Future<List<Map<String, dynamic>>> getMyCustomFoods() async {
-    String userId = _auth.currentUser!.uid;
+    try {
+      String userId = _auth.currentUser!.uid;
 
-    QuerySnapshot snapshot = await _firestore
-        .collection('foods')
-        .where('createdBy', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
-        .get();
+      QuerySnapshot snapshot = await _firestore
+          .collection('foods')
+          .where('createdBy', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
 
-    return snapshot.docs.map((doc) {
-      return {
-        'id': doc.id,
-        ...doc.data() as Map<String, dynamic>,
-      };
-    }).toList();
+      return snapshot.docs.map((doc) {
+        return {
+          'id': doc.id,
+          ...doc.data() as Map<String, dynamic>,
+        };
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取自訂食物失敗: $e');
+      }
+      return [];
+    }
+  }
+
+  /// ✅ 初始化基礎食物資料庫(只需執行一次)
+  /// 注意: 如果你使用 JSON 導入,就不需要這個方法
+  Future<void> initializeFoodDatabase() async {
+    try {
+      // 檢查是否已經初始化過
+      QuerySnapshot existing = await _firestore.collection('foods').limit(1).get();
+      if (existing.docs.isNotEmpty) {
+        if (kDebugMode) {
+          print('⚠️ 食物資料庫已存在,跳過初始化');
+        }
+        return;
+      }
+
+      if (kDebugMode) {
+        print('🚀 開始初始化食物資料庫...');
+      }
+
+      List<Map<String, dynamic>> basicFoods = [
+        {
+          'name': '白飯',
+          'category': '中式主食',
+          'servingSize': '1碗',
+          'servingSizeGram': 200,
+          'calories': 280,
+          'protein': 5.2,
+          'carbs': 62.0,
+          'fat': 0.6,
+          'saturatedFat': 0.2,
+          'transFat': 0.0,
+          'fiber': 0.6,
+          'sugar': 0.1,
+          'sodium': 2.0,
+          'cholesterol': 0.0,
+          'createdBy': 'system',
+        },
+        {
+          'name': '雞胸肉',
+          'category': '蛋白質',
+          'servingSize': '1份',
+          'servingSizeGram': 100,
+          'calories': 165,
+          'protein': 31.0,
+          'carbs': 0.0,
+          'fat': 3.6,
+          'saturatedFat': 1.0,
+          'transFat': 0.0,
+          'fiber': 0.0,
+          'sugar': 0.0,
+          'sodium': 74.0,
+          'cholesterol': 85.0,
+          'createdBy': 'system',
+        },
+      ];
+
+      WriteBatch batch = _firestore.batch();
+      for (var food in basicFoods) {
+        DocumentReference docRef = _firestore.collection('foods').doc();
+        batch.set(docRef, {
+          ...food,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      
+      if (kDebugMode) {
+        print('✅ 食物資料庫初始化完成!共新增 ${basicFoods.length} 項食物');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 初始化失敗: $e');
+      }
+    }
   }
 }

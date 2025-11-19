@@ -1,6 +1,6 @@
 // lib/pages/nutrition/food_search_page.dart
 // Soft UI 風格的食物搜尋頁面 - 四按鈕版本
-// 保留原有搜尋功能,新增四大記錄方式
+// ✅ 已連接手動記錄功能
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,7 +8,7 @@ import '../../services/food_database_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
 import 'add_nutrition_log_page.dart';
-import 'manual_nutrition_log_page.dart'; // ✅ 新增導入
+import 'manual_nutrition_log_page.dart'; // ✅ 導入手動記錄頁面
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -262,7 +262,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
-          const SizedBox(height: 16), // ✅ 搜尋欄下方增加間距
+          const SizedBox(height: 16),
           
           // 四大功能按鈕
           _buildFunctionButtons()
@@ -298,9 +298,9 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 icon: Icons.edit_note,
                 title: '手動記錄',
                 color: const Color(0xFFFA709A),
-                onTap: () {
-                  // ✅ 導航到手動記錄頁面
-                  Navigator.push(
+                onTap: () async {
+                  // ✅ 修復: 導航到手動記錄頁面
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => const ManualNutritionLogPage(),
@@ -815,6 +815,111 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ✅ MealTypeChip Widget (供 add_nutrition_log_page.dart 使用)
+class MealTypeChip extends StatelessWidget {
+  final String mealType;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const MealTypeChip({
+    super.key,
+    required this.mealType,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.getMealColor(mealType) : AppColors.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected 
+                ? AppColors.getMealColor(mealType) 
+                : AppColors.divider,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              AppColors.getMealEmoji(mealType),
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ✅ SoftCircleButton Widget (供 add_nutrition_log_page.dart 使用)
+class SoftCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color color;
+
+  const SoftCircleButton({
+    super.key,
+    required this.icon,
+    this.onPressed,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isEnabled = onPressed != null;
+    
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          shape: BoxShape.circle,
+          boxShadow: isEnabled
+              ? [
+                  BoxShadow(
+                    color: AppColors.shadowDark,
+                    offset: const Offset(4, 4),
+                    blurRadius: 8,
+                  ),
+                  BoxShadow(
+                    color: AppColors.shadowLight,
+                    offset: const Offset(-4, -4),
+                    blurRadius: 8,
+                  ),
+                ]
+              : null,
+        ),
+        child: Icon(
+          icon,
+          color: isEnabled ? color : AppColors.textTertiary,
+          size: 24,
         ),
       ),
     );

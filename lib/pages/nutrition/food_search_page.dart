@@ -1,6 +1,7 @@
 // lib/pages/nutrition/food_search_page.dart
 // Soft UI 風格的食物搜尋頁面 - 四按鈕版本
 // ✅ 已連接手動記錄功能
+// ✅ 已連接我的組合功能
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -10,6 +11,7 @@ import '../../widgets/nutrition/soft_card.dart';
 import 'add_nutrition_log_page.dart';
 import 'manual_nutrition_log_page.dart'; // ✅ 導入手動記錄頁面
 import 'my_foods_page.dart';
+import 'my_combos_page.dart'; // ✅ 導入我的組合頁面
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -300,7 +302,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '手動記錄',
                 color: const Color(0xFFFA709A),
                 onTap: () async {
-                  // ✅ 修復: 導航到手動記錄頁面
+                  // ✅ 導航到手動記錄頁面
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -341,7 +343,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '我的食物',
                 color: const Color(0xFFFEAC5E),
                 onTap: () async {
-                  // 導航到我的食物頁面
+                  // ✅ 導航到我的食物頁面
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -357,12 +359,12 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 icon: Icons.add_box,
                 title: '我的組合',
                 color: const Color(0xFF4FACFE),
-                onTap: () {
-                  // TODO: 導航到我的組合頁面
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('我的組合功能開發中...'),
-                      backgroundColor: AppColors.info,
+                onTap: () async {
+                  // ✅ 修正: 導航到我的組合頁面
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MyCombosPage(),
                     ),
                   );
                 },

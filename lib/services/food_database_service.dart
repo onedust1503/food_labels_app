@@ -1,5 +1,6 @@
 // lib/services/food_database_service.dart
 // 食物資料庫服務 - 完整版 (支援 JSON 導入 + 自訂食物管理)
+// ✨ 優化版: 增加緩存機制、批次查詢、更好的錯誤處理
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,12 +9,28 @@ import 'package:flutter/foundation.dart';
 class FoodDatabaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  
+  // 🎯 緩存機制 (避免重複查詢)
+  List<Map<String, dynamic>>? _cachedFoods;
+  DateTime? _lastFetchTime;
+  static const Duration _cacheExpiry = Duration(minutes: 5);
 
   // ========== 食物資料庫查詢 ==========
 
-  /// ✅ 獲取所有食物 (系統 + 自訂)
-  Future<List<Map<String, dynamic>>> getAllFoods() async {
+  /// ✅ 獲取所有食物 (系統 + 自訂) - 帶緩存
+  Future<List<Map<String, dynamic>>> getAllFoods({bool forceRefresh = false}) async {
     try {
+      // 檢查緩存是否有效
+      if (!forceRefresh && 
+          _cachedFoods != null && 
+          _lastFetchTime != null &&
+          DateTime.now().difference(_lastFetchTime!) < _cacheExpiry) {
+        if (kDebugMode) {
+          print('✅ 使用緩存資料 (${_cachedFoods!.length} 項)');
+        }
+        return _cachedFoods!;
+      }
+
       if (kDebugMode) {
         print('🔍 開始獲取所有食物...');
       }
@@ -32,6 +49,7 @@ class FoodDatabaseService {
       List<Map<String, dynamic>> allFoods = snapshot.docs.map((doc) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
+        data['isCustom'] = false; // 明確標記為系統食物
         return data;
       }).toList();
 
@@ -67,8 +85,12 @@ class FoodDatabaseService {
         }
       }
 
+      // 更新緩存
+      _cachedFoods = allFoods;
+      _lastFetchTime = DateTime.now();
+
       if (kDebugMode) {
-        print('✅ getAllFoods 成功: 共 ${allFoods.length} 項食物');
+        print('✅ getAllFoods 成功: 共 ${allFoods.length} 項食物 (已緩存)');
       }
       
       return allFoods;
@@ -76,6 +98,22 @@ class FoodDatabaseService {
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 獲取所有食物失敗: $e');
+      }
+      return _cachedFoods ?? []; // 如果有緩存就返回緩存
+    }
+  }
+
+  /// 🆕 批次獲取多個食物 (用於組合功能)
+  Future<List<Map<String, dynamic>>> getFoodsByIds(List<String> foodIds) async {
+    if (foodIds.isEmpty) return [];
+
+    try {
+      List<Map<String, dynamic>> allFoods = await getAllFoods();
+      
+      return allFoods.where((food) => foodIds.contains(food['id'])).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 批次獲取食物失敗: $e');
       }
       return [];
     }
@@ -118,6 +156,59 @@ class FoodDatabaseService {
     }
   }
 
+  /// 🆕 進階搜尋 (支援營養素範圍篩選)
+  Future<List<Map<String, dynamic>>> searchFoodsAdvanced({
+    String? nameQuery,
+    String? category,
+    double? minCalories,
+    double? maxCalories,
+    double? minProtein,
+  }) async {
+    try {
+      List<Map<String, dynamic>> allFoods = await getAllFoods();
+      
+      return allFoods.where((food) {
+        // 名稱篩選
+        if (nameQuery != null && nameQuery.isNotEmpty) {
+          String foodName = (food['name'] ?? '').toString().toLowerCase();
+          if (!foodName.contains(nameQuery.toLowerCase())) {
+            return false;
+          }
+        }
+        
+        // 分類篩選
+        if (category != null && category.isNotEmpty) {
+          if (food['category'] != category) {
+            return false;
+          }
+        }
+        
+        // 熱量範圍
+        if (minCalories != null) {
+          double calories = (food['calories'] ?? 0).toDouble();
+          if (calories < minCalories) return false;
+        }
+        if (maxCalories != null) {
+          double calories = (food['calories'] ?? 0).toDouble();
+          if (calories > maxCalories) return false;
+        }
+        
+        // 蛋白質最低值
+        if (minProtein != null) {
+          double protein = (food['protein'] ?? 0).toDouble();
+          if (protein < minProtein) return false;
+        }
+        
+        return true;
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 進階搜尋失敗: $e');
+      }
+      return [];
+    }
+  }
+
   /// 獲取所有食物(分類)
   Future<Map<String, List<Map<String, dynamic>>>> getAllFoodsByCategory() async {
     try {
@@ -150,6 +241,15 @@ class FoodDatabaseService {
   /// 獲取食物詳細資訊
   Future<Map<String, dynamic>?> getFoodById(String foodId) async {
     try {
+      // 先嘗試從緩存中找
+      if (_cachedFoods != null) {
+        try {
+          return _cachedFoods!.firstWhere((food) => food['id'] == foodId);
+        } catch (e) {
+          // 緩存中找不到,繼續從資料庫查
+        }
+      }
+
       // 先嘗試系統食物
       DocumentSnapshot doc = await _firestore
           .collection('foods')
@@ -159,6 +259,7 @@ class FoodDatabaseService {
       if (doc.exists) {
         return {
           'id': doc.id,
+          'isCustom': false,
           ...doc.data() as Map<String, dynamic>,
         };
       }
@@ -187,6 +288,15 @@ class FoodDatabaseService {
         debugPrint('❌ 獲取食物詳情失敗: $e');
       }
       return null;
+    }
+  }
+
+  /// 🆕 清除緩存 (當新增/刪除食物時呼叫)
+  void clearCache() {
+    _cachedFoods = null;
+    _lastFetchTime = null;
+    if (kDebugMode) {
+      print('🗑️ 已清除食物緩存');
     }
   }
 
@@ -231,6 +341,9 @@ class FoodDatabaseService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    // 清除緩存,下次會重新載入
+    clearCache();
 
     if (kDebugMode) {
       print('✅ 新增自訂食物: $name (ID: ${docRef.id})');
@@ -332,6 +445,9 @@ class FoodDatabaseService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
+    // 清除緩存
+    clearCache();
+
     if (kDebugMode) {
       print('✅ 更新自訂食物: $name');
     }
@@ -347,6 +463,9 @@ class FoodDatabaseService {
         .collection('customFoods')
         .doc(foodId)
         .delete();
+
+    // 清除緩存
+    clearCache();
 
     if (kDebugMode) {
       print('✅ 刪除自訂食物: $foodId');
@@ -377,6 +496,58 @@ class FoodDatabaseService {
         debugPrint('❌ 獲取自訂食物詳情失敗: $e');
       }
       return null;
+    }
+  }
+
+  /// 🆕 檢查食物名稱是否重複
+  Future<bool> isFoodNameDuplicate(String name, {String? excludeFoodId}) async {
+    try {
+      List<Map<String, dynamic>> allFoods = await getAllFoods();
+      
+      return allFoods.any((food) {
+        if (excludeFoodId != null && food['id'] == excludeFoodId) {
+          return false; // 排除正在編輯的食物本身
+        }
+        return (food['name'] ?? '').toString().toLowerCase() == name.toLowerCase();
+      });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// 🆕 獲取最近使用的食物 (從組合功能中統計)
+  Future<List<Map<String, dynamic>>> getRecentlyUsedFoods({int limit = 10}) async {
+    // 這個方法可以配合組合功能,統計最常用的食物
+    // 目前先返回所有食物,之後可以加入使用頻率統計
+    List<Map<String, dynamic>> allFoods = await getAllFoods();
+    return allFoods.take(limit).toList();
+  }
+
+  // ========== 統計功能 ==========
+
+  /// 🆕 獲取食物資料庫統計
+  Future<Map<String, int>> getFoodStats() async {
+    try {
+      List<Map<String, dynamic>> allFoods = await getAllFoods();
+      
+      int systemFoods = allFoods.where((f) => f['isCustom'] == false).length;
+      int customFoods = allFoods.where((f) => f['isCustom'] == true).length;
+      
+      Map<String, List<Map<String, dynamic>>> byCategory = await getAllFoodsByCategory();
+      
+      return {
+        'total': allFoods.length,
+        'system': systemFoods,
+        'custom': customFoods,
+        'categories': byCategory.length,
+      };
+    } catch (e) {
+      return {
+        'total': 0,
+        'system': 0,
+        'custom': 0,
+        'categories': 0,
+      };
     }
   }
 
@@ -431,6 +602,9 @@ class FoodDatabaseService {
       }
 
       await batch.commit();
+      
+      // 清除緩存
+      clearCache();
       
       if (kDebugMode) {
         print('✅ 食物資料庫初始化完成!');

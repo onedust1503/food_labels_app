@@ -1,5 +1,5 @@
 // lib/services/nutrition_service.dart
-// 飲食記錄服務層 - 完整版本（支援詳細營養素 + 快速新增）
+// 飲食記錄服務層 - 完整版本(支援詳細營養素 + 快速新增 + 組合標記)
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,7 +12,7 @@ class NutritionService {
 
   // ========== 核心功能 ==========
 
-  /// 新增飲食記錄（從食物資料庫選擇）
+  /// 新增飲食記錄(從食物資料庫選擇)
   Future<void> addFoodLog({
     required Map<String, dynamic> foodData,
     required double servings,
@@ -72,12 +72,12 @@ class NutritionService {
     });
   }
 
-  /// 🆕 快速新增飲食記錄（手動輸入/OCR掃描）
+  /// 🆕 快速新增飲食記錄(手動輸入/OCR掃描)
   /// 
   /// 使用場景:
   /// - 手動輸入營養素
   /// - OCR 掃描食品標籤
-  /// - 一次性食物記錄（不加入食物庫）
+  /// - 一次性食物記錄(不加入食物庫)
   /// 
   /// 所有營養素都是「每份」的數值,會自動乘以份數計算總量
   Future<void> addQuickLog({
@@ -150,6 +150,71 @@ class NutritionService {
     });
 
     print('✅ 快速新增成功: $foodName (${servings} ${servingSize})');
+  }
+
+  /// 🆕 記錄食物 (帶組合標記)
+  /// 用於從組合記錄食物時,標記來源組合
+  Future<void> addFoodLogWithComboTag({
+    required Map<String, dynamic> foodData,
+    required double servings,
+    required String mealType,
+    required String comboId,
+    required String comboName,
+    required Timestamp timestamp, // 使用統一的時間戳
+  }) async {
+    try {
+      String userId = _auth.currentUser!.uid;
+      String today = DateTime.now().toIso8601String().split('T')[0];
+
+      // 計算營養素
+      double calories = (foodData['calories'] ?? 0) * servings;
+      double protein = (foodData['protein'] ?? 0) * servings;
+      double carbs = (foodData['carbs'] ?? 0) * servings;
+      double fat = (foodData['fat'] ?? 0) * servings;
+
+      // 🆕 新增到 nutritionLogs,並加入組合標記
+      await _firestore.collection(Collections.nutritionLogs).add({
+        'userId': userId,
+        'date': today,
+        'mealType': mealType,
+        'foodId': foodData['id'],
+        'foodName': foodData['name'],
+        'servingSize': foodData['servingSize'],
+        'servings': servings,
+        'calories': calories,
+        'protein': protein,
+        'carbs': carbs,
+        'fat': fat,
+        'saturatedFat': (foodData['saturatedFat'] ?? 0) * servings,
+        'transFat': (foodData['transFat'] ?? 0) * servings,
+        'fiber': (foodData['fiber'] ?? 0) * servings,
+        'sugar': (foodData['sugar'] ?? 0) * servings,
+        'sodium': (foodData['sodium'] ?? 0) * servings,
+        'cholesterol': (foodData['cholesterol'] ?? 0) * servings,
+        
+        // ✨ 組合標記 (新增欄位)
+        'isFromCombo': true,
+        'comboId': comboId,
+        'comboName': comboName,
+        
+        'recordMethod': 'combo', // 標記為組合記錄
+        'createdAt': timestamp, // 使用傳入的統一時間戳
+        'updatedAt': timestamp,
+      });
+
+      // 更新每日總計
+      await _updateDailySummary(userId, today, {
+        'calories': calories,
+        'protein': protein,
+        'carbs': carbs,
+        'fat': fat,
+      });
+
+      print('✅ 記錄食物 (來自組合: $comboName): ${foodData['name']}');
+    } catch (e) {
+      print('❌ 記錄食物失敗: $e');
+      rethrow;
+    }
   }
 
   /// 更新每日總計
@@ -225,7 +290,7 @@ class NutritionService {
     };
   }
 
-  /// 獲取今日飲食記錄（Map 版本）
+  /// 獲取今日飲食記錄(Map 版本)
   Future<List<Map<String, dynamic>>> getTodayLogs() async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -245,9 +310,9 @@ class NutritionService {
     }).toList();
   }
 
-  // ========== 型別安全版本（使用模型）==========
+  // ========== 型別安全版本(使用模型)==========
 
-  /// 獲取今日飲食記錄（返回模型）
+  /// 獲取今日飲食記錄(返回模型)
   Future<List<NutritionLog>> getTodayLogsTyped() async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -264,7 +329,7 @@ class NutritionService {
         .toList();
   }
 
-  /// 獲取今日飲食記錄（即時串流）
+  /// 獲取今日飲食記錄(即時串流)
   Stream<List<NutritionLog>> getTodayLogsStream() {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -282,7 +347,7 @@ class NutritionService {
         });
   }
 
-  /// 獲取使用者的所有記錄（即時串流）
+  /// 獲取使用者的所有記錄(即時串流)
   Stream<List<NutritionLog>> getUserLogsStream(String userId) {
     return _firestore
         .collection(Collections.nutritionLogs)
@@ -335,7 +400,7 @@ class NutritionService {
 
   // ========== 記錄管理 ==========
 
-  /// 刪除記錄（會更新 dailySummary）
+  /// 刪除記錄(會更新 dailySummary)
   Future<void> deleteLog(String logId) async {
     try {
       // 先獲取記錄資料
@@ -362,7 +427,7 @@ class NutritionService {
           .doc(logId)
           .delete();
 
-      // 更新每日總計（扣除）
+      // 更新每日總計(扣除)
       await _updateDailySummary(userId, date, {
         'calories': -calories,
         'protein': -protein,
@@ -394,7 +459,7 @@ class NutritionService {
 
   // ========== 統計查詢 ==========
 
-  /// 計算某天的總熱量（從 nutritionLogs 計算）
+  /// 計算某天的總熱量(從 nutritionLogs 計算)
   Future<int> getTotalCaloriesForDate(String userId, String date) async {
     try {
       final snapshot = await _firestore
@@ -414,7 +479,7 @@ class NutritionService {
     }
   }
 
-  /// 獲取特定日期的營養總計（從 dailySummary）
+  /// 獲取特定日期的營養總計(從 dailySummary)
   Future<Map<String, dynamic>> getNutritionForDate(String userId, String date) async {
     try {
       DocumentSnapshot doc = await _firestore

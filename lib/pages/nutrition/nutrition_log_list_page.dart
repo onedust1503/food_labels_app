@@ -1,5 +1,5 @@
 // lib/pages/nutrition/nutrition_log_list_page.dart
-// Soft UI 風格的今日飲食記錄列表頁面 - 新增分析標籤頁
+// Soft UI 風格的今日飲食記錄列表頁面 - 新增分析標籤頁 + 組合標籤
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -615,6 +615,10 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     String docId = doc.id;
     bool isExpanded = _expandedCards.contains(docId);
     
+    // 🆕 檢查是否來自組合
+    bool isFromCombo = data['isFromCombo'] ?? false;
+    String? comboName = data['comboName'];
+    
     String foodName = data['foodName'] ?? '未知食物';
     double servings = (data['servings'] ?? 1).toDouble();
     String servingSize = data['servingSize'] ?? '份';
@@ -668,6 +672,38 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                             ),
                           ),
                         ),
+                        // 🆕 組合標籤
+                        if (isFromCombo && comboName != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFF4FACFE).withOpacity(0.8),
+                                  Color(0xFF00F2FE),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.restaurant_menu, size: 12, color: Colors.white),
+                                SizedBox(width: 4),
+                                Text(
+                                  comboName,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 8),
                         Text(
                           timeStr,
                           style: const TextStyle(

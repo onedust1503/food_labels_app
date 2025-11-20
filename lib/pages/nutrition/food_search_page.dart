@@ -9,6 +9,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
 import 'add_nutrition_log_page.dart';
 import 'manual_nutrition_log_page.dart'; // ✅ 導入手動記錄頁面
+import 'my_foods_page.dart';
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -339,12 +340,12 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 icon: Icons.restaurant_menu,
                 title: '我的食物',
                 color: const Color(0xFFFEAC5E),
-                onTap: () {
-                  // TODO: 導航到我的食物頁面
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('我的食物功能開發中...'),
-                      backgroundColor: AppColors.info,
+                onTap: () async {
+                  // 導航到我的食物頁面
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MyFoodsPage(),
                     ),
                   );
                 },

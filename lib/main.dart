@@ -266,7 +266,7 @@ class AuthWrapper extends StatelessWidget {
 
       return !hasDisplayName || !hasSpecialties;
     }
-
+ 
     // 未知角色，需要設定
     return true;
   }

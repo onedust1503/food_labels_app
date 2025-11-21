@@ -2,6 +2,7 @@
 // Soft UI 風格的食物搜尋頁面 - 四按鈕版本
 // ✅ 已連接手動記錄功能
 // ✅ 已連接我的組合功能
+// ✨ v2.0: 已連接我的最愛 + 搜尋結果加愛心
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -9,9 +10,10 @@ import '../../services/food_database_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
 import 'add_nutrition_log_page.dart';
-import 'manual_nutrition_log_page.dart'; // ✅ 導入手動記錄頁面
+import 'manual_nutrition_log_page.dart';
 import 'my_foods_page.dart';
-import 'my_combos_page.dart'; // ✅ 導入我的組合頁面
+import 'my_combos_page.dart';
+import 'my_favorites_page.dart'; // ✨ 新增
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -28,6 +30,9 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
   bool _isSearching = false;
   String? _selectedCategory;
   bool _showSearchResults = false;
+  
+  // ✨ 最愛狀態緩存
+  Map<String, bool> _favoriteStatus = {};
 
   @override
   void dispose() {
@@ -54,6 +59,9 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
         _searchResults = filtered;
         _isSearching = false;
       });
+      
+      // ✨ 載入最愛狀態
+      _loadFavoriteStatus(filtered);
     }).catchError((e) {
       setState(() => _isSearching = false);
       if (mounted) {
@@ -70,6 +78,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
         _isSearching = false;
         _selectedCategory = null;
         _showSearchResults = false;
+        _favoriteStatus = {};
       });
       return;
     }
@@ -86,11 +95,97 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
         _searchResults = results;
         _isSearching = false;
       });
+      
+      // ✨ 載入最愛狀態
+      _loadFavoriteStatus(results);
     } catch (e) {
       setState(() => _isSearching = false);
       if (mounted) {
         _showErrorSnackBar('搜尋失敗: $e');
       }
+    }
+  }
+
+  /// ✨ 載入搜尋結果的最愛狀態
+  Future<void> _loadFavoriteStatus(List<Map<String, dynamic>> foods) async {
+    Map<String, bool> status = {};
+    
+    for (var food in foods) {
+      String id = food['id'] ?? '';
+      String type = (food['isCustom'] == true) ? 'custom' : 'food';
+      String key = '${type}_$id';
+      
+      bool isFav = await _foodService.isFavorite(refId: id, type: type);
+      status[key] = isFav;
+    }
+    
+    if (mounted) {
+      setState(() {
+        _favoriteStatus = status;
+      });
+    }
+  }
+
+  /// ✨ 切換最愛狀態
+  Future<void> _toggleFavorite(Map<String, dynamic> food) async {
+    String id = food['id'] ?? '';
+    String type = (food['isCustom'] == true) ? 'custom' : 'food';
+    String key = '${type}_$id';
+    String name = food['name'] ?? '';
+    double calories = (food['calories'] ?? 0).toDouble();
+    String servingSize = food['servingSize'] ?? '份';
+    
+    bool currentStatus = _favoriteStatus[key] ?? false;
+    
+    // 先更新 UI
+    setState(() {
+      _favoriteStatus[key] = !currentStatus;
+    });
+    
+    try {
+      bool newStatus = await _foodService.toggleFavorite(
+        refId: id,
+        type: type,
+        name: name,
+        calories: calories,
+        servingSize: servingSize,
+      );
+      
+      // 確保狀態同步
+      setState(() {
+        _favoriteStatus[key] = newStatus;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  newStatus ? Icons.favorite : Icons.favorite_border,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(newStatus ? '已加入最愛' : '已從最愛移除'),
+              ],
+            ),
+            backgroundColor: newStatus ? const Color(0xFFFF6B95) : AppColors.textSecondary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      // 恢復狀態
+      setState(() {
+        _favoriteStatus[key] = currentStatus;
+      });
+      _showErrorSnackBar('操作失敗: $e');
     }
   }
 
@@ -102,6 +197,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
       _isSearching = false;
       _selectedCategory = null;
       _showSearchResults = false;
+      _favoriteStatus = {};
     });
   }
 
@@ -302,7 +398,6 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '手動記錄',
                 color: const Color(0xFFFA709A),
                 onTap: () async {
-                  // ✅ 導航到手動記錄頁面
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -318,12 +413,12 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 icon: Icons.favorite,
                 title: '我的最愛',
                 color: const Color(0xFFFF6B95),
-                onTap: () {
-                  // TODO: 導航到我的最愛頁面
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('我的最愛功能開發中...'),
-                      backgroundColor: AppColors.info,
+                onTap: () async {
+                  // ✨ 導航到我的最愛頁面
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MyFavoritesPage(),
                     ),
                   );
                 },
@@ -343,7 +438,6 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '我的食物',
                 color: const Color(0xFFFEAC5E),
                 onTap: () async {
-                  // ✅ 導航到我的食物頁面
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -360,7 +454,6 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '我的組合',
                 color: const Color(0xFF4FACFE),
                 onTap: () async {
-                  // ✅ 修正: 導航到我的組合頁面
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -626,8 +719,13 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
     );
   }
 
-  /// 食物卡片
+  /// ✨ 食物卡片 (加愛心按鈕)
   Widget _buildFoodCard(Map<String, dynamic> food, int index) {
+    String id = food['id'] ?? '';
+    String type = (food['isCustom'] == true) ? 'custom' : 'food';
+    String key = '${type}_$id';
+    bool isFavorite = _favoriteStatus[key] ?? false;
+    
     return SoftCard(
       margin: const EdgeInsets.only(bottom: 12),
       onTap: () async {
@@ -665,13 +763,45 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  food['name'],
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        food['name'],
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // ✨ 愛心按鈕 (食物名稱右邊)
+                    GestureDetector(
+                      onTap: () => _toggleFavorite(food),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          transitionBuilder: (child, animation) {
+                            return ScaleTransition(
+                              scale: animation,
+                              child: child,
+                            );
+                          },
+                          child: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            key: ValueKey(isFavorite),
+                            size: 22,
+                            color: isFavorite 
+                                ? const Color(0xFFFF6B95) 
+                                : AppColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -709,6 +839,28 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                         color: AppColors.textSecondary,
                       ),
                     ),
+                    // ✨ 如果是自訂食物,顯示標籤
+                    if (food['isCustom'] == true) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEAC5E).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          '自訂',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFFFEAC5E),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -716,6 +868,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
           ),
           
           // 右側箭頭
+          const SizedBox(width: 8),
           Icon(
             Icons.arrow_forward_ios,
             size: 16,

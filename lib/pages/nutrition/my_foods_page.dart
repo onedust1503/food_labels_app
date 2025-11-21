@@ -1,6 +1,6 @@
 // lib/pages/nutrition/my_foods_page.dart
-// 我的食物頁面 - Soft UI 風格 (增強版 v2.0)
-// ✨ 新增: 搜尋、排序、統計、快速複製
+// 我的食物頁面 - Soft UI 風格 (增強版 v2.1)
+// ✨ 新增: 搜尋、排序、統計、快速複製、我的最愛
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -26,11 +26,98 @@ class _MyFoodsPageState extends State<MyFoodsPage> {
   
   // ✨ 搜尋關鍵字
   String _searchQuery = '';
+  
+  // ✨ 最愛狀態緩存
+  Map<String, bool> _favoriteStatus = {};
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// ✨ 載入最愛狀態
+  Future<void> _loadFavoriteStatus(List<Map<String, dynamic>> foods) async {
+    Map<String, bool> status = {};
+    
+    for (var food in foods) {
+      String id = food['id'] ?? '';
+      bool isFav = await _foodService.isFavorite(refId: id, type: 'custom');
+      status['custom_$id'] = isFav;
+    }
+    
+    if (mounted) {
+      setState(() {
+        _favoriteStatus = status;
+      });
+    }
+  }
+
+  /// ✨ 切換最愛狀態
+  Future<void> _toggleFavorite(Map<String, dynamic> food) async {
+    String id = food['id'] ?? '';
+    String key = 'custom_$id';
+    String name = food['name'] ?? '';
+    double calories = (food['calories'] ?? 0).toDouble();
+    String servingSize = food['servingSize'] ?? '份';
+    
+    bool currentStatus = _favoriteStatus[key] ?? false;
+    
+    // 先更新 UI
+    setState(() {
+      _favoriteStatus[key] = !currentStatus;
+    });
+    
+    try {
+      bool newStatus = await _foodService.toggleFavorite(
+        refId: id,
+        type: 'custom',
+        name: name,
+        calories: calories,
+        servingSize: servingSize,
+      );
+      
+      setState(() {
+        _favoriteStatus[key] = newStatus;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  newStatus ? Icons.favorite : Icons.favorite_border,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(newStatus ? '已加入最愛' : '已從最愛移除'),
+              ],
+            ),
+            backgroundColor: newStatus ? const Color(0xFFFF6B95) : AppColors.textSecondary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _favoriteStatus[key] = currentStatus;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('操作失敗: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   /// ✨ 篩選和排序食物
@@ -163,6 +250,11 @@ class _MyFoodsPageState extends State<MyFoodsPage> {
 
           final allFoods = snapshot.data ?? [];
           final filteredFoods = _filterAndSortFoods(allFoods);
+          
+          // ✨ 載入最愛狀態
+          if (allFoods.isNotEmpty && _favoriteStatus.isEmpty) {
+            _loadFavoriteStatus(allFoods);
+          }
 
           return Column(
             children: [
@@ -475,8 +567,12 @@ class _MyFoodsPageState extends State<MyFoodsPage> {
     );
   }
 
-  /// 食物卡片 (保持原有功能)
+  /// ✨ 食物卡片 (加愛心)
   Widget _buildFoodCard(Map<String, dynamic> food, int index) {
+    String id = food['id'] ?? '';
+    String key = 'custom_$id';
+    bool isFavorite = _favoriteStatus[key] ?? false;
+    
     return SoftCard(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -510,13 +606,43 @@ class _MyFoodsPageState extends State<MyFoodsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      food['name'],
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            food['name'],
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        // ✨ 愛心按鈕
+                        GestureDetector(
+                          onTap: () => _toggleFavorite(food),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              transitionBuilder: (child, animation) {
+                                return ScaleTransition(
+                                  scale: animation,
+                                  child: child,
+                                );
+                              },
+                              child: Icon(
+                                isFavorite ? Icons.favorite : Icons.favorite_border,
+                                key: ValueKey(isFavorite),
+                                size: 22,
+                                color: isFavorite 
+                                    ? const Color(0xFFFF6B95) 
+                                    : AppColors.textTertiary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Row(
@@ -853,6 +979,9 @@ class _MyFoodsPageState extends State<MyFoodsPage> {
   void _deleteFood(String foodId) async {
     try {
       await _foodService.deleteCustomFood(foodId);
+      
+      // ✨ 同時從最愛移除
+      await _foodService.removeFromFavorites(refId: foodId, type: 'custom');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

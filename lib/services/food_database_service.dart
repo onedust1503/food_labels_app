@@ -1,6 +1,6 @@
 // lib/services/food_database_service.dart
-// 食物資料庫服務 - 完整版 (支援 JSON 導入 + 自訂食物管理)
-// ✨ 優化版: 增加緩存機制、批次查詢、更好的錯誤處理
+// 食物資料庫服務 - 完整版 (支援 JSON 導入 + 自訂食物管理 + 我的最愛)
+// ✨ v2.0: 新增我的最愛功能
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +14,10 @@ class FoodDatabaseService {
   List<Map<String, dynamic>>? _cachedFoods;
   DateTime? _lastFetchTime;
   static const Duration _cacheExpiry = Duration(minutes: 5);
+  
+  // 🆕 最愛緩存
+  Set<String>? _cachedFavoriteIds;
+  DateTime? _lastFavoriteFetchTime;
 
   // ========== 食物資料庫查詢 ==========
 
@@ -297,6 +301,278 @@ class FoodDatabaseService {
     _lastFetchTime = null;
     if (kDebugMode) {
       print('🗑️ 已清除食物緩存');
+    }
+  }
+
+  // ========== 🆕 我的最愛功能 ==========
+
+  /// ✅ 加入我的最愛
+  Future<void> addToFavorites({
+    required String refId,
+    required String type, // 'food', 'custom', 'combo'
+    required String name,
+    required double calories,
+    required String servingSize,
+    Map<String, dynamic>? extraData, // 額外資料 (組合用)
+  }) async {
+    try {
+      String userId = _auth.currentUser!.uid;
+      
+      // 檢查是否已存在
+      QuerySnapshot existing = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('favorites')
+          .where('refId', isEqualTo: refId)
+          .where('type', isEqualTo: type)
+          .limit(1)
+          .get();
+      
+      if (existing.docs.isNotEmpty) {
+        if (kDebugMode) {
+          print('⚠️ 已在最愛中: $name');
+        }
+        return;
+      }
+      
+      await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('favorites')
+          .add({
+        'refId': refId,
+        'type': type,
+        'name': name,
+        'calories': calories,
+        'servingSize': servingSize,
+        'extraData': extraData,
+        'addedAt': FieldValue.serverTimestamp(),
+        'lastUsedAt': FieldValue.serverTimestamp(),
+        'useCount': 0,
+      });
+      
+      // 清除最愛緩存
+      _clearFavoriteCache();
+      
+      if (kDebugMode) {
+        print('✅ 已加入最愛: $name ($type)');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 加入最愛失敗: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// ✅ 從最愛移除
+  Future<void> removeFromFavorites({
+    required String refId,
+    required String type,
+  }) async {
+    try {
+      String userId = _auth.currentUser!.uid;
+      
+      QuerySnapshot snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('favorites')
+          .where('refId', isEqualTo: refId)
+          .where('type', isEqualTo: type)
+          .get();
+      
+      for (var doc in snapshot.docs) {
+        await doc.reference.delete();
+      }
+      
+      // 清除最愛緩存
+      _clearFavoriteCache();
+      
+      if (kDebugMode) {
+        print('✅ 已從最愛移除: $refId');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 移除最愛失敗: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// ✅ 切換最愛狀態 (方便 UI 使用)
+  Future<bool> toggleFavorite({
+    required String refId,
+    required String type,
+    required String name,
+    required double calories,
+    required String servingSize,
+    Map<String, dynamic>? extraData,
+  }) async {
+    bool isFav = await isFavorite(refId: refId, type: type);
+    
+    if (isFav) {
+      await removeFromFavorites(refId: refId, type: type);
+      return false;
+    } else {
+      await addToFavorites(
+        refId: refId,
+        type: type,
+        name: name,
+        calories: calories,
+        servingSize: servingSize,
+        extraData: extraData,
+      );
+      return true;
+    }
+  }
+
+  /// ✅ 檢查是否為最愛
+  Future<bool> isFavorite({
+    required String refId,
+    required String type,
+  }) async {
+    try {
+      String uniqueKey = '${type}_$refId';
+      
+      // 使用緩存
+      if (_cachedFavoriteIds != null &&
+          _lastFavoriteFetchTime != null &&
+          DateTime.now().difference(_lastFavoriteFetchTime!) < _cacheExpiry) {
+        return _cachedFavoriteIds!.contains(uniqueKey);
+      }
+      
+      // 重新載入緩存
+      await _loadFavoriteIds();
+      return _cachedFavoriteIds?.contains(uniqueKey) ?? false;
+      
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 檢查最愛狀態失敗: $e');
+      }
+      return false;
+    }
+  }
+
+  /// 🆕 載入所有最愛 ID (用於緩存)
+  Future<void> _loadFavoriteIds() async {
+    try {
+      String userId = _auth.currentUser!.uid;
+      
+      QuerySnapshot snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('favorites')
+          .get();
+      
+      _cachedFavoriteIds = snapshot.docs.map((doc) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        return '${data['type']}_${data['refId']}';
+      }).toSet();
+      
+      _lastFavoriteFetchTime = DateTime.now();
+      
+      if (kDebugMode) {
+        print('✅ 載入最愛 ID 緩存: ${_cachedFavoriteIds!.length} 項');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 載入最愛 ID 失敗: $e');
+      }
+    }
+  }
+
+  /// 🆕 清除最愛緩存
+  void _clearFavoriteCache() {
+    _cachedFavoriteIds = null;
+    _lastFavoriteFetchTime = null;
+  }
+
+  /// ✅ 獲取我的最愛列表 (即時串流)
+  Stream<List<Map<String, dynamic>>> getMyFavoritesStream() {
+    String userId = _auth.currentUser!.uid;
+    
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('favorites')
+        .orderBy('lastUsedAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        Map<String, dynamic> data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    });
+  }
+
+  /// ✅ 獲取我的最愛列表 (一次性)
+  Future<List<Map<String, dynamic>>> getMyFavorites() async {
+    try {
+      String userId = _auth.currentUser!.uid;
+      
+      QuerySnapshot snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('favorites')
+          .orderBy('lastUsedAt', descending: true)
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取最愛列表失敗: $e');
+      }
+      return [];
+    }
+  }
+
+  /// ✅ 更新最愛使用記錄 (智慧排序用)
+  Future<void> updateFavoriteUsage(String favoriteId) async {
+    try {
+      String userId = _auth.currentUser!.uid;
+      
+      await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('favorites')
+          .doc(favoriteId)
+          .update({
+        'lastUsedAt': FieldValue.serverTimestamp(),
+        'useCount': FieldValue.increment(1),
+      });
+      
+      if (kDebugMode) {
+        print('✅ 更新最愛使用記錄: $favoriteId');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 更新使用記錄失敗: $e');
+      }
+    }
+  }
+
+  /// 🆕 批次檢查最愛狀態 (用於列表顯示)
+  Future<Map<String, bool>> checkFavoritesBatch(List<Map<String, String>> items) async {
+    try {
+      // 確保緩存已載入
+      if (_cachedFavoriteIds == null) {
+        await _loadFavoriteIds();
+      }
+      
+      Map<String, bool> results = {};
+      for (var item in items) {
+        String uniqueKey = '${item['type']}_${item['refId']}';
+        results[uniqueKey] = _cachedFavoriteIds?.contains(uniqueKey) ?? false;
+      }
+      
+      return results;
+    } catch (e) {
+      return {};
     }
   }
 

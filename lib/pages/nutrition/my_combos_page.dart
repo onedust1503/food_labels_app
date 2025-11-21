@@ -1,10 +1,12 @@
 // lib/pages/nutrition/my_combos_page.dart
 // 我的組合主頁面 - Soft UI 風格
 // ✅ 修正 null safety 問題
+// ✨ v2.0: 新增愛心收藏功能
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../services/meal_combo_service.dart';
+import '../../services/food_database_service.dart'; // ✨ 新增
 import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
 import 'create_combo_page.dart';
@@ -19,15 +21,101 @@ class MyCombosPage extends StatefulWidget {
 
 class _MyCombosPageState extends State<MyCombosPage> {
   final MealComboService _comboService = MealComboService();
+  final FoodDatabaseService _foodService = FoodDatabaseService(); // ✨ 新增
   final TextEditingController _searchController = TextEditingController();
   
   String _searchQuery = '';
   String _sortBy = 'newest'; // newest, oldest, name, calories
   
+  // ✨ 最愛狀態緩存
+  Map<String, bool> _favoriteStatus = {};
+  
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// ✨ 載入最愛狀態
+  Future<void> _loadFavoriteStatus(List<Map<String, dynamic>> combos) async {
+    Map<String, bool> status = {};
+    
+    for (var combo in combos) {
+      String id = combo['id'] ?? '';
+      bool isFav = await _foodService.isFavorite(refId: id, type: 'combo');
+      status['combo_$id'] = isFav;
+    }
+    
+    if (mounted) {
+      setState(() {
+        _favoriteStatus = status;
+      });
+    }
+  }
+
+  /// ✨ 切換最愛狀態
+  Future<void> _toggleFavorite(Map<String, dynamic> combo) async {
+    String id = combo['id'] ?? '';
+    String key = 'combo_$id';
+    String name = combo['comboName'] ?? '';
+    double calories = (combo['totalCalories'] ?? 0).toDouble();
+    int itemCount = combo['itemCount'] ?? 0;
+    
+    bool currentStatus = _favoriteStatus[key] ?? false;
+    
+    // 先更新 UI
+    setState(() {
+      _favoriteStatus[key] = !currentStatus;
+    });
+    
+    try {
+      bool newStatus = await _foodService.toggleFavorite(
+        refId: id,
+        type: 'combo',
+        name: name,
+        calories: calories,
+        servingSize: '$itemCount 項食物',
+        extraData: {
+          'itemCount': itemCount,
+          'totalProtein': combo['totalProtein'],
+          'totalCarbs': combo['totalCarbs'],
+          'totalFat': combo['totalFat'],
+        },
+      );
+      
+      setState(() {
+        _favoriteStatus[key] = newStatus;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  newStatus ? Icons.favorite : Icons.favorite_border,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(newStatus ? '已加入最愛' : '已從最愛移除'),
+              ],
+            ),
+            backgroundColor: newStatus ? const Color(0xFFFF6B95) : AppColors.textSecondary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _favoriteStatus[key] = currentStatus;
+      });
+    }
   }
 
   @override
@@ -129,6 +217,11 @@ class _MyCombosPageState extends State<MyCombosPage> {
 
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return _buildEmptyState();
+                }
+
+                // ✨ 載入最愛狀態
+                if (snapshot.data!.isNotEmpty && _favoriteStatus.isEmpty) {
+                  _loadFavoriteStatus(snapshot.data!);
                 }
 
                 List<Map<String, dynamic>> combos = _filterAndSortCombos(snapshot.data!);
@@ -525,6 +618,11 @@ class _MyCombosPageState extends State<MyCombosPage> {
     double totalProtein = (combo['totalProtein'] ?? 0).toDouble();
     double totalCarbs = (combo['totalCarbs'] ?? 0).toDouble();
     double totalFat = (combo['totalFat'] ?? 0).toDouble();
+    
+    // ✨ 新增：獲取最愛狀態
+    String id = combo['id'] ?? '';
+    String key = 'combo_$id';
+    bool isFavorite = _favoriteStatus[key] ?? false;
 
     return SoftCard(
       margin: const EdgeInsets.only(bottom: 16),
@@ -555,13 +653,44 @@ class _MyCombosPageState extends State<MyCombosPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      comboName,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
+                    // ✨ 修改：名稱 + 愛心按鈕
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            comboName,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        // ✨ 愛心按鈕
+                        GestureDetector(
+                          onTap: () => _toggleFavorite(combo),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              transitionBuilder: (child, animation) {
+                                return ScaleTransition(
+                                  scale: animation,
+                                  child: child,
+                                );
+                              },
+                              child: Icon(
+                                isFavorite ? Icons.favorite : Icons.favorite_border,
+                                key: ValueKey(isFavorite),
+                                size: 22,
+                                color: isFavorite 
+                                    ? const Color(0xFFFF6B95) 
+                                    : AppColors.textTertiary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Row(
@@ -886,6 +1015,14 @@ class _MyCombosPageState extends State<MyCombosPage> {
   Future<void> _deleteCombo(String comboId) async {
     try {
       await _comboService.deleteCombo(comboId);
+      
+      // ✨ 同時從最愛移除
+      await _foodService.removeFromFavorites(refId: comboId, type: 'combo');
+      
+      // ✨ 更新本地緩存
+      setState(() {
+        _favoriteStatus.remove('combo_$comboId');
+      });
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -22,6 +22,8 @@ import 'tools/food_data_importer.dart';
 
 import 'theme/app_theme.dart';
 
+import 'pages/nutrition/ocr_test_page.dart';
+
 // 全域導航鍵
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -117,7 +119,7 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Flutter Demo',
         theme: AppTheme.lightTheme,
-        home: const SplashScreen(),
+        home: SplashScreen(),
         routes: {
           '/login': (context) => const LoginScreen(),
           '/studentHome': (context) => const TraineeHomePage(),

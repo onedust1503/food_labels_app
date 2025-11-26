@@ -78,6 +78,8 @@ dependencies:
   # 動畫效果
   flutter_animate: ^4.5.0
 
+  image: ^4.1.3
+
 
 
 dev_dependencies:

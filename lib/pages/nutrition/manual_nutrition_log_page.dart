@@ -1,5 +1,6 @@
 // lib/pages/nutrition/manual_nutrition_log_page.dart
 // 手動記錄飲食頁面 - Soft UI 風格 (修正版)
+// ✨ v2.1: 新增自動餐別選擇 + recordMethod 支援
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,11 +28,33 @@ class _ManualNutritionLogPageState extends State<ManualNutritionLogPage> {
   final TextEditingController _sodiumController = TextEditingController();
   final TextEditingController _cholesterolController = TextEditingController();
   
-  String _selectedMealType = 'breakfast';
+  late String _selectedMealType; // ✨ 改為 late，由 initState 初始化
   int _selectedCalories = 500;
   bool _showNutritionDetails = false;
   bool _isSaving = false;
   final NutritionService _nutritionService = NutritionService();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMealType = _getDefaultMealType(); // ✨ 自動選擇餐別
+  }
+
+  /// ✨ 根據當前時間自動選擇餐別
+  String _getDefaultMealType() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 10) {
+      return 'breakfast';  // 05:00-10:00 早餐
+    } else if (hour >= 10 && hour < 14) {
+      return 'lunch';      // 10:00-14:00 午餐
+    } else if (hour >= 14 && hour < 17) {
+      return 'snack';      // 14:00-17:00 點心
+    } else if (hour >= 17 && hour < 21) {
+      return 'dinner';     // 17:00-21:00 晚餐
+    } else {
+      return 'latenight';  // 21:00-05:00 宵夜
+    }
+  }
 
   @override
   void dispose() {
@@ -80,10 +103,12 @@ class _ManualNutritionLogPageState extends State<ManualNutritionLogPage> {
         'id': 'manual_${DateTime.now().millisecondsSinceEpoch}',
       };
 
+      // ✨ 傳遞 recordMethod
       await _nutritionService.addFoodLog(
         foodData: foodData,
         servings: 1.0,
         mealType: _selectedMealType,
+        recordMethod: 'quick', // ✨ 快速手動記錄
       );
 
       if (mounted) {
@@ -354,15 +379,25 @@ class _ManualNutritionLogPageState extends State<ManualNutritionLogPage> {
           ),
           const SizedBox(height: 16),
           
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          // ✨ 餐別按鈕 - 第一排
+          Row(
             children: [
-              _buildMealTypeChip('breakfast', '早餐'),
-              _buildMealTypeChip('lunch', '午餐'),
-              _buildMealTypeChip('dinner', '晚餐'),
-              _buildMealTypeChip('snack', '點心'),
-              _buildMealTypeChip('latenight', '宵夜'),
+              Expanded(child: _buildMealTypeChip('breakfast', '早餐', '🌅')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildMealTypeChip('lunch', '午餐', '☀️')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildMealTypeChip('dinner', '晚餐', '🌙')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // ✨ 餐別按鈕 - 第二排（點心 + 宵夜）
+          Row(
+            children: [
+              Expanded(child: _buildMealTypeChip('snack', '點心', '🍪')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildMealTypeChip('latenight', '宵夜', '🌃')),
+              const SizedBox(width: 8),
+              const Expanded(child: SizedBox()), // 占位，保持對齊
             ],
           ),
         ],
@@ -370,31 +405,33 @@ class _ManualNutritionLogPageState extends State<ManualNutritionLogPage> {
     );
   }
 
-  Widget _buildMealTypeChip(String mealType, String label) {
+  Widget _buildMealTypeChip(String mealType, String label, String emoji) {
     final bool isSelected = _selectedMealType == mealType;
+    final Color mealColor = _getMealColor(mealType);
     
     return GestureDetector(
       onTap: () => setState(() => _selectedMealType = mealType),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.getMealColor(mealType) : AppColors.background,
+          gradient: isSelected
+              ? LinearGradient(colors: [mealColor.withOpacity(0.8), mealColor])
+              : null,
+          color: isSelected ? null : AppColors.background,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected 
-                ? AppColors.getMealColor(mealType) 
-                : AppColors.divider,
+            color: isSelected ? mealColor : AppColors.divider,
             width: isSelected ? 2 : 1,
           ),
+          boxShadow: isSelected
+              ? [BoxShadow(color: mealColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))]
+              : null,
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              AppColors.getMealEmoji(mealType),
-              style: const TextStyle(fontSize: 16),
-            ),
+            Text(emoji, style: const TextStyle(fontSize: 16)),
             const SizedBox(width: 6),
             Text(
               label,
@@ -408,6 +445,24 @@ class _ManualNutritionLogPageState extends State<ManualNutritionLogPage> {
         ),
       ),
     );
+  }
+
+  /// ✨ 獲取餐別對應顏色
+  Color _getMealColor(String type) {
+    switch (type) {
+      case 'breakfast':
+        return const Color(0xFFFFB74D);
+      case 'lunch':
+        return const Color(0xFF4FC3F7);
+      case 'dinner':
+        return const Color(0xFF9575CD);
+      case 'snack':
+        return const Color(0xFFFF8A80);
+      case 'latenight':
+        return const Color(0xFF7C4DFF);
+      default:
+        return AppColors.primary;
+    }
   }
 
   /// ✅ 修正版 - 熱量選擇區
@@ -982,12 +1037,14 @@ class _ManualNutritionLogPageState extends State<ManualNutritionLogPage> {
                     ],
                   ),
                   child: _isSaving
-                      ? const SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ? const Center(
+                          child: SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
                           ),
                         )
                       : const Text(

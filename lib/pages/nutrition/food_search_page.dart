@@ -3,6 +3,7 @@
 // ✅ 已連接手動記錄功能
 // ✅ 已連接我的組合功能
 // ✨ v2.0: 已連接我的最愛 + 搜尋結果加愛心
+// ✨ v2.1: 搜尋欄右側加入掃描按鈕
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -13,7 +14,8 @@ import 'add_nutrition_log_page.dart';
 import 'manual_nutrition_log_page.dart';
 import 'my_foods_page.dart';
 import 'my_combos_page.dart';
-import 'my_favorites_page.dart'; // ✨ 新增
+import 'my_favorites_page.dart';
+import 'ocr_scan_page.dart'; // ✨ 掃描頁面（雙引擎版）
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -210,6 +212,16 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
     return true;
   }
 
+  /// ✨ 導航到掃描頁面
+  void _navigateToScan() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const OcrScanPage(),
+      ),
+    );
+  }
+
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -298,61 +310,106 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
     );
   }
 
-  /// 搜尋欄
+  /// ✨ 搜尋欄 - 右側加入掃描按鈕
   Widget _buildSearchBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      child: Row(
+        children: [
+          // 搜尋輸入框
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.shadowMedium,
+                    offset: const Offset(0, 4),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _performSearch,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: AppColors.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  hintText: '搜尋食物名稱...',
+                  hintStyle: TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 15,
+                  ),
+                  prefixIcon: Container(
+                    padding: const EdgeInsets.all(12),
+                    child: const Icon(
+                      Icons.search,
+                      color: AppColors.primary,
+                      size: 22,
+                    ),
+                  ),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(
+                            Icons.clear,
+                            color: AppColors.textSecondary,
+                          ),
+                          onPressed: _clearSearch,
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // ✨ 掃描按鈕
+          const SizedBox(width: 12),
+          _buildScanButton(),
+        ],
+      ),
+    );
+  }
+
+  /// ✨ 掃描按鈕 - Soft UI 風格
+  Widget _buildScanButton() {
+    return GestureDetector(
+      onTap: _navigateToScan,
       child: Container(
+        width: 56,
+        height: 56,
         decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+          ),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: AppColors.shadowMedium,
+              color: const Color(0xFF667eea).withOpacity(0.4),
               offset: const Offset(0, 4),
               blurRadius: 12,
             ),
           ],
         ),
-        child: TextField(
-          controller: _searchController,
-          onChanged: _performSearch,
-          style: const TextStyle(
-            fontSize: 16,
-            color: AppColors.textPrimary,
-          ),
-          decoration: InputDecoration(
-            hintText: '搜尋食物名稱...',
-            hintStyle: TextStyle(
-              color: AppColors.textTertiary,
-              fontSize: 15,
-            ),
-            prefixIcon: Container(
-              padding: const EdgeInsets.all(12),
-              child: const Icon(
-                Icons.search,
-                color: AppColors.primary,
-                size: 22,
-              ),
-            ),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(
-                      Icons.clear,
-                      color: AppColors.textSecondary,
-                    ),
-                    onPressed: _clearSearch,
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 16,
-            ),
-          ),
+        child: const Icon(
+          Icons.document_scanner_outlined,
+          color: Colors.white,
+          size: 26,
         ),
       ),
-    );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms)
+        .scale(begin: const Offset(0.8, 0.8), end: const Offset(1, 1), duration: 300.ms);
   }
 
   /// 主視圖 (未搜尋時) - 固定佈局
@@ -414,7 +471,6 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
                 title: '我的最愛',
                 color: const Color(0xFFFF6B95),
                 onTap: () async {
-                  // ✨ 導航到我的最愛頁面
                   await Navigator.push(
                     context,
                     MaterialPageRoute(

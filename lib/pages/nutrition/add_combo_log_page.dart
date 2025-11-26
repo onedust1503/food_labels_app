@@ -1,5 +1,6 @@
 // lib/pages/nutrition/add_combo_log_page.dart
 // 快速記錄組合頁面 - Soft UI 風格
+// ✨ v2.0: 新增自動餐別選擇
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -23,8 +24,30 @@ class AddComboLogPage extends StatefulWidget {
 class _AddComboLogPageState extends State<AddComboLogPage> {
   final MealComboService _comboService = MealComboService();
   
-  String _selectedMealType = 'breakfast';
+  late String _selectedMealType; // ✨ 改為 late，由 initState 初始化
   bool _isLogging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMealType = _getDefaultMealType(); // ✨ 自動選擇餐別
+  }
+
+  /// ✨ 根據當前時間自動選擇餐別
+  String _getDefaultMealType() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 10) {
+      return 'breakfast';  // 05:00-10:00 早餐
+    } else if (hour >= 10 && hour < 14) {
+      return 'lunch';      // 10:00-14:00 午餐
+    } else if (hour >= 14 && hour < 17) {
+      return 'snack';      // 14:00-17:00 點心
+    } else if (hour >= 17 && hour < 21) {
+      return 'dinner';     // 17:00-21:00 晚餐
+    } else {
+      return 'latenight';  // 21:00-05:00 宵夜
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -312,15 +335,25 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
           ),
           const SizedBox(height: 16),
           
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          // ✨ 餐別按鈕 - 第一排
+          Row(
             children: [
-              _buildMealTypeChip('breakfast', '早餐', '🌅'),
-              _buildMealTypeChip('lunch', '午餐', '🌞'),
-              _buildMealTypeChip('dinner', '晚餐', '🌙'),
-              _buildMealTypeChip('snack', '點心', '🍎'),
-              _buildMealTypeChip('latenight', '宵夜', '🌃'),
+              Expanded(child: _buildMealTypeChip('breakfast', '早餐', '🌅')),
+              const SizedBox(width: 10),
+              Expanded(child: _buildMealTypeChip('lunch', '午餐', '☀️')),
+              const SizedBox(width: 10),
+              Expanded(child: _buildMealTypeChip('dinner', '晚餐', '🌙')),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // ✨ 餐別按鈕 - 第二排（點心 + 宵夜）
+          Row(
+            children: [
+              Expanded(child: _buildMealTypeChip('snack', '點心', '🍪')),
+              const SizedBox(width: 10),
+              Expanded(child: _buildMealTypeChip('latenight', '宵夜', '🌃')),
+              const SizedBox(width: 10),
+              const Expanded(child: SizedBox()), // 占位，保持對齊
             ],
           ),
         ],
@@ -339,13 +372,13 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           gradient: isSelected
               ? LinearGradient(
                   colors: [
-                    AppColors.getMealColor(mealType).withOpacity(0.8),
-                    AppColors.getMealColor(mealType),
+                    _getMealColor(mealType).withOpacity(0.8),
+                    _getMealColor(mealType),
                   ],
                 )
               : null,
@@ -353,14 +386,14 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
-                ? AppColors.getMealColor(mealType)
+                ? _getMealColor(mealType)
                 : AppColors.divider,
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: AppColors.getMealColor(mealType).withOpacity(0.3),
+                    color: _getMealColor(mealType).withOpacity(0.3),
                     offset: const Offset(0, 4),
                     blurRadius: 8,
                   ),
@@ -368,17 +401,17 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
               : null,
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               emoji,
-              style: const TextStyle(fontSize: 18),
+              style: const TextStyle(fontSize: 16),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: isSelected ? Colors.white : AppColors.textPrimary,
               ),
@@ -387,6 +420,24 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
         ),
       ),
     );
+  }
+
+  /// ✨ 獲取餐別對應顏色
+  Color _getMealColor(String type) {
+    switch (type) {
+      case 'breakfast':
+        return const Color(0xFFFFB74D); // 橘色
+      case 'lunch':
+        return const Color(0xFF4FC3F7); // 藍色
+      case 'dinner':
+        return const Color(0xFF9575CD); // 紫色
+      case 'snack':
+        return const Color(0xFFFF8A80); // 粉色
+      case 'latenight':
+        return const Color(0xFF7C4DFF); // 深紫色
+      default:
+        return AppColors.primary;
+    }
   }
 
   Widget _buildFoodsList() {
@@ -638,7 +689,7 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
       );
 
       if (mounted) {
-        // 🆕 跳轉到飲食記錄頁面
+        // 跳轉到飲食記錄頁面
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -647,7 +698,7 @@ class _AddComboLogPageState extends State<AddComboLogPage> {
         );
         
         // 顯示成功訊息
-        Future.delayed(Duration(milliseconds: 300), () {
+        Future.delayed(const Duration(milliseconds: 300), () {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

@@ -26,7 +26,7 @@ class OcrService {
   
   // Google Cloud Vision 設定
   // 🔥 請替換成你的 API Key
-  static const String _googleApiKey = 'AIzaSyC9o0lF8kqt_r7iygqOwiQ7XWKP2_m_GNM';
+  static const String _googleApiKey = '';
   static const String _googleVisionUrl = 'https://vision.googleapis.com/v1/images:annotate';
   
   // 圖片壓縮設定

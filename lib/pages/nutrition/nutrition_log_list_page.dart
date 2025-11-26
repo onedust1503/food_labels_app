@@ -1,6 +1,6 @@
 // lib/pages/nutrition/nutrition_log_list_page.dart
 // Soft UI 風格的今日飲食記錄列表頁面
-// ✨ 增強版 v3.0: 組合編輯功能 + 食物詳情彈窗
+// ✨ 增強版 v3.1: 組合編輯功能 + 食物詳情彈窗 + 掃描記錄標籤
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -49,7 +49,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
   // 🎯 當前選中的標籤頁 (0=記錄, 1=分析)
   int _currentTabIndex = 0;
   
-  // 🆕 篩選模式: all, combo, single
+  // 🆕 篩選模式: all, combo, single, scan
   String _filterMode = 'all';
   
   @override
@@ -317,10 +317,13 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             mealType = 'latenight';
           }
           
-          // 🆕 篩選處理
+          // 🆕 篩選處理 - 支援掃描篩選
           bool isFromCombo = data['isFromCombo'] ?? false;
+          String recordMethod = data['recordMethod'] ?? 'search';
+          
           if (_filterMode == 'combo' && !isFromCombo) continue;
-          if (_filterMode == 'single' && isFromCombo) continue;
+          if (_filterMode == 'single' && (isFromCombo || recordMethod == 'scan')) continue;
+          if (_filterMode == 'scan' && recordMethod != 'scan') continue;
           
           if (groupedLogs.containsKey(mealType)) {
             groupedLogs[mealType]!.add(doc);
@@ -401,7 +404,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🆕 篩選按鈕
+  /// 🆕 篩選按鈕 - 添加掃描選項
   Widget _buildFilterButtons() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -436,6 +439,14 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     value: 'single',
                     icon: Icons.restaurant,
                     color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  // ✅ 新增：掃描篩選
+                  _buildFilterChip(
+                    label: '掃描',
+                    value: 'scan',
+                    icon: Icons.document_scanner,
+                    color: const Color(0xFF8B5CF6),
                   ),
                 ],
               ),
@@ -1372,9 +1383,9 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                             color: AppColors.textTertiary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
+                            children: [
                               Text('詳情', style: TextStyle(fontSize: 9, color: AppColors.textTertiary)),
                               SizedBox(width: 2),
                               Icon(Icons.chevron_right, size: 12, color: AppColors.textTertiary),
@@ -1439,6 +1450,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     
     String timeStr = _formatTime(data['createdAt']);
     String mealType = (data['mealType'] ?? 'snack').toLowerCase();
+    String recordMethod = data['recordMethod'] ?? 'search';
     
     showModalBottomSheet(
       context: context,
@@ -1500,6 +1512,9 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                                   ),
                                   const SizedBox(width: 8),
                                   Text(timeStr, style: const TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                                  const SizedBox(width: 8),
+                                  // ✅ 新增：記錄方式標籤
+                                  _buildRecordMethodBadge(recordMethod),
                                 ],
                               ),
                             ],
@@ -1697,6 +1712,56 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     }
   }
 
+  /// ✅ 新增：記錄方式標籤
+  Widget _buildRecordMethodBadge(String method) {
+    // 組合記錄不顯示標籤（因為已經有組合群組顯示）
+    if (method == 'combo') return const SizedBox.shrink();
+    
+    IconData icon;
+    String label;
+    Color color;
+    
+    switch (method) {
+      case 'scan':
+        icon = Icons.document_scanner;
+        label = '掃描';
+        color = const Color(0xFF8B5CF6);
+        break;
+      case 'quick':
+        icon = Icons.edit_note;
+        label = '手動';
+        color = const Color(0xFFFA709A);
+        break;
+      default:
+        icon = Icons.search;
+        label = '搜尋';
+        color = const Color(0xFF10B981);
+    }
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 組合操作按鈕
   Widget _buildComboActionButton({
     required IconData icon,
@@ -1868,7 +1933,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     }
   }
 
-  /// 單項食物記錄卡片 (非組合的)
+  /// 單項食物記錄卡片 (非組合的) - ✅ 新增記錄方式標籤
   Widget _buildFoodLogCard(QueryDocumentSnapshot doc, String mealType) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     String docId = doc.id;
@@ -1884,6 +1949,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     double protein = (data['protein'] ?? 0).toDouble();
     double carbs = (data['carbs'] ?? 0).toDouble();
     double fat = (data['fat'] ?? 0).toDouble();
+    String recordMethod = data['recordMethod'] ?? 'search';
     
     double saturatedFat = (data['saturatedFat'] ?? 0).toDouble();
     double transFat = (data['transFat'] ?? 0).toDouble();
@@ -1911,6 +1977,9 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     Row(
                       children: [
                         Expanded(child: Text(foodName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
+                        const SizedBox(width: 8),
+                        // ✅ 新增：記錄方式標籤
+                        _buildRecordMethodBadge(recordMethod),
                         const SizedBox(width: 8),
                         Text(timeStr, style: const TextStyle(fontSize: 12, color: AppColors.textTertiary)),
                       ],

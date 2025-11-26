@@ -1,5 +1,6 @@
 // lib/services/nutrition_service.dart
-// 飲食記錄服務層 - 完整版本(支援詳細營養素 + 快速新增 + 組合標記)
+// 飲食記錄服務層 - 完整版本(支援詳細營養素 + 快速新增 + 組合標記 + 掃描記錄)
+// ✨ v2.1: 新增 addScanLog 方法和 recordMethod 參數
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,11 +13,20 @@ class NutritionService {
 
   // ========== 核心功能 ==========
 
-  /// 新增飲食記錄(從食物資料庫選擇)
+  /// 新增飲食記錄(從食物資料庫選擇或掃描)
+  /// 
+  /// [recordMethod] 記錄方式，可選值:
+  /// - 'search': 從食物資料庫搜尋 (預設)
+  /// - 'scan': OCR 掃描
+  /// - 'quick' / 'manual': 手動輸入
+  /// - 'combo': 組合記錄
+  /// 
+  /// 如果不傳入 recordMethod，會自動根據 foodData 中的標記判斷
   Future<void> addFoodLog({
     required Map<String, dynamic> foodData,
     required double servings,
     required String mealType,
+    String? recordMethod,  // ✅ 新增：可選的記錄方式參數
   }) async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -35,6 +45,17 @@ class NutritionService {
     double totalSodium = (foodData['sodium'] ?? 0) * servings;
     double totalCholesterol = (foodData['cholesterol'] ?? 0) * servings;
 
+    // ✅ 決定記錄方式：優先使用傳入的參數，否則自動檢測
+    String finalRecordMethod = recordMethod ?? 'search';
+    if (recordMethod == null) {
+      // 自動檢測
+      if (foodData['isScanned'] == true) {
+        finalRecordMethod = 'scan';
+      } else if (foodData['isManual'] == true) {
+        finalRecordMethod = 'quick';
+      }
+    }
+
     // 儲存到 Firestore
     await _firestore.collection(Collections.nutritionLogs).add({
       'userId': userId,
@@ -51,7 +72,7 @@ class NutritionService {
       'carbs': totalCarbs,
       'fat': totalFat,
       
-      // ✅ 詳細營養素 (新增)
+      // ✅ 詳細營養素
       'saturatedFat': totalSaturatedFat,
       'transFat': totalTransFat,
       'fiber': totalFiber,
@@ -59,7 +80,7 @@ class NutritionService {
       'sodium': totalSodium,
       'cholesterol': totalCholesterol,
       
-      'recordMethod': foodData['category'] ?? 'search',
+      'recordMethod': finalRecordMethod, // ✅ 使用決定後的記錄方式
       'createdAt': FieldValue.serverTimestamp(),
     });
 
@@ -70,6 +91,8 @@ class NutritionService {
       'carbs': totalCarbs,
       'fat': totalFat,
     });
+    
+    print('✅ 記錄成功: ${foodData['name']} [$finalRecordMethod]');
   }
 
   /// 🆕 快速新增飲食記錄(手動輸入/OCR掃描)
@@ -97,6 +120,8 @@ class NutritionService {
     double sugar = 0,
     double sodium = 0,
     double cholesterol = 0,
+    // ✅ 記錄方式 (新增參數)
+    String recordMethod = 'quick',
   }) async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -137,7 +162,7 @@ class NutritionService {
       'sodium': totalSodium,
       'cholesterol': totalCholesterol,
       
-      'recordMethod': 'quick', // 標記為快速新增
+      'recordMethod': recordMethod, // ✅ 使用傳入的記錄方式
       'createdAt': FieldValue.serverTimestamp(),
     });
 
@@ -149,7 +174,48 @@ class NutritionService {
       'fat': totalFat,
     });
 
-    print('✅ 快速新增成功: $foodName (${servings} ${servingSize})');
+    print('✅ 快速新增成功: $foodName (${servings} ${servingSize}) [$recordMethod]');
+  }
+
+  /// 🆕 OCR 掃描記錄專用方法
+  /// 
+  /// 使用場景:
+  /// - OCR 掃描食品標籤後記錄
+  /// 
+  /// 營養素數值會自動乘以份數計算總量
+  Future<void> addScanLog({
+    required String foodName,
+    required String mealType,
+    required double servings,
+    String servingSize = '每份',
+    // 基本營養素 (每份的量)
+    required double calories,
+    required double protein,
+    required double carbs,
+    required double fat,
+    // 詳細營養素 (每份的量,選填)
+    double? sugar,
+    double? sodium,
+    double? saturatedFat,
+    double? transFat,
+  }) async {
+    await addQuickLog(
+      foodName: foodName,
+      mealType: mealType,
+      servings: servings,
+      servingSize: servingSize,
+      calories: calories,
+      protein: protein,
+      carbs: carbs,
+      fat: fat,
+      sugar: sugar ?? 0,
+      sodium: sodium ?? 0,
+      saturatedFat: saturatedFat ?? 0,
+      transFat: transFat ?? 0,
+      recordMethod: 'scan', // ✅ 標記為掃描記錄
+    );
+    
+    print('📷 掃描記錄成功: $foodName');
   }
 
   /// 🆕 記錄食物 (帶組合標記)

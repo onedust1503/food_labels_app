@@ -1,6 +1,6 @@
 // lib/services/food_database_service.dart
 // 食物資料庫服務 - 完整版 (支援 JSON 導入 + 自訂食物管理 + 我的最愛)
-// ✨ v2.0: 新增我的最愛功能
+// ✨ v2.1: 新增 OCR 掃描食物儲存功能
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -309,7 +309,7 @@ class FoodDatabaseService {
   /// ✅ 加入我的最愛
   Future<void> addToFavorites({
     required String refId,
-    required String type, // 'food', 'custom', 'combo'
+    required String type, // 'food', 'custom', 'combo', 'scanned'
     required String name,
     required double calories,
     required String servingSize,
@@ -579,6 +579,7 @@ class FoodDatabaseService {
   // ========== 自訂食物管理 (users/{userId}/customFoods) ==========
 
   /// ✅ 新增自訂食物到個人資料夾
+  /// ✨ v2.1: 新增 isFromScan 和 barcode 參數
   Future<String> addCustomFood({
     required String name,
     required String category,
@@ -593,6 +594,8 @@ class FoodDatabaseService {
     double sugar = 0,
     double sodium = 0,
     double cholesterol = 0,
+    bool isFromScan = false,  // ✨ v2.1: 標記是否來自 OCR 掃描
+    String? barcode,          // ✨ v2.1: 條碼 (可選)
   }) async {
     String userId = _auth.currentUser!.uid;
 
@@ -614,6 +617,8 @@ class FoodDatabaseService {
       'sugar': sugar,
       'sodium': sodium,
       'cholesterol': cholesterol,
+      'isFromScan': isFromScan,  // ✨ v2.1
+      'barcode': barcode,         // ✨ v2.1
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -627,6 +632,98 @@ class FoodDatabaseService {
 
     return docRef.id;
   }
+
+  // ========== ✨ v2.1: OCR 掃描食物儲存功能 ==========
+
+  /// ✨ v2.1: 從 OCR 掃描結果儲存食物到「我的食物」
+  Future<String> saveScannedFood({
+    required String name,
+    required Map<String, double?> nutrition,
+    String? barcode,
+  }) async {
+    return await addCustomFood(
+      name: name,
+      category: '掃描食品',
+      servingSize: '每份',
+      calories: nutrition['calories'] ?? 0,
+      protein: nutrition['protein'] ?? 0,
+      carbs: nutrition['carbs'] ?? 0,
+      fat: nutrition['fat'] ?? 0,
+      sugar: nutrition['sugar'] ?? 0,
+      sodium: nutrition['sodium'] ?? 0,
+      fiber: nutrition['fiber'] ?? 0,
+      saturatedFat: nutrition['saturatedFat'] ?? 0,
+      transFat: nutrition['transFat'] ?? 0,
+      cholesterol: nutrition['cholesterol'] ?? 0,
+      isFromScan: true,
+      barcode: barcode,
+    );
+  }
+
+  /// ✨ v2.1: 儲存掃描食物並加入最愛
+  Future<String> saveScannedFoodAndAddToFavorites({
+    required String name,
+    required Map<String, double?> nutrition,
+    String? barcode,
+  }) async {
+    // 1️⃣ 先儲存到自訂食物
+    String foodId = await saveScannedFood(
+      name: name,
+      nutrition: nutrition,
+      barcode: barcode,
+    );
+    
+    // 2️⃣ 再加入最愛
+    await addToFavorites(
+      refId: foodId,
+      type: 'scanned',
+      name: name,
+      calories: nutrition['calories'] ?? 0,
+      servingSize: '每份',
+      extraData: {
+        'protein': nutrition['protein'],
+        'carbs': nutrition['carbs'],
+        'fat': nutrition['fat'],
+        'sugar': nutrition['sugar'],
+        'sodium': nutrition['sodium'],
+        'fiber': nutrition['fiber'],
+        'saturatedFat': nutrition['saturatedFat'],
+        'transFat': nutrition['transFat'],
+        'cholesterol': nutrition['cholesterol'],
+      },
+    );
+    
+    return foodId;
+  }
+
+  /// ✨ v2.1: 獲取掃描食物列表
+  Future<List<Map<String, dynamic>>> getScannedFoods() async {
+    try {
+      String userId = _auth.currentUser!.uid;
+
+      QuerySnapshot snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('customFoods')
+          .where('isFromScan', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        data['isCustom'] = true;
+        return data;
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取掃描食物失敗: $e');
+      }
+      return [];
+    }
+  }
+
+  // ========== 自訂食物管理 (續) ==========
 
   /// ✅ 獲取我的自訂食物列表
   Future<List<Map<String, dynamic>>> getMyCustomFoods() async {
@@ -802,12 +899,14 @@ class FoodDatabaseService {
   // ========== 統計功能 ==========
 
   /// 🆕 獲取食物資料庫統計
+  /// ✨ v2.1: 新增 scanned 統計
   Future<Map<String, int>> getFoodStats() async {
     try {
       List<Map<String, dynamic>> allFoods = await getAllFoods();
       
       int systemFoods = allFoods.where((f) => f['isCustom'] == false).length;
       int customFoods = allFoods.where((f) => f['isCustom'] == true).length;
+      int scannedFoods = allFoods.where((f) => f['isFromScan'] == true).length;  // ✨ v2.1
       
       Map<String, List<Map<String, dynamic>>> byCategory = await getAllFoodsByCategory();
       
@@ -815,6 +914,7 @@ class FoodDatabaseService {
         'total': allFoods.length,
         'system': systemFoods,
         'custom': customFoods,
+        'scanned': scannedFoods,  // ✨ v2.1
         'categories': byCategory.length,
       };
     } catch (e) {
@@ -822,6 +922,7 @@ class FoodDatabaseService {
         'total': 0,
         'system': 0,
         'custom': 0,
+        'scanned': 0,
         'categories': 0,
       };
     }

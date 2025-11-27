@@ -32,18 +32,18 @@ class NutritionService {
     String today = DateTime.now().toIso8601String().split('T')[0];
 
     // 計算基本營養素
-    double totalCalories = (foodData['calories'] ?? 0) * servings;
-    double totalProtein = (foodData['protein'] ?? 0) * servings;
-    double totalCarbs = (foodData['carbs'] ?? 0) * servings;
-    double totalFat = (foodData['fat'] ?? 0) * servings;
+    double totalCalories = ((foodData['calories'] ?? 0) as num).toDouble() * servings;
+    double totalProtein = ((foodData['protein'] ?? 0) as num).toDouble() * servings;
+    double totalCarbs = ((foodData['carbs'] ?? 0) as num).toDouble() * servings;
+    double totalFat = ((foodData['fat'] ?? 0) as num).toDouble() * servings;
 
     // ✅ 計算詳細營養素
-    double totalSaturatedFat = (foodData['saturatedFat'] ?? 0) * servings;
-    double totalTransFat = (foodData['transFat'] ?? 0) * servings;
-    double totalFiber = (foodData['fiber'] ?? 0) * servings;
-    double totalSugar = (foodData['sugar'] ?? 0) * servings;
-    double totalSodium = (foodData['sodium'] ?? 0) * servings;
-    double totalCholesterol = (foodData['cholesterol'] ?? 0) * servings;
+    double totalSaturatedFat = ((foodData['saturatedFat'] ?? 0) as num).toDouble() * servings;
+    double totalTransFat = ((foodData['transFat'] ?? 0) as num).toDouble() * servings;
+    double totalFiber = ((foodData['fiber'] ?? 0) as num).toDouble() * servings;
+    double totalSugar = ((foodData['sugar'] ?? 0) as num).toDouble() * servings;
+    double totalSodium = ((foodData['sodium'] ?? 0) as num).toDouble() * servings;
+    double totalCholesterol = ((foodData['cholesterol'] ?? 0) as num).toDouble() * servings;
 
     // ✅ 決定記錄方式：優先使用傳入的參數，否則自動檢測
     String finalRecordMethod = recordMethod ?? 'search';
@@ -61,10 +61,10 @@ class NutritionService {
       'userId': userId,
       'date': today,
       'mealType': mealType,
-      'foodName': foodData['name'],
+      'foodName': foodData['name'] ?? '未命名食物',
       'foodId': foodData['id'],
       'servings': servings,
-      'servingSize': foodData['servingSize'],
+      'servingSize': foodData['servingSize'] ?? '1份',
       
       // 基本營養素
       'calories': totalCalories,
@@ -198,6 +198,8 @@ class NutritionService {
     double? sodium,
     double? saturatedFat,
     double? transFat,
+    double? fiber,        // 🔥 新增
+    double? cholesterol,  // 🔥 新增
   }) async {
     await addQuickLog(
       foodName: foodName,
@@ -212,6 +214,8 @@ class NutritionService {
       sodium: sodium ?? 0,
       saturatedFat: saturatedFat ?? 0,
       transFat: transFat ?? 0,
+      fiber: fiber ?? 0,          // 🔥 新增
+      cholesterol: cholesterol ?? 0,  // 🔥 新增
       recordMethod: 'scan', // ✅ 標記為掃描記錄
     );
     
@@ -233,10 +237,10 @@ class NutritionService {
       String today = DateTime.now().toIso8601String().split('T')[0];
 
       // 計算營養素
-      double calories = (foodData['calories'] ?? 0) * servings;
-      double protein = (foodData['protein'] ?? 0) * servings;
-      double carbs = (foodData['carbs'] ?? 0) * servings;
-      double fat = (foodData['fat'] ?? 0) * servings;
+      double calories = ((foodData['calories'] ?? 0) as num).toDouble() * servings;
+      double protein = ((foodData['protein'] ?? 0) as num).toDouble() * servings;
+      double carbs = ((foodData['carbs'] ?? 0) as num).toDouble() * servings;
+      double fat = ((foodData['fat'] ?? 0) as num).toDouble() * servings;
 
       // 🆕 新增到 nutritionLogs,並加入組合標記
       await _firestore.collection(Collections.nutritionLogs).add({
@@ -251,12 +255,12 @@ class NutritionService {
         'protein': protein,
         'carbs': carbs,
         'fat': fat,
-        'saturatedFat': (foodData['saturatedFat'] ?? 0) * servings,
-        'transFat': (foodData['transFat'] ?? 0) * servings,
-        'fiber': (foodData['fiber'] ?? 0) * servings,
-        'sugar': (foodData['sugar'] ?? 0) * servings,
-        'sodium': (foodData['sodium'] ?? 0) * servings,
-        'cholesterol': (foodData['cholesterol'] ?? 0) * servings,
+        'saturatedFat': ((foodData['saturatedFat'] ?? 0) as num).toDouble() * servings,
+        'transFat': ((foodData['transFat'] ?? 0) as num).toDouble() * servings,
+        'fiber': ((foodData['fiber'] ?? 0) as num).toDouble() * servings,
+        'sugar': ((foodData['sugar'] ?? 0) as num).toDouble() * servings,
+        'sodium': ((foodData['sodium'] ?? 0) as num).toDouble() * servings,
+        'cholesterol': ((foodData['cholesterol'] ?? 0) as num).toDouble() * servings,
         
         // ✨ 組合標記 (新增欄位)
         'isFromCombo': true,

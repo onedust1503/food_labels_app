@@ -27,6 +27,9 @@ import '../pages/settings/notification_settings_page.dart';
 import '../pages/profile/coach_edit_page.dart';
 import '../pages/profile/trainee_edit_page.dart';
 
+// 營養 OCR 掃描頁面
+import '../pages/nutrition/ocr_scan_page.dart';
+
 // 🎨 引入明亮版莫蘭迪主題
 import '../theme/app_theme.dart';
 
@@ -304,14 +307,10 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
               gradient: AppColors.primaryGradient,
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('營養掃描功能 (開發中)'),
-                    backgroundColor: AppColors.info,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const OcrScanPage(),
                   ),
                 );
               },

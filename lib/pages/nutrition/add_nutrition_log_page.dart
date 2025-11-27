@@ -1,6 +1,6 @@
 // lib/pages/nutrition/add_nutrition_log_page.dart
 // 新增飲食記錄頁面 - Soft UI 風格
-// ✨ v2.1: 支援掃描記錄 + 可編輯食物名稱 + 完整餐別（含宵夜）
+// ✨ v2.2: 支援掃描記錄 + 可編輯食物名稱 + 完整餐別（含宵夜）+ 詳細營養成分顯示
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -63,6 +63,16 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
     } else {
       return 'latenight'; // 21:00 ~ 05:00 宵夜
     }
+  }
+
+  // 🔥 新增：檢查是否有額外營養成分資料
+  bool get _hasExtendedNutrition {
+    return ((widget.foodData['sugar'] ?? 0) as num).toDouble() > 0 ||
+        ((widget.foodData['sodium'] ?? 0) as num).toDouble() > 0 ||
+        ((widget.foodData['saturatedFat'] ?? 0) as num).toDouble() > 0 ||
+        (widget.foodData['transFat'] != null) ||
+        ((widget.foodData['fiber'] ?? 0) as num).toDouble() > 0 ||
+        ((widget.foodData['cholesterol'] ?? 0) as num).toDouble() > 0;
   }
 
   /// 儲存記錄
@@ -144,11 +154,19 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 計算總營養
-    double totalCalories = (widget.foodData['calories'] ?? 0).toDouble() * _servings;
-    double totalProtein = (widget.foodData['protein'] ?? 0).toDouble() * _servings;
-    double totalCarbs = (widget.foodData['carbs'] ?? 0).toDouble() * _servings;
-    double totalFat = (widget.foodData['fat'] ?? 0).toDouble() * _servings;
+    // 計算總營養 - 基本四大營養素
+    double totalCalories = ((widget.foodData['calories'] ?? 0) as num).toDouble() * _servings;
+    double totalProtein = ((widget.foodData['protein'] ?? 0) as num).toDouble() * _servings;
+    double totalCarbs = ((widget.foodData['carbs'] ?? 0) as num).toDouble() * _servings;
+    double totalFat = ((widget.foodData['fat'] ?? 0) as num).toDouble() * _servings;
+    
+    // 🔥 新增：計算詳細營養素
+    double totalSugar = ((widget.foodData['sugar'] ?? 0) as num).toDouble() * _servings;
+    double totalSodium = ((widget.foodData['sodium'] ?? 0) as num).toDouble() * _servings;
+    double totalSaturatedFat = ((widget.foodData['saturatedFat'] ?? 0) as num).toDouble() * _servings;
+    double totalTransFat = ((widget.foodData['transFat'] ?? 0) as num).toDouble() * _servings;
+    double totalFiber = ((widget.foodData['fiber'] ?? 0) as num).toDouble() * _servings;
+    double totalCholesterol = ((widget.foodData['cholesterol'] ?? 0) as num).toDouble() * _servings;
     
     final bool isScanned = widget.foodData['isScanned'] == true;
 
@@ -190,6 +208,21 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
                 .animate(delay: 300.ms)
                 .fadeIn(duration: 400.ms)
                 .slideY(begin: 0.2, end: 0),
+            
+            // 🔥 新增：詳細營養成分（只在有資料時顯示）
+            if (_hasExtendedNutrition) ...[
+              const SizedBox(height: 20),
+              _buildExtendedNutritionCard(
+                sugar: totalSugar,
+                sodium: totalSodium,
+                saturatedFat: totalSaturatedFat,
+                transFat: totalTransFat,
+                fiber: totalFiber,
+                cholesterol: totalCholesterol,
+              ).animate(delay: 350.ms)
+                  .fadeIn(duration: 400.ms)
+                  .slideY(begin: 0.2, end: 0),
+            ],
             
             const SizedBox(height: 32),
             
@@ -834,6 +867,103 @@ class _AddNutritionLogPageState extends State<AddNutritionLogPage> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔥 新增：詳細營養成分卡片
+  Widget _buildExtendedNutritionCard({
+    required double sugar,
+    required double sodium,
+    required double saturatedFat,
+    required double transFat,
+    required double fiber,
+    required double cholesterol,
+  }) {
+    return SoftCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 標題
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0EA5E9).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.science,
+                  color: Color(0xFF0EA5E9),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                '詳細營養成分',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 營養成分網格
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (sugar > 0 || widget.foodData['sugar'] != null)
+                _buildExtendedItem('糖', '${sugar.toStringAsFixed(1)}g', const Color(0xFFFECACA), const Color(0xFFDC2626)),
+              if (sodium > 0 || widget.foodData['sodium'] != null)
+                _buildExtendedItem('鈉', '${sodium.toStringAsFixed(0)}mg', const Color(0xFFD1FAE5), const Color(0xFF059669)),
+              if (saturatedFat > 0 || widget.foodData['saturatedFat'] != null)
+                _buildExtendedItem('飽和脂肪', '${saturatedFat.toStringAsFixed(1)}g', const Color(0xFFFEF3C7), const Color(0xFFD97706)),
+              if (widget.foodData['transFat'] != null)
+                _buildExtendedItem('反式脂肪', '${transFat.toStringAsFixed(1)}g', const Color(0xFFF3E8FF), const Color(0xFF9333EA)),
+              if (fiber > 0 || widget.foodData['fiber'] != null)
+                _buildExtendedItem('膳食纖維', '${fiber.toStringAsFixed(1)}g', const Color(0xFFCFFAFE), const Color(0xFF0891B2)),
+              if (cholesterol > 0 || widget.foodData['cholesterol'] != null)
+                _buildExtendedItem('膽固醇', '${cholesterol.toStringAsFixed(0)}mg', const Color(0xFFFFE4E6), const Color(0xFFE11D48)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔥 新增：詳細營養項目
+  Widget _buildExtendedItem(String label, String value, Color bgColor, Color textColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: textColor,
+            ),
           ),
         ],
       ),

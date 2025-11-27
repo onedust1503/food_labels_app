@@ -1,6 +1,6 @@
 // lib/pages/nutrition/nutrition_analysis_page.dart
 // 營養分析頁面 - 近期趨勢圖表 + 時間軸視圖
-// ✨ v3.3: 修復30天模式溢出問題
+// ✨ v3.4: 新增詳細營養素分析卡片（糖、鈉、飽和脂肪、反式脂肪、膳食纖維、膽固醇）
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -27,6 +27,16 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
   int _selectedDays = 7;
   final ScrollController _chartScrollController = ScrollController();
   OverlayEntry? _tooltipOverlay;
+  
+  // ✨ v3.4: 詳細營養素顏色定義
+  static const Map<String, Color> _extendedNutrientColors = {
+    'sugar': Color(0xFFDC2626),       // 糖 - 紅色
+    'sodium': Color(0xFF059669),       // 鈉 - 綠色
+    'saturatedFat': Color(0xFFD97706), // 飽和脂肪 - 黃色
+    'transFat': Color(0xFF9333EA),     // 反式脂肪 - 紫色
+    'fiber': Color(0xFF0891B2),        // 膳食纖維 - 青色
+    'cholesterol': Color(0xFFE11D48),  // 膽固醇 - 粉紅色
+  };
   
   @override
   void dispose() {
@@ -62,6 +72,9 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
           final logs = snapshot.data!.docs;
           final dailyData = _processDailyData(logs);
           final timelineData = _processTimelineData(logs);
+          
+          // ✨ v3.4: 計算詳細營養素總計
+          final extendedNutrients = _processExtendedNutrients(logs);
 
           return GestureDetector(
             onTap: _removeTooltip,
@@ -75,6 +88,11 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
                 const SizedBox(height: 20),
                 _buildNutrientsPieChart(dailyData),
                 const SizedBox(height: 20),
+                // ✨ v3.4: 新增詳細營養素分析卡片
+                if (_hasExtendedNutrients(extendedNutrients))
+                  _buildExtendedNutrientsCard(extendedNutrients),
+                if (_hasExtendedNutrients(extendedNutrients))
+                  const SizedBox(height: 20),
                 _buildTimelineHeader(),
                 const SizedBox(height: 12),
                 ...timelineData.map((item) => _buildTimelineItem(item)),
@@ -126,6 +144,36 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     return dailyData;
   }
 
+  // ✨ v3.4: 處理詳細營養素數據
+  Map<String, double> _processExtendedNutrients(List<QueryDocumentSnapshot> logs) {
+    Map<String, double> totals = {
+      'sugar': 0.0,
+      'sodium': 0.0,
+      'saturatedFat': 0.0,
+      'transFat': 0.0,
+      'fiber': 0.0,
+      'cholesterol': 0.0,
+    };
+
+    for (var doc in logs) {
+      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+      
+      totals['sugar'] = totals['sugar']! + ((data['sugar'] ?? 0) as num).toDouble();
+      totals['sodium'] = totals['sodium']! + ((data['sodium'] ?? 0) as num).toDouble();
+      totals['saturatedFat'] = totals['saturatedFat']! + ((data['saturatedFat'] ?? 0) as num).toDouble();
+      totals['transFat'] = totals['transFat']! + ((data['transFat'] ?? 0) as num).toDouble();
+      totals['fiber'] = totals['fiber']! + ((data['fiber'] ?? 0) as num).toDouble();
+      totals['cholesterol'] = totals['cholesterol']! + ((data['cholesterol'] ?? 0) as num).toDouble();
+    }
+
+    return totals;
+  }
+
+  // ✨ v3.4: 檢查是否有詳細營養素數據
+  bool _hasExtendedNutrients(Map<String, double> nutrients) {
+    return nutrients.values.any((value) => value > 0);
+  }
+
   List<Map<String, dynamic>> _processTimelineData(List<QueryDocumentSnapshot> logs) {
     List<Map<String, dynamic>> timelineData = [];
 
@@ -146,6 +194,14 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
         'isFromCombo': data['isFromCombo'] ?? false,
         'comboName': data['comboName'] ?? '',
         'comboId': data['comboId'] ?? '',
+        // ✨ v3.4: 新增詳細營養素
+        'sugar': ((data['sugar'] ?? 0) as num).toDouble(),
+        'sodium': ((data['sodium'] ?? 0) as num).toDouble(),
+        'saturatedFat': ((data['saturatedFat'] ?? 0) as num).toDouble(),
+        'transFat': ((data['transFat'] ?? 0) as num).toDouble(),
+        'fiber': ((data['fiber'] ?? 0) as num).toDouble(),
+        'cholesterol': ((data['cholesterol'] ?? 0) as num).toDouble(),
+        'recordMethod': data['recordMethod'] ?? 'search',
       });
     }
 
@@ -254,7 +310,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
           
           const SizedBox(height: 16),
           
-          // ✨ v3.3: 使用 ClipRect 確保不會溢出
           ClipRect(
             child: SizedBox(
               height: 220,
@@ -345,7 +400,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     }
   }
 
-  /// ✨ 7天精準柱狀圖 - 已修正
   Widget _buildPreciseBarChart7Days(Map<String, Map<String, dynamic>> dailyData) {
     DateTime now = DateTime.now();
     List<DateTime> dates = List.generate(7, (index) => now.subtract(Duration(days: 6 - index)));
@@ -369,7 +423,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
         
         return Stack(
           children: [
-            // Y 軸標籤
             Positioned(
               left: 0,
               top: 0,
@@ -388,7 +441,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
               ),
             ),
             
-            // 圖表區域
             Positioned(
               left: yAxisWidth,
               top: 0,
@@ -423,7 +475,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
               ),
             ),
             
-            // X 軸標籤
             Positioned(
               left: yAxisWidth,
               right: 0,
@@ -456,7 +507,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     );
   }
 
-  /// ✨ v3.3: 30天精準柱狀圖 - 完全重寫，使用 Positioned 避免溢出
   Widget _buildPreciseBarChart30Days(Map<String, Map<String, dynamic>> dailyData) {
     DateTime now = DateTime.now();
     List<DateTime> dates = List.generate(30, (index) => now.subtract(Duration(days: 29 - index)));
@@ -473,7 +523,7 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     List<double> yTicks = [0, yMax * 0.25, yMax * 0.5, yMax * 0.75, yMax];
     
     const double yAxisWidth = 50;
-    const double xAxisHeight = 24;  // ✨ 簡化：統一使用單行標籤
+    const double xAxisHeight = 24;
     const double barAreaWidth = 38;
     final double scrollableWidth = 30 * barAreaWidth;
     
@@ -483,7 +533,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
         
         return Stack(
           children: [
-            // Y 軸標籤（固定）
             Positioned(
               left: 0,
               top: 0,
@@ -502,7 +551,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
               ),
             ),
             
-            // 可滑動區域 - 使用 Stack 內部定位避免溢出
             Positioned(
               left: yAxisWidth,
               top: 0,
@@ -518,7 +566,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
                     height: constraints.maxHeight,
                     child: Stack(
                       children: [
-                        // 柱狀圖區域
                         Positioned(
                           left: 0,
                           top: 0,
@@ -551,7 +598,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
                           ),
                         ),
                         
-                        // X 軸標籤 - 固定在底部
                         Positioned(
                           left: 0,
                           right: 0,
@@ -566,8 +612,6 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
                               return SizedBox(
                                 width: barAreaWidth,
                                 child: Center(
-                                  // ✨ v3.3 關鍵修復：簡化標籤，只顯示日期數字
-                                  // 「今天」改用顏色區分，不用額外標籤
                                   child: Text(
                                     isToday ? '今天' : '${date.day}',
                                     style: TextStyle(
@@ -780,6 +824,355 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     );
   }
 
+  // ✨ v3.4: 詳細營養素分析卡片
+  Widget _buildExtendedNutrientsCard(Map<String, double> nutrients) {
+    // 計算每日平均值
+    double avgSugar = nutrients['sugar']! / _selectedDays;
+    double avgSodium = nutrients['sodium']! / _selectedDays;
+    double avgSaturatedFat = nutrients['saturatedFat']! / _selectedDays;
+    double avgTransFat = nutrients['transFat']! / _selectedDays;
+    double avgFiber = nutrients['fiber']! / _selectedDays;
+    double avgCholesterol = nutrients['cholesterol']! / _selectedDays;
+    
+    return SoftCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 標題
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF8B5CF6).withOpacity(0.2),
+                      const Color(0xFFEC4899).withOpacity(0.15),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.science_outlined, color: Color(0xFF8B5CF6), size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  '詳細營養素分析',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ),
+              // 時間範圍標籤
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$_selectedDays 天平均',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF8B5CF6)),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 20),
+          
+          // 營養素網格
+          Row(
+            children: [
+              Expanded(
+                child: _buildExtendedNutrientItem(
+                  label: '糖',
+                  totalValue: nutrients['sugar']!,
+                  avgValue: avgSugar,
+                  unit: 'g',
+                  color: _extendedNutrientColors['sugar']!,
+                  icon: Icons.cake_outlined,
+                  warning: avgSugar > 25, // WHO 建議每日游離糖攝取量 < 25g
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildExtendedNutrientItem(
+                  label: '鈉',
+                  totalValue: nutrients['sodium']!,
+                  avgValue: avgSodium,
+                  unit: 'mg',
+                  color: _extendedNutrientColors['sodium']!,
+                  icon: Icons.water_drop_outlined,
+                  warning: avgSodium > 2000, // WHO 建議每日鈉攝取量 < 2000mg
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          Row(
+            children: [
+              Expanded(
+                child: _buildExtendedNutrientItem(
+                  label: '飽和脂肪',
+                  totalValue: nutrients['saturatedFat']!,
+                  avgValue: avgSaturatedFat,
+                  unit: 'g',
+                  color: _extendedNutrientColors['saturatedFat']!,
+                  icon: Icons.opacity,
+                  warning: avgSaturatedFat > 20, // 建議 < 20g
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildExtendedNutrientItem(
+                  label: '反式脂肪',
+                  totalValue: nutrients['transFat']!,
+                  avgValue: avgTransFat,
+                  unit: 'g',
+                  color: _extendedNutrientColors['transFat']!,
+                  icon: Icons.warning_amber_rounded,
+                  warning: avgTransFat > 2, // WHO 建議 < 2g
+                  isDanger: true,
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          Row(
+            children: [
+              Expanded(
+                child: _buildExtendedNutrientItem(
+                  label: '膳食纖維',
+                  totalValue: nutrients['fiber']!,
+                  avgValue: avgFiber,
+                  unit: 'g',
+                  color: _extendedNutrientColors['fiber']!,
+                  icon: Icons.eco_outlined,
+                  isGood: avgFiber >= 25, // 建議 >= 25g
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildExtendedNutrientItem(
+                  label: '膽固醇',
+                  totalValue: nutrients['cholesterol']!,
+                  avgValue: avgCholesterol,
+                  unit: 'mg',
+                  color: _extendedNutrientColors['cholesterol']!,
+                  icon: Icons.favorite_border,
+                  warning: avgCholesterol > 300, // 建議 < 300mg
+                ),
+              ),
+            ],
+          ),
+          
+          // 健康提示
+          const SizedBox(height: 16),
+          _buildHealthTips(avgSugar, avgSodium, avgTransFat, avgFiber),
+        ],
+      ),
+    );
+  }
+
+  // ✨ v3.4: 詳細營養素項目
+  Widget _buildExtendedNutrientItem({
+    required String label,
+    required double totalValue,
+    required double avgValue,
+    required String unit,
+    required Color color,
+    required IconData icon,
+    bool warning = false,
+    bool isDanger = false,
+    bool isGood = false,
+  }) {
+    // 決定顯示狀態
+    Color statusColor = color;
+    IconData? statusIcon;
+    
+    if (isDanger && avgValue > 0) {
+      statusColor = const Color(0xFFEF4444);
+      statusIcon = Icons.error_outline;
+    } else if (warning) {
+      statusColor = const Color(0xFFF59E0B);
+      statusIcon = Icons.warning_amber_rounded;
+    } else if (isGood) {
+      statusColor = const Color(0xFF10B981);
+      statusIcon = Icons.check_circle_outline;
+    }
+    
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: statusIcon != null ? statusColor.withOpacity(0.4) : color.withOpacity(0.2),
+          width: statusIcon != null ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 標題列
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (statusIcon != null)
+                Icon(statusIcon, size: 14, color: statusColor),
+            ],
+          ),
+          
+          const SizedBox(height: 10),
+          
+          // 每日平均值
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                avgValue > 0 ? avgValue.toStringAsFixed(1) : '--',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: avgValue > 0 ? color : AppColors.textTertiary,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  unit,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: color.withOpacity(0.7),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 4),
+          
+          // 累計總量
+          Text(
+            '累計: ${totalValue.toStringAsFixed(1)} $unit',
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppColors.textTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✨ v3.4: 健康提示
+  Widget _buildHealthTips(double avgSugar, double avgSodium, double avgTransFat, double avgFiber) {
+    List<Map<String, dynamic>> tips = [];
+    
+    // 檢查各項營養素
+    if (avgTransFat > 2) {
+      tips.add({
+        'icon': Icons.warning_amber_rounded,
+        'color': const Color(0xFFEF4444),
+        'text': '反式脂肪偏高，建議減少加工食品攝取',
+      });
+    }
+    
+    if (avgSugar > 25) {
+      tips.add({
+        'icon': Icons.info_outline,
+        'color': const Color(0xFFF59E0B),
+        'text': '糖分攝取偏高，WHO 建議每日 < 25g',
+      });
+    }
+    
+    if (avgSodium > 2000) {
+      tips.add({
+        'icon': Icons.info_outline,
+        'color': const Color(0xFFF59E0B),
+        'text': '鈉攝取偏高，注意控制鹽分',
+      });
+    }
+    
+    if (avgFiber >= 25) {
+      tips.add({
+        'icon': Icons.check_circle_outline,
+        'color': const Color(0xFF10B981),
+        'text': '膳食纖維攝取充足，繼續保持！',
+      });
+    } else if (avgFiber > 0 && avgFiber < 15) {
+      tips.add({
+        'icon': Icons.lightbulb_outline,
+        'color': const Color(0xFF0891B2),
+        'text': '建議多攝取蔬果增加膳食纖維',
+      });
+    }
+    
+    if (tips.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.tips_and_updates, size: 16, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text(
+                '健康提示',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...tips.map((tip) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(tip['icon'] as IconData, size: 14, color: tip['color'] as Color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tip['text'] as String,
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLegendItem(String label, double value, Color color) {
     return Row(
       children: [
@@ -818,83 +1211,135 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
 
     bool isFromCombo = item['isFromCombo'] ?? false;
     String comboName = item['comboName'] ?? '';
+    String recordMethod = item['recordMethod'] ?? 'search';
+    
+    // ✨ v3.4: 檢查是否有詳細營養素
+    bool hasExtended = (item['sugar'] ?? 0) > 0 ||
+        (item['sodium'] ?? 0) > 0 ||
+        (item['saturatedFat'] ?? 0) > 0 ||
+        (item['transFat'] ?? 0) > 0 ||
+        (item['fiber'] ?? 0) > 0 ||
+        (item['cholesterol'] ?? 0) > 0;
     
     return SoftCard(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
+      child: Column(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Text(
-                createdAt != null ? DateFormat('M/d').format(createdAt) : '--',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    createdAt != null ? DateFormat('M/d').format(createdAt) : '--',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    createdAt != null ? DateFormat('HH:mm').format(createdAt) : '--:--',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: AppColors.getMealLightColor(mealType), borderRadius: BorderRadius.circular(6)),
+                    child: Text(AppColors.getMealEmoji(mealType), style: const TextStyle(fontSize: 12)),
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                createdAt != null ? DateFormat('HH:mm').format(createdAt) : '--:--',
-                style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
-              ),
-              const SizedBox(height: 4),
+              
+              const SizedBox(width: 16),
+              
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: AppColors.getMealLightColor(mealType), borderRadius: BorderRadius.circular(6)),
-                child: Text(AppColors.getMealEmoji(mealType), style: const TextStyle(fontSize: 12)),
+                width: 2,
+                height: 60,
+                decoration: BoxDecoration(color: AppColors.getMealColor(mealType).withOpacity(0.3), borderRadius: BorderRadius.circular(1)),
+              ),
+              
+              const SizedBox(width: 16),
+              
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item['foodName'],
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isFromCombo) ...[
+                          const SizedBox(width: 8),
+                          _buildComboTag(comboName),
+                        ],
+                        // ✨ v3.4: 顯示記錄方式
+                        if (recordMethod == 'scan') ...[
+                          const SizedBox(width: 6),
+                          _buildRecordMethodTag(),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.local_fire_department, size: 14, color: AppColors.calories),
+                        const SizedBox(width: 4),
+                        Text('${item['calories'].toInt()} 大卡', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        _buildMiniNutrient('P', item['protein'], AppColors.protein),
+                        const SizedBox(width: 8),
+                        _buildMiniNutrient('C', item['carbs'], AppColors.carbs),
+                        const SizedBox(width: 8),
+                        _buildMiniNutrient('F', item['fat'], AppColors.fat),
+                        // ✨ v3.4: 顯示有詳細營養素標記
+                        if (hasExtended) ...[
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              '+詳細',
+                              style: TextStyle(fontSize: 9, color: Color(0xFF8B5CF6), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          
-          const SizedBox(width: 16),
-          
-          Container(
-            width: 2,
-            height: 60,
-            decoration: BoxDecoration(color: AppColors.getMealColor(mealType).withOpacity(0.3), borderRadius: BorderRadius.circular(1)),
-          ),
-          
-          const SizedBox(width: 16),
-          
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item['foodName'],
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (isFromCombo) ...[
-                      const SizedBox(width: 8),
-                      _buildComboTag(comboName),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.local_fire_department, size: 14, color: AppColors.calories),
-                    const SizedBox(width: 4),
-                    Text('${item['calories'].toInt()} 大卡', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    _buildMiniNutrient('P', item['protein'], AppColors.protein),
-                    const SizedBox(width: 8),
-                    _buildMiniNutrient('C', item['carbs'], AppColors.carbs),
-                    const SizedBox(width: 8),
-                    _buildMiniNutrient('F', item['fat'], AppColors.fat),
-                  ],
-                ),
-              ],
-            ),
-          ),
+        ],
+      ),
+    );
+  }
+
+  // ✨ v3.4: 記錄方式標籤
+  Widget _buildRecordMethodTag() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF8B5CF6).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.document_scanner, size: 10, color: Color(0xFF8B5CF6)),
+          SizedBox(width: 2),
+          Text('掃描', style: TextStyle(fontSize: 9, color: Color(0xFF8B5CF6), fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -1056,7 +1501,6 @@ class _BarChartPainter extends CustomPainter {
     final double barWidth = barAreaWidth * 0.55;
     final double barSpacing = (barAreaWidth - barWidth) / 2;
     
-    // 繪製水平輔助線（虛線）
     final gridPaint = Paint()
       ..color = AppColors.divider.withOpacity(0.5)
       ..strokeWidth = 1
@@ -1068,7 +1512,6 @@ class _BarChartPainter extends CustomPainter {
       _drawDashedLine(canvas, Offset(0, y), Offset(size.width, y), gridPaint);
     }
     
-    // 繪製柱狀條
     for (int i = 0; i < count; i++) {
       double value = values[i];
       double heightRatio = yMax > 0 ? value / yMax : 0;

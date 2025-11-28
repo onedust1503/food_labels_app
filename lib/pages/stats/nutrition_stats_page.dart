@@ -1,6 +1,6 @@
 // lib/pages/stats/nutrition_stats_page.dart
 // 🔥 優化版 - 響應式設計、快速載入、精簡佈局
-// ✨ 明亮版莫蘭迪風格
+// ✨ 現代柔和風格
 // 🔥 修正：本週定義改為「週一到今天」
 
 import 'package:flutter/material.dart';
@@ -25,16 +25,14 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
   bool _isLoading = true;
-  bool _isSwitching = false; // 切換時的輕量載入狀態
-  AllStatsData? _weekData;   // 快取本週數據
-  AllStatsData? _monthData;  // 快取本月數據
+  bool _isSwitching = false;
+  AllStatsData? _weekData;
+  AllStatsData? _monthData;
   AllStatsData _currentData = AllStatsData.empty();
 
-  // 時間範圍選擇
   int _selectedPeriodIndex = 0;
   final List<String> _periods = ['本週', '本月'];
   
-  // 🔥 新增：日期範圍顯示
   String _dateRangeText = '';
   int _actualDays = 7;
 
@@ -53,13 +51,12 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     super.dispose();
   }
 
-  // 🔥 新增：計算正確的本週範圍（週一到今天）
   Map<String, dynamic> _getWeekRange() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final daysFromMonday = now.weekday - 1; // 週一=0, 週二=1, ..., 週日=6
+    final daysFromMonday = now.weekday - 1;
     final monday = today.subtract(Duration(days: daysFromMonday));
-    final days = daysFromMonday + 1; // 週一到今天的天數
+    final days = daysFromMonday + 1;
     
     return {
       'startDate': monday,
@@ -69,7 +66,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     };
   }
 
-  // 🔥 新增：計算正確的本月範圍
   Map<String, dynamic> _getMonthRange() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -84,12 +80,10 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     };
   }
 
-  // 🔥 修正：使用正確的日期範圍載入數據
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
     try {
-      // 🔥 使用正確的本週範圍
       final weekRange = _getWeekRange();
       _weekData = await _loadStatsForRange(
         weekRange['startDate'] as DateTime,
@@ -109,7 +103,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     }
   }
 
-  // 🔥 新增：根據日期範圍載入統計數據
   Future<AllStatsData> _loadStatsForRange(DateTime startDate, DateTime endDate, int days) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return AllStatsData.empty();
@@ -119,12 +112,10 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     List<DailyNutritionStats> nutritionStats = [];
     List<DailyWaterStats> waterStats = [];
     
-    // 逐天載入數據
     for (int i = 0; i < days; i++) {
       final date = startDate.add(Duration(days: i));
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       
-      // 並行載入當天的營養、喝水、餐數數據
       final results = await Future.wait([
         _firestore
             .collection('users')
@@ -149,7 +140,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       final waterDoc = results[1] as DocumentSnapshot;
       final nutritionLogsSnapshot = results[2] as QuerySnapshot;
       
-      // 解析營養數據
       double calories = 0, protein = 0, carbs = 0, fat = 0;
       double targetCalories = goals.calories;
       double targetProtein = goals.protein;
@@ -182,7 +172,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
         mealCount: mealCount,
       ));
       
-      // 解析喝水數據
       double waterAmount = 0;
       double waterGoal = goals.water;
       
@@ -199,7 +188,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       ));
     }
     
-    // 計算摘要
     final nutritionSummary = _calculateNutritionSummary(nutritionStats);
     final waterSummary = _calculateWaterSummary(waterStats);
     
@@ -212,7 +200,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 🔥 新增：計算營養摘要
   NutritionSummary _calculateNutritionSummary(List<DailyNutritionStats> stats) {
     if (stats.isEmpty) return NutritionSummary.empty();
     
@@ -231,7 +218,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       totalFat += day.fat;
       totalMeals += day.mealCount;
       
-      // 達標標準：達到 80%
       if (day.targetCalories > 0 && day.calories >= day.targetCalories * 0.8) {
         caloriesCompletedDays++;
       }
@@ -268,7 +254,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 🔥 新增：計算喝水摘要
   WaterSummary _calculateWaterSummary(List<DailyWaterStats> stats) {
     if (stats.isEmpty) return WaterSummary.empty();
     
@@ -279,7 +264,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     for (var day in stats) {
       if (day.amount > 0) daysWithData++;
       totalAmount += day.amount;
-      // 🔥 修正：喝水達標標準改為 100%
       if (day.goal > 0 && day.amount >= day.goal) {
         completedDays++;
       }
@@ -295,7 +279,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 🔥 修正：切換時間範圍（使用正確的日期範圍）
   Future<void> _switchPeriod(int index) async {
     if (_selectedPeriodIndex == index) return;
 
@@ -306,7 +289,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
 
     try {
       if (index == 0) {
-        // 本週（週一到今天）
         final weekRange = _getWeekRange();
         if (_weekData == null) {
           _weekData = await _loadStatsForRange(
@@ -319,7 +301,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
         _dateRangeText = weekRange['text'] as String;
         _actualDays = weekRange['days'] as int;
       } else {
-        // 本月（1號到今天）
         final monthRange = _getMonthRange();
         if (_monthData == null) {
           _monthData = await _loadStatsForRange(
@@ -346,26 +327,33 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
         content: Text(message),
         backgroundColor: AppColors.error,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 獲取螢幕尺寸
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFFAF6F3), // 🔥 暖色調背景
       appBar: AppBar(
-        title: const Text('營養統計'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        title: Text(
+          '營養統計',
+          style: TextStyle(
+            color: Colors.grey[800],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.grey[800],
         elevation: 0,
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: Icon(Icons.refresh_rounded, color: Colors.grey[600], size: 22),
             onPressed: () {
               _weekData = null;
               _monthData = null;
@@ -385,45 +373,33 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
                     _monthData = null;
                     await _loadData();
                   },
-                  color: AppColors.primary,
+                  color: const Color(0xFFE07B54), // 🔥 暖橘色
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                    padding: EdgeInsets.all(isSmallScreen ? 14 : 18),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 時間範圍選擇器
                         _buildPeriodSelector(),
-                        const SizedBox(height: 16),
-                        
-                        // 今日進度卡片
+                        const SizedBox(height: 18),
                         _buildTodayProgress(isSmallScreen),
-                        const SizedBox(height: 16),
-                        
-                        // 摘要卡片
+                        const SizedBox(height: 18),
                         _buildSummaryCards(isSmallScreen),
-                        const SizedBox(height: 20),
-                        
-                        // 圖表區域
+                        const SizedBox(height: 24),
                         _buildChartTabs(isSmallScreen),
-                        const SizedBox(height: 20),
-                        
-                        // 達標率
-                        _buildSectionTitle('🎯 達標率'),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 24),
+                        _buildSectionTitle('達標率'),
+                        const SizedBox(height: 14),
                         _buildCompletionRates(isSmallScreen),
-                        const SizedBox(height: 20),
-                        
-                        // 每日數據
-                        _buildSectionTitle('📋 每日詳情'),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 24),
+                        _buildSectionTitle('每日詳情'),
+                        const SizedBox(height: 14),
                         _buildDailyList(isSmallScreen),
                         const SizedBox(height: 32),
                       ],
                     ),
                   ),
                 ),
-                // 切換時的載入指示器
                 if (_isSwitching)
                   Container(
                     color: Colors.black12,
@@ -432,11 +408,18 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: AppShadows.medium,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.15),
+                              blurRadius: 20,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
                         ),
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                        child: const CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE07B54)), // 🔥 暖橘色
+                          strokeWidth: 3,
                         ),
                       ),
                     ),
@@ -451,26 +434,29 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE07B54)), // 🔥 暖橘色
+            strokeWidth: 3,
           ),
           const SizedBox(height: 16),
-          Text(
-            '載入統計資料中...',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
+          Text('載入統計資料中...', style: TextStyle(color: Colors.grey[500])),
         ],
       ),
     );
   }
 
-  // 🔥 修正：時間範圍選擇器 - 顯示日期範圍
   Widget _buildPeriodSelector() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: AppShadows.small,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: List.generate(_periods.length, (index) {
@@ -480,10 +466,14 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
               onTap: () => _switchPeriod(index),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  gradient: isSelected ? AppColors.primaryGradient : null,
-                  borderRadius: BorderRadius.circular(12),
+                  gradient: isSelected
+                      ? const LinearGradient(
+                          colors: [Color(0xFFE07B54), Color(0xFFF4A261)], // 🔥 暖橘漸層
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
                   children: [
@@ -491,17 +481,17 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
                       _periods[index],
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: isSelected ? Colors.white : AppColors.textSecondary,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? Colors.white : Colors.grey[500],
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        fontSize: 14,
                       ),
                     ),
-                    // 🔥 新增：顯示日期範圍
                     if (isSelected && _dateRangeText.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
                         _dateRangeText,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: Colors.white.withOpacity(0.85),
                           fontSize: 10,
                         ),
                       ),
@@ -519,11 +509,15 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: AppTextStyles.h4.copyWith(fontWeight: FontWeight.bold),
+      style: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: Colors.grey[800],
+        letterSpacing: 0.3,
+      ),
     );
   }
 
-  // 🔥 今日進度（響應式）
   Widget _buildTodayProgress(bool isSmallScreen) {
     if (_currentData.nutritionStats.isEmpty) {
       return _buildEmptyCard('還沒有數據');
@@ -532,11 +526,21 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     final today = _currentData.nutritionStats.last;
     
     return Container(
-      padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+      padding: EdgeInsets.all(isSmallScreen ? 18 : 22),
       decoration: BoxDecoration(
-        gradient: AppColors.primaryGradient,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.medium,
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE07B54), Color(0xFFF4A261)], // 🔥 暖橘漸層
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFE07B54).withOpacity(0.30), // 🔥 暖橘陰影
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -544,42 +548,40 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Flexible(
-                child: Text(
-                  '今日營養',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: isSmallScreen ? 16 : 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+              Text(
+                '今日營養',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isSmallScreen ? 17 : 19,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   DateFormat('MM/dd').format(today.date),
                   style: TextStyle(
-                    color: Colors.white,
+                    color: const Color(0xFFE07B54), // 🔥 暖橘色
                     fontSize: isSmallScreen ? 11 : 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           
-          // 主要營養素 - 2x2 網格
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: isSmallScreen ? 1.8 : 2.0,  // 🔥 降低比例增加高度
+            childAspectRatio: isSmallScreen ? 1.8 : 2.0,
             children: [
               _buildProgressItem('熱量', today.calories, today.targetCalories, '大卡', isSmallScreen),
               _buildProgressItem('蛋白質', today.protein, today.targetProtein, 'g', isSmallScreen),
@@ -602,16 +604,16 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
 
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isSmallScreen ? 8 : 10,
-        vertical: isSmallScreen ? 6 : 8,
+        horizontal: isSmallScreen ? 10 : 12,
+        vertical: isSmallScreen ? 8 : 10,
       ),
       decoration: BoxDecoration(
-        color: Colors.white12,
-        borderRadius: BorderRadius.circular(10),
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,  // 🔥 均勻分布
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         mainAxisSize: MainAxisSize.max,
         children: [
           Row(
@@ -621,7 +623,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
                 child: Text(
                   label,
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: Colors.white.withOpacity(0.85),
                     fontSize: isSmallScreen ? 11 : 12,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -637,7 +639,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
               ),
             ],
           ),
-          // 🔥 使用 FittedBox 防止文字溢出
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -651,12 +652,12 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
             ),
           ),
           ClipRRect(
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: progress.clamp(0.0, 1.0),
-              backgroundColor: Colors.white24,
+              backgroundColor: Colors.white.withOpacity(0.25),
               valueColor: AlwaysStoppedAnimation<Color>(progressColor),
-              minHeight: isSmallScreen ? 3 : 4,
+              minHeight: isSmallScreen ? 4 : 5,
             ),
           ),
         ],
@@ -664,7 +665,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 🔥 修正：摘要卡片（使用正確的天數）
   Widget _buildSummaryCards(bool isSmallScreen) {
     final summary = _currentData.nutritionSummary;
     final waterSummary = _currentData.waterSummary;
@@ -673,32 +673,31 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       children: [
         Expanded(
           child: _buildMiniCard(
-            icon: Icons.local_fire_department,
-            color: AppColors.accent1,
+            icon: Icons.local_fire_department_rounded,
+            color: const Color(0xFFE07B54), // 🔥 暖橘色
             title: '平均',
             value: '${summary.avgCalories.toInt()}',
             unit: '大卡',
             isSmallScreen: isSmallScreen,
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Expanded(
           child: _buildMiniCard(
-            icon: Icons.restaurant,
-            color: AppColors.accent2,
+            icon: Icons.restaurant_rounded,
+            color: const Color(0xFFF4A261), // 🔥 金黃橘
             title: '餐數',
             value: '${summary.totalMeals}',
             unit: '餐',
             isSmallScreen: isSmallScreen,
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Expanded(
           child: _buildMiniCard(
-            icon: Icons.water_drop,
-            color: AppColors.info,
+            icon: Icons.water_drop_rounded,
+            color: const Color(0xFF89B4D4),
             title: '喝水',
-            // 🔥 修正：使用實際天數
             value: '${waterSummary.completedDays}/$_actualDays',
             unit: '天達標',
             isSmallScreen: isSmallScreen,
@@ -718,33 +717,39 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
   }) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isSmallScreen ? 8 : 12,
-        vertical: isSmallScreen ? 10 : 12,
+        horizontal: isSmallScreen ? 10 : 14,
+        vertical: isSmallScreen ? 12 : 14,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: AppShadows.small,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.10),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: isSmallScreen ? 20 : 24),
-          const SizedBox(height: 4),
+          Icon(icon, color: color, size: isSmallScreen ? 22 : 26),
+          const SizedBox(height: 6),
           Text(
             title,
             style: TextStyle(
-              color: AppColors.textTertiary,
+              color: Colors.grey[500],
               fontSize: isSmallScreen ? 10 : 11,
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 4),
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               value,
               style: TextStyle(
                 color: color,
-                fontSize: isSmallScreen ? 16 : 18,
+                fontSize: isSmallScreen ? 18 : 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -752,7 +757,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
           Text(
             unit,
             style: TextStyle(
-              color: AppColors.textTertiary,
+              color: Colors.grey[400],
               fontSize: isSmallScreen ? 9 : 10,
             ),
           ),
@@ -761,42 +766,59 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 🔥 圖表 Tab 切換
   Widget _buildChartTabs(bool isSmallScreen) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.small,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.12),
+            blurRadius: 20,
+            spreadRadius: 2,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          TabBar(
-            controller: _tabController,
-            labelColor: AppColors.primary,
-            unselectedLabelColor: AppColors.textSecondary,
-            indicatorColor: AppColors.primary,
-            indicatorWeight: 3,
-            labelStyle: TextStyle(
-              fontSize: isSmallScreen ? 13 : 14,
-              fontWeight: FontWeight.bold,
+          Container(
+            margin: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAF6F3), // 🔥 暖色調背景
+              borderRadius: BorderRadius.circular(16),
             ),
-            tabs: const [
-              Tab(text: '熱量趨勢'),
-              Tab(text: '喝水統計'),
-            ],
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.grey[500],
+              indicator: BoxDecoration(
+                color: const Color(0xFFE07B54), // 🔥 暖橘色
+                borderRadius: BorderRadius.circular(14),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelStyle: TextStyle(
+                fontSize: isSmallScreen ? 12 : 13,
+                fontWeight: FontWeight.w600,
+              ),
+              tabs: const [
+                Tab(text: '熱量趨勢'),
+                Tab(text: '喝水統計'),
+              ],
+            ),
           ),
           SizedBox(
-            height: isSmallScreen ? 220 : 260,
+            height: isSmallScreen ? 240 : 280,
             child: TabBarView(
               controller: _tabController,
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: _buildCaloriesChart(isSmallScreen),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: _buildWaterChart(isSmallScreen),
                 ),
               ],
@@ -807,7 +829,6 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 🔥 修正：熱量趨勢圖（優化 X 軸間隔）
   Widget _buildCaloriesChart(bool isSmallScreen) {
     if (_currentData.nutritionStats.isEmpty) {
       return _buildEmptyChartContent('還沒有數據');
@@ -819,130 +840,165 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       if (s.calories > maxValue) maxValue = s.calories;
       if (s.targetCalories > maxValue) maxValue = s.targetCalories;
     }
-    double yMax = maxValue > 0 ? (maxValue * 1.2).ceilToDouble() : 2500;
+    double yMax = maxValue > 0 ? ((maxValue * 1.2) / 500).ceil() * 500.0 : 2500;
+    if (yMax < 500) yMax = 500;
 
-    return LineChart(
-      LineChartData(
-        minY: 0,
-        maxY: yMax,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: yMax / 4,
-          getDrawingHorizontalLine: (value) => FlLine(
-            color: Colors.grey.shade200,
-            strokeWidth: 1,
+    return Column(
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 20,
+                height: 4,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE07B54), Color(0xFFF4A261)], // 🔥 暖橘漸層
+                  ),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text('實際攝取', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+              const SizedBox(width: 16),
+              Row(
+                children: [
+                  Container(width: 6, height: 2, color: Colors.grey.shade400),
+                  const SizedBox(width: 2),
+                  Container(width: 6, height: 2, color: Colors.grey.shade400),
+                ],
+              ),
+              const SizedBox(width: 6),
+              Text('目標', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+            ],
           ),
         ),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: isSmallScreen ? 35 : 40,
-              interval: yMax / 4,
-              getTitlesWidget: (value, meta) {
-                if (value == 0 || value == yMax) return const SizedBox();
-                return Text(
-                  '${(value / 1000).toStringAsFixed(1)}k',
-                  style: TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: isSmallScreen ? 9 : 10,
+        Expanded(
+          child: LineChart(
+            LineChartData(
+              minY: 0,
+              maxY: yMax,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: yMax / 4,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: Colors.grey.withOpacity(0.15),
+                  strokeWidth: 1,
+                ),
+              ),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: isSmallScreen ? 38 : 45,
+                    interval: yMax / 4,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0 || value == yMax) return const SizedBox();
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          value >= 1000 ? '${(value / 1000).toStringAsFixed(1)}k' : '${value.toInt()}',
+                          style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 1,
-              getTitlesWidget: (value, meta) {
-                int index = value.toInt();
-                if (index < 0 || index >= stats.length) return const SizedBox();
-                // 🔥 修正：根據數據量動態調整間隔
-                int interval = stats.length > 14 ? 3 : (stats.length > 7 ? 2 : 1);
-                if (index % interval != 0 && index != stats.length - 1) return const SizedBox();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    DateFormat('d').format(stats[index].date),
-                    style: TextStyle(
-                      color: AppColors.textTertiary,
-                      fontSize: isSmallScreen ? 9 : 10,
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      int index = value.toInt();
+                      if (index < 0 || index >= stats.length) return const SizedBox();
+                      int interval = stats.length > 14 ? 3 : (stats.length > 7 ? 2 : 1);
+                      if (index % interval != 0 && index != stats.length - 1) return const SizedBox();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          DateFormat('d').format(stats[index].date),
+                          style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              borderData: FlBorderData(show: false),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: List.generate(
+                    stats.length,
+                    (i) => FlSpot(i.toDouble(), stats[i].calories),
+                  ),
+                  isCurved: true,
+                  curveSmoothness: 0.35,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE07B54), Color(0xFFF4A261)], // 🔥 暖橘漸層
+                  ),
+                  barWidth: 3,
+                  dotData: FlDotData(
+                    show: stats.length <= 10,
+                    getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                      radius: 4,
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                      strokeColor: const Color(0xFFE07B54), // 🔥 暖橘色
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        borderData: FlBorderData(show: false),
-        lineBarsData: [
-          // 實際攝取
-          LineChartBarData(
-            spots: List.generate(
-              stats.length,
-              (i) => FlSpot(i.toDouble(), stats[i].calories),
-            ),
-            isCurved: true,
-            color: AppColors.primary,
-            barWidth: 2.5,
-            dotData: FlDotData(
-              show: stats.length <= 10,
-              getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                radius: 3,
-                color: AppColors.primary,
-                strokeWidth: 1.5,
-                strokeColor: Colors.white,
+                  belowBarData: BarAreaData(
+                    show: true,
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFFE07B54).withOpacity(0.25), // 🔥 暖橘漸層
+                        const Color(0xFFF4A261).withOpacity(0.05),
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                ),
+                LineChartBarData(
+                  spots: List.generate(
+                    stats.length,
+                    (i) => FlSpot(i.toDouble(), stats[i].targetCalories),
+                  ),
+                  isCurved: false,
+                  color: Colors.grey.shade400,
+                  barWidth: 1.5,
+                  dotData: const FlDotData(show: false),
+                  dashArray: [6, 4],
+                ),
+              ],
+              lineTouchData: LineTouchData(
+                touchTooltipData: LineTouchTooltipData(
+                  fitInsideHorizontally: true,
+                  fitInsideVertically: true,
+                  getTooltipColor: (touchedSpot) => Colors.black87,
+                  getTooltipItems: (spots) {
+                    return spots.map((spot) {
+                      String label = spot.barIndex == 0 ? '實際' : '目標';
+                      Color color = spot.barIndex == 0 ? const Color(0xFFE07B54) : Colors.grey.shade400;
+                      return LineTooltipItem(
+                        '$label: ${spot.y.toInt()} 大卡',
+                        TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w500),
+                      );
+                    }).toList();
+                  },
+                ),
               ),
             ),
-            belowBarData: BarAreaData(
-              show: true,
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary.withValues(alpha: 0.3),
-                  AppColors.primary.withValues(alpha: 0.05),
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-            ),
-          ),
-          // 目標線
-          LineChartBarData(
-            spots: List.generate(
-              stats.length,
-              (i) => FlSpot(i.toDouble(), stats[i].targetCalories),
-            ),
-            isCurved: false,
-            color: Colors.red.shade300,
-            barWidth: 1.5,
-            dotData: const FlDotData(show: false),
-            dashArray: [4, 4],
-          ),
-        ],
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            fitInsideHorizontally: true,
-            fitInsideVertically: true,
-            getTooltipItems: (spots) {
-              return spots.map((spot) {
-                String label = spot.barIndex == 0 ? '實際' : '目標';
-                return LineTooltipItem(
-                  '$label: ${spot.y.toInt()}',
-                  const TextStyle(color: Colors.white, fontSize: 11),
-                );
-              }).toList();
-            },
           ),
         ),
-      ),
+      ],
     );
   }
 
-  // 🔥 修正：喝水統計圖（優化 X 軸間隔和柱寬）
   Widget _buildWaterChart(bool isSmallScreen) {
     if (_currentData.waterStats.isEmpty) {
       return _buildEmptyChartContent('還沒有數據');
@@ -956,123 +1012,185 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     }
     double yMax = maxValue > 0 ? (maxValue * 1.2).ceilToDouble() : 2500;
 
-    return BarChart(
-      BarChartData(
-        minY: 0,
-        maxY: yMax,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: yMax / 4,
-          getDrawingHorizontalLine: (value) => FlLine(
-            color: Colors.grey.shade200,
-            strokeWidth: 1,
-          ),
-        ),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: isSmallScreen ? 40 : 45,
-              interval: yMax / 4,
-              getTitlesWidget: (value, meta) {
-                if (value == 0 || value == yMax) return const SizedBox();
-                return Text(
-                  '${(value / 1000).toStringAsFixed(1)}L',
-                  style: TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: isSmallScreen ? 9 : 10,
-                  ),
-                );
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (value, meta) {
-                int index = value.toInt();
-                if (index < 0 || index >= stats.length) return const SizedBox();
-                // 🔥 修正：根據數據量動態調整間隔
-                int interval = stats.length > 14 ? 3 : (stats.length > 7 ? 2 : 1);
-                if (index % interval != 0 && index != stats.length - 1) return const SizedBox();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    DateFormat('d').format(stats[index].date),
-                    style: TextStyle(
-                      color: AppColors.textTertiary,
-                      fontSize: isSmallScreen ? 9 : 10,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        borderData: FlBorderData(show: false),
-        barGroups: List.generate(stats.length, (i) {
-          final s = stats[i];
-          // 🔥 修正：喝水達標標準改為 100%
-          final isCompleted = s.amount >= s.goal;
-          // 🔥 修正：根據數據量動態調整柱寬
-          double barWidth = stats.length > 20 ? 6 : (stats.length > 15 ? 8 : (stats.length > 7 ? 12 : 16));
-          return BarChartGroupData(
-            x: i,
-            barRods: [
-              BarChartRodData(
-                toY: s.amount,
-                color: isCompleted ? AppColors.info : AppColors.info.withValues(alpha: 0.4),
-                width: barWidth,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+    return Column(
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF89B4D4),
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
+              const SizedBox(width: 6),
+              Text('達標', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+              const SizedBox(width: 14),
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF89B4D4).withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text('未達標', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+              const SizedBox(width: 14),
+              Text('（需達 100%）', style: TextStyle(fontSize: 10, color: Colors.grey[400])),
             ],
-          );
-        }),
-        barTouchData: BarTouchData(
-          touchTooltipData: BarTouchTooltipData(
-            fitInsideHorizontally: true,
-            fitInsideVertically: true,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              final s = stats[groupIndex];
-              return BarTooltipItem(
-                '${s.amount.toInt()}/${s.goal.toInt()}ml',
-                const TextStyle(color: Colors.white, fontSize: 11),
-              );
-            },
           ),
         ),
-      ),
+        Expanded(
+          child: BarChart(
+            BarChartData(
+              minY: 0,
+              maxY: yMax,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: yMax / 4,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: Colors.grey.withOpacity(0.15),
+                  strokeWidth: 1,
+                ),
+              ),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: isSmallScreen ? 40 : 45,
+                    interval: yMax / 4,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0 || value == yMax) return const SizedBox();
+                      return Text(
+                        '${(value / 1000).toStringAsFixed(1)}L',
+                        style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                      );
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    getTitlesWidget: (value, meta) {
+                      int index = value.toInt();
+                      if (index < 0 || index >= stats.length) return const SizedBox();
+                      int interval = stats.length > 14 ? 3 : (stats.length > 7 ? 2 : 1);
+                      if (index % interval != 0 && index != stats.length - 1) return const SizedBox();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          DateFormat('d').format(stats[index].date),
+                          style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              borderData: FlBorderData(show: false),
+              barGroups: List.generate(stats.length, (i) {
+                final s = stats[i];
+                final isCompleted = s.amount >= s.goal;
+                double barWidth = stats.length > 20 ? 8 : (stats.length > 15 ? 10 : (stats.length > 7 ? 14 : 18));
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: s.amount,
+                      color: isCompleted 
+                          ? const Color(0xFF89B4D4) 
+                          : const Color(0xFF89B4D4).withOpacity(0.4),
+                      width: barWidth,
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                  ],
+                );
+              }),
+              barTouchData: BarTouchData(
+                touchTooltipData: BarTouchTooltipData(
+                  fitInsideHorizontally: true,
+                  fitInsideVertically: true,
+                  getTooltipColor: (touchedSpot) => Colors.black87,
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final s = stats[groupIndex];
+                    return BarTooltipItem(
+                      '${s.amount.toInt()}/${s.goal.toInt()}ml',
+                      const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  // 達標率
   Widget _buildCompletionRates(bool isSmallScreen) {
     final summary = _currentData.nutritionSummary;
     
     return Container(
-      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.small,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.10),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _buildCompletionCircle('熱量', summary.caloriesCompletionRate, AppColors.primary, isSmallScreen),
-          _buildCompletionCircle('蛋白', summary.proteinCompletionRate, AppColors.accent2, isSmallScreen),
-          _buildCompletionCircle('碳水', summary.carbsCompletionRate, AppColors.accent1, isSmallScreen),
-          _buildCompletionCircle('脂肪', summary.fatCompletionRate, AppColors.accent3, isSmallScreen),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompletionCircle('熱量', summary.caloriesCompletionRate, const Color(0xFFE07B54), isSmallScreen), // 🔥 暖橘色
+              _buildCompletionCircle('蛋白', summary.proteinCompletionRate, const Color(0xFFF4A261), isSmallScreen),
+              _buildCompletionCircle('碳水', summary.carbsCompletionRate, const Color(0xFF89B4D4), isSmallScreen),
+              _buildCompletionCircle('脂肪', summary.fatCompletionRate, const Color(0xFFB8A9C9), isSmallScreen),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAF6F3), // 🔥 暖色調背景
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey[500]),
+                const SizedBox(width: 6),
+                Text(
+                  '營養素達到目標 80% 即算達標',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: isSmallScreen ? 10 : 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildCompletionCircle(String label, double rate, Color color, bool isSmallScreen) {
-    double size = isSmallScreen ? 50 : 60;
+    double size = isSmallScreen ? 52 : 62;
     return Column(
       children: [
         SizedBox(
@@ -1083,8 +1201,8 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
             children: [
               CircularProgressIndicator(
                 value: (rate / 100).clamp(0.0, 1.0),
-                strokeWidth: isSmallScreen ? 4 : 5,
-                backgroundColor: color.withValues(alpha: 0.2),
+                strokeWidth: isSmallScreen ? 5 : 6,
+                backgroundColor: color.withOpacity(0.15),
                 valueColor: AlwaysStoppedAnimation<Color>(color),
                 strokeCap: StrokeCap.round,
               ),
@@ -1099,11 +1217,11 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
             ],
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           label,
           style: TextStyle(
-            color: AppColors.textSecondary,
+            color: Colors.grey[600],
             fontSize: isSmallScreen ? 10 : 11,
           ),
         ),
@@ -1111,109 +1229,181 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 每日詳情列表
   Widget _buildDailyList(bool isSmallScreen) {
     if (_currentData.nutritionStats.isEmpty) {
       return _buildEmptyCard('還沒有數據');
     }
 
-    // 反轉順序，最新的在上面
     final stats = _currentData.nutritionStats.reversed.toList();
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.small,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.10),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
-        children: List.generate(stats.length.clamp(0, 10), (i) {
-          final day = stats[i];
-          final isToday = DateFormat('yyyy-MM-dd').format(day.date) ==
-              DateFormat('yyyy-MM-dd').format(DateTime.now());
-          
-          return Container(
+        children: [
+          Container(
             padding: EdgeInsets.symmetric(
-              horizontal: isSmallScreen ? 12 : 16,
+              horizontal: isSmallScreen ? 14 : 18,
               vertical: isSmallScreen ? 10 : 12,
             ),
-            decoration: BoxDecoration(
-              color: isToday ? AppColors.primary.withValues(alpha: 0.08) : null,
-              border: i < stats.length.clamp(0, 10) - 1
-                  ? Border(bottom: BorderSide(color: Colors.grey.shade100))
-                  : null,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFAF6F3), // 🔥 暖色調背景
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Row(
               children: [
-                // 日期
                 SizedBox(
                   width: isSmallScreen ? 50 : 60,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        DateFormat('MM/dd').format(day.date),
-                        style: TextStyle(
-                          fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-                          color: isToday ? AppColors.primary : AppColors.textPrimary,
-                          fontSize: isSmallScreen ? 12 : 13,
-                        ),
-                      ),
-                      Text(
-                        DateFormat('E', 'zh_TW').format(day.date),
-                        style: TextStyle(
-                          color: AppColors.textTertiary,
-                          fontSize: isSmallScreen ? 10 : 11,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '日期',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: isSmallScreen ? 10 : 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                
-                // 熱量
                 Expanded(
                   flex: 2,
-                  child: _buildDayValue(
-                    '${day.calories.toInt()}',
-                    '大卡',
-                    day.caloriesProgress >= 80,
-                    isSmallScreen,
+                  child: Text(
+                    '熱量',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: isSmallScreen ? 10 : 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                
-                // 蛋白質
                 Expanded(
-                  child: _buildDayValue(
-                    '${day.protein.toInt()}g',
-                    '',
-                    day.proteinProgress >= 80,
-                    isSmallScreen,
+                  child: Text(
+                    '蛋白',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: isSmallScreen ? 10 : 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                
-                // 碳水
                 Expanded(
-                  child: _buildDayValue(
-                    '${day.carbs.toInt()}g',
-                    '',
-                    day.carbsProgress >= 80,
-                    isSmallScreen,
+                  child: Text(
+                    '碳水',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: isSmallScreen ? 10 : 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                
-                // 脂肪
                 Expanded(
-                  child: _buildDayValue(
-                    '${day.fat.toInt()}g',
-                    '',
-                    day.fatProgress >= 80,
-                    isSmallScreen,
+                  child: Text(
+                    '脂肪',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: isSmallScreen ? 10 : 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
             ),
-          );
-        }),
+          ),
+          ...List.generate(stats.length.clamp(0, 10), (i) {
+            final day = stats[i];
+            final isToday = DateFormat('yyyy-MM-dd').format(day.date) ==
+                DateFormat('yyyy-MM-dd').format(DateTime.now());
+            
+            return Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 14 : 18,
+                vertical: isSmallScreen ? 12 : 14,
+              ),
+              decoration: BoxDecoration(
+                color: isToday ? const Color(0xFFFFF5EE) : null, // 🔥 淺橘色高亮
+                border: i < stats.length.clamp(0, 10) - 1
+                    ? Border(bottom: BorderSide(color: Colors.grey.shade100))
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: isSmallScreen ? 50 : 60,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isToday ? '今天' : DateFormat('MM/dd').format(day.date),
+                          style: TextStyle(
+                            fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
+                            color: isToday ? const Color(0xFFE07B54) : Colors.grey[800], // 🔥 暖橘色
+                            fontSize: isSmallScreen ? 12 : 13,
+                          ),
+                        ),
+                        if (!isToday)
+                          Text(
+                            DateFormat('E', 'zh_TW').format(day.date),
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: isSmallScreen ? 10 : 11,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  
+                  Expanded(
+                    flex: 2,
+                    child: _buildDayValue(
+                      '${day.calories.toInt()}',
+                      '大卡',
+                      day.caloriesProgress >= 80,
+                      isSmallScreen,
+                    ),
+                  ),
+                  
+                  Expanded(
+                    child: _buildDayValue(
+                      '${day.protein.toInt()}g',
+                      '',
+                      day.proteinProgress >= 80,
+                      isSmallScreen,
+                    ),
+                  ),
+                  
+                  Expanded(
+                    child: _buildDayValue(
+                      '${day.carbs.toInt()}g',
+                      '',
+                      day.carbsProgress >= 80,
+                      isSmallScreen,
+                    ),
+                  ),
+                  
+                  Expanded(
+                    child: _buildDayValue(
+                      '${day.fat.toInt()}g',
+                      '',
+                      day.fatProgress >= 80,
+                      isSmallScreen,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -1224,18 +1414,18 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       children: [
         if (isGood)
           Icon(
-            Icons.check_circle,
+            Icons.check_circle_rounded,
             size: isSmallScreen ? 12 : 14,
-            color: AppColors.success,
+            color: const Color(0xFFE07B54), // 🔥 暖橘色
           ),
         if (isGood) const SizedBox(width: 2),
         Flexible(
           child: Text(
             value + unit,
             style: TextStyle(
-              color: isGood ? AppColors.success : AppColors.textSecondary,
+              color: isGood ? const Color(0xFFE07B54) : Colors.grey[500], // 🔥 暖橘色
               fontSize: isSmallScreen ? 11 : 12,
-              fontWeight: isGood ? FontWeight.w500 : FontWeight.normal,
+              fontWeight: isGood ? FontWeight.w600 : FontWeight.normal,
             ),
             overflow: TextOverflow.ellipsis,
           ),
@@ -1246,20 +1436,26 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
 
   Widget _buildEmptyCard(String message) {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.small,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.10),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.inbox_outlined, size: 40, color: AppColors.textTertiary),
-            const SizedBox(height: 8),
+            Icon(Icons.inbox_rounded, size: 44, color: Colors.grey[400]),
+            const SizedBox(height: 12),
             Text(
               message,
-              style: TextStyle(color: AppColors.textTertiary),
+              style: TextStyle(color: Colors.grey[500], fontSize: 14),
             ),
           ],
         ),
@@ -1272,11 +1468,11 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.insert_chart_outlined, size: 36, color: AppColors.textTertiary),
-          const SizedBox(height: 8),
+          Icon(Icons.bar_chart_rounded, size: 40, color: Colors.grey[400]),
+          const SizedBox(height: 10),
           Text(
             message,
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+            style: TextStyle(color: Colors.grey[500], fontSize: 13),
           ),
         ],
       ),

@@ -344,15 +344,22 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
     final isSmallScreen = screenWidth < 360;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF5F7FA), // 🔥 柔和淺灰背景
       appBar: AppBar(
-        title: const Text('運動統計'),
-        backgroundColor: AppColors.accent1,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        title: Text(
+          '運動統計',
+          style: TextStyle(
+            color: Colors.grey[800],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: Colors.transparent, // 🔥 透明 AppBar
+        foregroundColor: Colors.grey[800],
+        elevation: 0, // 🔥 無陰影
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: Icon(Icons.refresh_rounded, color: Colors.grey[600]),
             onPressed: _loadData,
             tooltip: '重新載入',
           ),
@@ -362,29 +369,29 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
           ? _buildLoadingView()
           : RefreshIndicator(
               onRefresh: _loadData,
-              color: AppColors.accent1,
+              color: const Color(0xFF5BA8A0),
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                padding: EdgeInsets.all(isSmallScreen ? 14 : 18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildMonthlyOverview(isSmallScreen),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     _buildGoalProgress(isSmallScreen),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     _buildStreakAndComparison(isSmallScreen),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     _buildWeeklySummaryCards(isSmallScreen),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     _buildChartSection(isSmallScreen),
-                    const SizedBox(height: 20),
-                    _buildSectionTitle('🏋️ 運動類型分佈'),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 24),
+                    _buildSectionTitle('運動類型分佈'),
+                    const SizedBox(height: 14),
                     _buildTypePieChart(isSmallScreen),
-                    const SizedBox(height: 20),
-                    _buildSectionTitle('📋 本週每日詳情'),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 24),
+                    _buildSectionTitle('本週每日詳情'),
+                    const SizedBox(height: 14),
                     _buildDailyList(isSmallScreen),
                     const SizedBox(height: 32),
                   ],
@@ -400,36 +407,47 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent1),
+            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF5BA8A0)),
+            strokeWidth: 3,
           ),
           const SizedBox(height: 16),
-          Text('載入統計資料中...', style: TextStyle(color: AppColors.textSecondary)),
+          Text('載入統計資料中...', style: TextStyle(color: Colors.grey[500])),
         ],
       ),
     );
   }
 
+  // 🔥 簡約標題樣式（無 emoji）
   Widget _buildSectionTitle(String title) {
-    return Text(title, style: AppTextStyles.h4.copyWith(fontWeight: FontWeight.bold));
+    return Text(
+      title, 
+      style: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: Colors.grey[800],
+        letterSpacing: 0.3,
+      ),
+    );
   }
 
   Widget _buildMonthlyOverview(bool isSmallScreen) {
     if (_monthlyOverview == null) return const SizedBox.shrink();
 
     return Container(
-      padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+      padding: EdgeInsets.all(isSmallScreen ? 18 : 22),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.accent1, AppColors.accent1.withValues(alpha: 0.8)],
+        // 🔥 更輕柔的綠色漸層
+        gradient: const LinearGradient(
+          colors: [Color(0xFF5BA8A0), Color(0xFF7BC4BC)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: AppColors.accent1.withValues(alpha: 0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF5BA8A0).withValues(alpha: 0.30),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -439,40 +457,39 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.calendar_month, color: Colors.white, size: isSmallScreen ? 18 : 20),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '本月運動總覽',
-                    style: TextStyle(color: Colors.white, fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              Text(
+                '本月運動總覽',
+                style: TextStyle(
+                  color: Colors.white, 
+                  fontSize: isSmallScreen ? 17 : 19, 
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: Text(
                   DateFormat('yyyy年M月').format(DateTime.now()),
-                  style: TextStyle(color: AppColors.accent1, fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: const Color(0xFF5BA8A0), 
+                    fontSize: isSmallScreen ? 11 : 12, 
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 26),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildOverviewItem('${_monthlyOverview!.totalWorkouts}', '次訓練', Icons.fitness_center, isSmallScreen),
-              _buildOverviewItem('${_monthlyOverview!.totalDuration}', '分鐘', Icons.timer, isSmallScreen),
-              _buildOverviewItem('${_monthlyOverview!.totalCalories.toInt()}', '大卡', Icons.local_fire_department, isSmallScreen),
+              _buildOverviewItem('${_monthlyOverview!.totalWorkouts}', '次訓練', isSmallScreen),
+              _buildOverviewItem('${_monthlyOverview!.totalDuration}', '分鐘', isSmallScreen),
+              _buildOverviewItem('${_monthlyOverview!.totalCalories.toInt()}', '大卡', isSmallScreen),
             ],
           ),
         ],
@@ -480,21 +497,29 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
     );
   }
 
-  Widget _buildOverviewItem(String value, String label, IconData icon, bool isSmallScreen) {
+  Widget _buildOverviewItem(String value, String label, bool isSmallScreen) {
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
-          child: Icon(icon, color: Colors.white, size: isSmallScreen ? 24 : 28),
-        ),
-        const SizedBox(height: 10),
         FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text(value, style: TextStyle(color: Colors.white, fontSize: isSmallScreen ? 22 : 26, fontWeight: FontWeight.bold)),
+          child: Text(
+            value, 
+            style: TextStyle(
+              color: Colors.white, 
+              fontSize: isSmallScreen ? 28 : 32, 
+              fontWeight: FontWeight.bold,
+              letterSpacing: -0.5,
+            ),
+          ),
         ),
-        const SizedBox(height: 2),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: isSmallScreen ? 11 : 12)),
+        const SizedBox(height: 4),
+        Text(
+          label, 
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.85), 
+            fontSize: isSmallScreen ? 12 : 13,
+          ),
+        ),
       ],
     );
   }
@@ -599,71 +624,93 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
     int workoutDiff = thisWeekWorkouts - lastWeekWorkouts;
     int durationDiff = thisWeekDuration - lastWeekDuration;
     
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [Colors.orange.shade400, Colors.deepOrange.shade400], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.orange.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text('🔥', style: TextStyle(fontSize: isSmallScreen ? 18 : 22)),
-                    const SizedBox(width: 6),
-                    Text('連續運動', style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: isSmallScreen ? 11 : 12)),
-                  ],
+    return IntrinsicHeight( // 🔥 讓兩個卡片高度一致
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch, // 🔥 撐滿高度
+        children: [
+          Expanded(
+            child: Container(
+              padding: EdgeInsets.all(isSmallScreen ? 16 : 18),
+              decoration: BoxDecoration(
+                // 🔥 更柔和的橘色漸層
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFF4A261), Color(0xFFE9C46A)], 
+                  begin: Alignment.topLeft, 
+                  end: Alignment.bottomRight,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('$_consecutiveDays', style: TextStyle(color: Colors.white, fontSize: isSmallScreen ? 28 : 32, fontWeight: FontWeight.bold)),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4, left: 4),
-                      child: Text('天', style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: isSmallScreen ? 12 : 14)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text('最長紀錄 $_longestStreak 天', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: isSmallScreen ? 10 : 11)),
-              ],
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFF4A261).withValues(alpha: 0.25), 
+                    blurRadius: 15, 
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Text('🔥', style: TextStyle(fontSize: isSmallScreen ? 18 : 20)),
+                      const SizedBox(width: 6),
+                      Text('連續運動', style: TextStyle(color: Colors.white.withValues(alpha: 0.95), fontSize: isSmallScreen ? 12 : 13, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('$_consecutiveDays', style: TextStyle(color: Colors.white, fontSize: isSmallScreen ? 32 : 36, fontWeight: FontWeight.bold, letterSpacing: -1)),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 5, left: 4),
+                        child: Text('天', style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: isSmallScreen ? 14 : 16)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text('最長紀錄 $_longestStreak 天', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: isSmallScreen ? 11 : 12)),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Container(
-            padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.compare_arrows, color: AppColors.info, size: isSmallScreen ? 18 : 20),
-                    const SizedBox(width: 6),
-                    Text('對比上週', style: TextStyle(color: AppColors.textSecondary, fontSize: isSmallScreen ? 11 : 12)),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _buildComparisonItem('訓練次數', workoutDiff, '次', isSmallScreen),
-                const SizedBox(height: 6),
-                _buildComparisonItem('運動時長', durationDiff, '分', isSmallScreen),
-              ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              padding: EdgeInsets.all(isSmallScreen ? 16 : 18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withValues(alpha: 0.12), 
+                    blurRadius: 15, 
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.compare_arrows_rounded, color: const Color(0xFF5BA8A0), size: isSmallScreen ? 20 : 22),
+                      const SizedBox(width: 6),
+                      Text('對比上週', style: TextStyle(color: Colors.grey[600], fontSize: isSmallScreen ? 12 : 13, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildComparisonItem('訓練次數', workoutDiff, '次', isSmallScreen),
+                  const SizedBox(height: 10),
+                  _buildComparisonItem('運動時長', durationDiff, '分', isSmallScreen),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -745,23 +792,39 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
   Widget _buildChartSection(bool isSmallScreen) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28), // 🔥 更大圓角
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.12), // 🔥 更淡的陰影
+            blurRadius: 20, // 🔥 更柔和
+            spreadRadius: 2,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         children: [
           Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F7FA), 
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: TabBar(
               controller: _tabController,
               labelColor: Colors.white,
-              unselectedLabelColor: AppColors.textSecondary,
-              indicator: BoxDecoration(color: AppColors.accent1, borderRadius: BorderRadius.circular(10)),
+              unselectedLabelColor: Colors.grey[500],
+              indicator: BoxDecoration(
+                color: const Color(0xFF5BA8A0), // 🔥 青綠色
+                borderRadius: BorderRadius.circular(14),
+              ),
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
-              labelStyle: TextStyle(fontSize: isSmallScreen ? 12 : 13, fontWeight: FontWeight.bold),
+              labelStyle: TextStyle(
+                fontSize: isSmallScreen ? 12 : 13, 
+                fontWeight: FontWeight.w600,
+              ),
               tabs: const [Tab(text: '運動時長'), Tab(text: '卡路里消耗')],
             ),
           ),
@@ -797,7 +860,11 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
           show: true,
           drawVerticalLine: false,
           horizontalInterval: yMax / 4,
-          getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          // 🔥 淡化網格線
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: Colors.grey.withValues(alpha: 0.15), 
+            strokeWidth: 1,
+          ),
         ),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(
@@ -807,7 +874,14 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
               interval: yMax / 4,
               getTitlesWidget: (value, meta) {
                 if (value == 0 || value == yMax) return const SizedBox();
-                return Padding(padding: const EdgeInsets.only(right: 4), child: Text('${value.toInt()}', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 9 : 10)));
+                // 🔥 淡化軸線文字
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4), 
+                  child: Text(
+                    '${value.toInt()}', 
+                    style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                  ),
+                );
               },
             ),
           ),
@@ -819,7 +893,14 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
                 if (index < 0 || index >= _weeklyStats.length) return const SizedBox();
                 final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                 final weekdayIndex = _weeklyStats[index].date.weekday - 1;
-                return Padding(padding: const EdgeInsets.only(top: 8), child: Text('週${weekdays[weekdayIndex]}', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 9 : 10)));
+                // 🔥 淡化軸線文字
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8), 
+                  child: Text(
+                    '週${weekdays[weekdayIndex]}', 
+                    style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                  ),
+                );
               },
             ),
           ),
@@ -831,16 +912,31 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
           LineChartBarData(
             spots: List.generate(_weeklyStats.length, (i) => FlSpot(i.toDouble(), _weeklyStats[i].duration.toDouble())),
             isCurved: true,
-            curveSmoothness: 0.3,
-            color: AppColors.accent1,
-            barWidth: 3,
+            curveSmoothness: 0.35,
+            // 🔥 青綠色漸層
+            gradient: const LinearGradient(
+              colors: [Color(0xFF5BA8A0), Color(0xFF45B7AA)],
+            ),
+            barWidth: 3.5, // 🔥 線條變粗
             dotData: FlDotData(
               show: true,
-              getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(radius: 5, color: AppColors.accent1, strokeWidth: 2, strokeColor: Colors.white),
+              getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                radius: 5, 
+                color: Colors.white, 
+                strokeWidth: 2.5, 
+                strokeColor: const Color(0xFF5BA8A0),
+              ),
             ),
             belowBarData: BarAreaData(
               show: true,
-              gradient: LinearGradient(colors: [AppColors.accent1.withValues(alpha: 0.3), AppColors.accent1.withValues(alpha: 0.05)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF5BA8A0).withValues(alpha: 0.25), 
+                  const Color(0xFF5BA8A0).withValues(alpha: 0.02),
+                ], 
+                begin: Alignment.topCenter, 
+                end: Alignment.bottomCenter,
+              ),
             ),
           ),
         ],
@@ -872,7 +968,11 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
           show: true,
           drawVerticalLine: false,
           horizontalInterval: yMax / 4,
-          getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          // 🔥 淡化網格線
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: Colors.grey.withValues(alpha: 0.15), 
+            strokeWidth: 1,
+          ),
         ),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(
@@ -882,7 +982,14 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
               interval: yMax / 4,
               getTitlesWidget: (value, meta) {
                 if (value == 0 || value == yMax) return const SizedBox();
-                return Padding(padding: const EdgeInsets.only(right: 4), child: Text('${value.toInt()}', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 9 : 10)));
+                // 🔥 淡化軸線文字
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4), 
+                  child: Text(
+                    '${value.toInt()}', 
+                    style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                  ),
+                );
               },
             ),
           ),
@@ -894,7 +1001,14 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
                 if (index < 0 || index >= _weeklyStats.length) return const SizedBox();
                 final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
                 final weekdayIndex = _weeklyStats[index].date.weekday - 1;
-                return Padding(padding: const EdgeInsets.only(top: 8), child: Text('週${weekdays[weekdayIndex]}', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 9 : 10)));
+                // 🔥 淡化軸線文字
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8), 
+                  child: Text(
+                    '週${weekdays[weekdayIndex]}', 
+                    style: TextStyle(color: Colors.grey[400], fontSize: isSmallScreen ? 9 : 10),
+                  ),
+                );
               },
             ),
           ),
@@ -908,9 +1022,15 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
             barRods: [
               BarChartRodData(
                 toY: _weeklyStats[i].calories,
-                gradient: LinearGradient(colors: [AppColors.accent1, AppColors.accent1.withValues(alpha: 0.6)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-                width: isSmallScreen ? 16 : 22,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                // 🔥 暖橘色漸層
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFF4A261), Color(0xFFE9C46A)], 
+                  begin: Alignment.topCenter, 
+                  end: Alignment.bottomCenter,
+                ),
+                width: isSmallScreen ? 18 : 24,
+                // 🔥 膠囊形狀（全圓角）
+                borderRadius: BorderRadius.circular(50),
               ),
             ],
           );
@@ -919,7 +1039,11 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
           touchTooltipData: BarTouchTooltipData(
             fitInsideHorizontally: true,
             fitInsideVertically: true,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem('${rod.toY.toInt()} 大卡', const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            getTooltipColor: (touchedSpot) => Colors.black87,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
+              '${rod.toY.toInt()} 大卡', 
+              const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       ),
@@ -931,7 +1055,17 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
       return _buildEmptyCard('本月還沒有運動記錄');
     }
 
-    final colors = [AppColors.accent1, AppColors.accent2, AppColors.accent3, AppColors.info, AppColors.primary, Colors.purple.shade300, Colors.teal.shade300, Colors.pink.shade300];
+    // 🔥 更輕柔的配色
+    final colors = [
+      const Color(0xFF5BA8A0),  // 輕柔青綠
+      const Color(0xFF7BC4BC),  // 淺青綠
+      const Color(0xFFF4A261),  // 暖橘色
+      const Color(0xFFE9C46A),  // 金黃色
+      const Color(0xFFB8A9C9),  // 淺紫色
+      const Color(0xFF89B4D4),  // 淺藍色
+      const Color(0xFFE76F51),  // 珊瑚色
+      const Color(0xFFFFB5C5),  // 粉紅色
+    ];
 
     int total = _typeDistribution.values.fold(0, (a, b) => a + b);
     int colorIndex = 0;
@@ -947,10 +1081,19 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
       sections.add(
         PieChartSectionData(
           value: entry.value.toDouble(),
-          title: percentage >= 8 ? '${percentage.toInt()}%' : '',
+          // 🔥 只有大於 15% 才顯示文字，更乾淨
+          title: percentage >= 15 ? '${percentage.toInt()}%' : '',
           color: color,
-          radius: isSmallScreen ? 55 : 65,
-          titleStyle: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.bold, color: Colors.white),
+          // 🔥 更粗的線條
+          radius: isSmallScreen ? 32 : 38,
+          titleStyle: TextStyle(
+            fontSize: isSmallScreen ? 12 : 13, 
+            fontWeight: FontWeight.bold, 
+            color: Colors.white,
+            shadows: const [Shadow(color: Colors.black26, blurRadius: 3)],
+          ),
+          titlePositionPercentageOffset: 0.55,
+          borderSide: BorderSide.none,
         ),
       );
 
@@ -959,25 +1102,44 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
     }
 
     return Container(
-      padding: EdgeInsets.all(isSmallScreen ? 14 : 18),
+      padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28), // 🔥 更大圓角
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.12), 
+            blurRadius: 20, 
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Expanded(
             flex: 3,
             child: SizedBox(
-              height: isSmallScreen ? 150 : 170,
-              child: PieChart(PieChartData(sections: sections, centerSpaceRadius: isSmallScreen ? 28 : 35, sectionsSpace: 2)),
+              height: isSmallScreen ? 170 : 190,
+              child: PieChart(
+                PieChartData(
+                  sections: sections, 
+                  // 🔥 大中心空間 = 更明顯的甜甜圈
+                  centerSpaceRadius: isSmallScreen ? 40 : 48,
+                  // 🔥 更大的間隙 = 更圓潤感
+                  sectionsSpace: 5,
+                  startDegreeOffset: -90,
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             flex: 2,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: legends.take(5).toList()),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, 
+              mainAxisAlignment: MainAxisAlignment.center, 
+              children: legends.take(5).toList(),
+            ),
           ),
         ],
       ),
@@ -986,13 +1148,37 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
 
   Widget _buildLegendItem(String label, int count, Color color, bool isSmallScreen) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+          // 🔥 圓形圖例（更現代）
+          Container(
+            width: 10, 
+            height: 10, 
+            decoration: BoxDecoration(
+              color: color, 
+              shape: BoxShape.circle,
+            ),
+          ),
           const SizedBox(width: 8),
-          Expanded(child: Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: isSmallScreen ? 11 : 12), overflow: TextOverflow.ellipsis)),
-          Text('$count次', style: TextStyle(color: AppColors.textPrimary, fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(
+              label, 
+              style: TextStyle(
+                color: AppColors.textSecondary, 
+                fontSize: isSmallScreen ? 11 : 12,
+              ), 
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            '$count次', 
+            style: TextStyle(
+              color: AppColors.textPrimary, 
+              fontSize: isSmallScreen ? 11 : 12, 
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
@@ -1011,56 +1197,87 @@ class _WorkoutStatsPageState extends State<WorkoutStatsPage>
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
-        children: List.generate(_weeklyStats.length, (i) {
-          final day = _weeklyStats[i];
-          final dateStr = DateFormat('yyyy-MM-dd').format(day.date);
-          final isToday = dateStr == today;
-          final hasWorkout = day.workoutCount > 0;
-
-          return Container(
-            padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 18, vertical: isSmallScreen ? 12 : 14),
+        children: [
+          // 🔥 新增：欄位標題
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 14 : 18,
+              vertical: isSmallScreen ? 10 : 12,
+            ),
             decoration: BoxDecoration(
-              color: isToday ? AppColors.accent1.withValues(alpha: 0.08) : null,
-              borderRadius: BorderRadius.vertical(
-                top: i == 0 ? const Radius.circular(20) : Radius.zero,
-                bottom: i == _weeklyStats.length - 1 ? const Radius.circular(20) : Radius.zero,
-              ),
-              border: i < _weeklyStats.length - 1 ? Border(bottom: BorderSide(color: Colors.grey.shade100)) : null,
+              color: AppColors.background,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               children: [
                 SizedBox(
                   width: isSmallScreen ? 50 : 60,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Text('日期', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(width: 32 + 14), // 狀態 icon + spacing
+                Expanded(
+                  child: Row(
                     children: [
-                      Text(weekdays[day.date.weekday - 1], style: TextStyle(fontWeight: isToday ? FontWeight.bold : FontWeight.w500, color: isToday ? AppColors.accent1 : AppColors.textPrimary, fontSize: isSmallScreen ? 13 : 14)),
-                      Text(DateFormat('MM/dd').format(day.date), style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 10 : 11)),
+                      Expanded(child: Text('次數', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w500))),
+                      Expanded(child: Text('時長', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w500))),
+                      Expanded(child: Text('消耗', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w500))),
                     ],
                   ),
                 ),
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(color: hasWorkout ? AppColors.success.withValues(alpha: 0.15) : Colors.grey.shade100, shape: BoxShape.circle),
-                  child: Icon(hasWorkout ? Icons.check_rounded : Icons.remove, size: 18, color: hasWorkout ? AppColors.success : Colors.grey.shade400),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: hasWorkout
-                      ? Row(
-                          children: [
-                            Expanded(child: _buildDayStatItem(Icons.fitness_center, '${day.workoutCount}次', AppColors.accent1, isSmallScreen)),
-                            Expanded(child: _buildDayStatItem(Icons.timer_outlined, '${day.duration}分', AppColors.info, isSmallScreen)),
-                            Expanded(child: _buildDayStatItem(Icons.local_fire_department, '${day.calories.toInt()}卡', AppColors.accent1, isSmallScreen)),
-                          ],
-                        )
-                      : Text('休息日', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 12 : 13, fontStyle: FontStyle.italic)),
-                ),
               ],
             ),
-          );
-        }),
+          ),
+          // 數據列表
+          ...List.generate(_weeklyStats.length, (i) {
+            final day = _weeklyStats[i];
+            final dateStr = DateFormat('yyyy-MM-dd').format(day.date);
+            final isToday = dateStr == today;
+            final hasWorkout = day.workoutCount > 0;
+
+            return Container(
+              padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 18, vertical: isSmallScreen ? 12 : 14),
+              decoration: BoxDecoration(
+                color: isToday ? AppColors.accent1.withValues(alpha: 0.08) : null,
+                borderRadius: BorderRadius.vertical(
+                  bottom: i == _weeklyStats.length - 1 ? const Radius.circular(20) : Radius.zero,
+                ),
+                border: i < _weeklyStats.length - 1 ? Border(bottom: BorderSide(color: Colors.grey.shade100)) : null,
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: isSmallScreen ? 50 : 60,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(weekdays[day.date.weekday - 1], style: TextStyle(fontWeight: isToday ? FontWeight.bold : FontWeight.w500, color: isToday ? AppColors.accent1 : AppColors.textPrimary, fontSize: isSmallScreen ? 13 : 14)),
+                        Text(DateFormat('MM/dd').format(day.date), style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 10 : 11)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(color: hasWorkout ? AppColors.success.withValues(alpha: 0.15) : Colors.grey.shade100, shape: BoxShape.circle),
+                    child: Icon(hasWorkout ? Icons.check_rounded : Icons.remove, size: 18, color: hasWorkout ? AppColors.success : Colors.grey.shade400),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: hasWorkout
+                        ? Row(
+                            children: [
+                              Expanded(child: _buildDayStatItem(Icons.fitness_center, '${day.workoutCount}次', AppColors.accent1, isSmallScreen)),
+                              Expanded(child: _buildDayStatItem(Icons.timer_outlined, '${day.duration}分', AppColors.info, isSmallScreen)),
+                              Expanded(child: _buildDayStatItem(Icons.local_fire_department, '${day.calories.toInt()}卡', AppColors.accent1, isSmallScreen)),
+                            ],
+                          )
+                        : Text('休息日', style: TextStyle(color: AppColors.textTertiary, fontSize: isSmallScreen ? 12 : 13, fontStyle: FontStyle.italic)),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

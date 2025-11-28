@@ -80,6 +80,9 @@ dependencies:
 
   image: ^4.1.3
 
+  # icon 圖示庫
+  flutter_lucide: ^1.7.0
+
 
 
 dev_dependencies:

@@ -327,10 +327,13 @@ class StatsService {
 
     DateTime nowTaiwan = _taiwanNow;
     DateTime startOfWeek = nowTaiwan.subtract(Duration(days: nowTaiwan.weekday - 1));
+    
+    // 🔥 修正：只查到今天，不是整週 7 天
+    int daysToQuery = nowTaiwan.weekday; // 週一=1, 週二=2, ..., 週日=7
 
     List<DailyWorkoutStats> weekStats = [];
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < daysToQuery; i++) {
       DateTime date = startOfWeek.add(Duration(days: i));
       String dateStr = _formatDate(date);
 

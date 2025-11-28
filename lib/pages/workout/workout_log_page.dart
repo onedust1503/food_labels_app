@@ -1,15 +1,19 @@
 // lib/pages/workout/workout_log_page.dart
-// 🔥 完整修正版：添加日期時間顯示 + 可點擊查看詳情
+// 🔥 完整整合版：保留原有功能 + 整合顯示自由訓練和教練計畫
+// ✅ 統一使用 UnifiedWorkoutService
+// ✅ 標籤區分「自由」和「計畫」訓練
+// ✅ 修正詳情頁面導航，確保資料正確傳遞
+// ✅ 保留所有原有功能
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../../services/workout_service.dart';
+import '../../services/unified_workout_service.dart';
 import '../../models/workout_model.dart';
 import 'free_workout_execution_page.dart';
 import 'workout_summary_page.dart';
-import 'workout_detail_page.dart'; // 🔥 關鍵：加入這行 import
+import 'workout_session_detail_page.dart';
 
 class WorkoutLogPage extends StatefulWidget {
   const WorkoutLogPage({super.key});
@@ -19,10 +23,11 @@ class WorkoutLogPage extends StatefulWidget {
 }
 
 class _WorkoutLogPageState extends State<WorkoutLogPage> {
-  final WorkoutService _workoutService = WorkoutService();
+  final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  List<WorkoutModel> _todayWorkouts = [];
+  
+  List<Map<String, dynamic>> _todayWorkouts = [];
   Map<String, dynamic> _todaySummary = {};
   bool _isLoading = true;
 
@@ -35,8 +40,9 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   Future<void> _loadTodayWorkouts() async {
     setState(() => _isLoading = true);
     try {
-      final workouts = await _workoutService.getTodayWorkouts();
-      final summary = await _workoutService.getTodayWorkoutSummary();
+      // ✅ 使用整合方法，同時讀取自由訓練和計畫訓練
+      final workouts = await _loadTodayWorkoutsUnified();
+      final summary = await _workoutService.getTodayStats();
 
       setState(() {
         _todayWorkouts = workouts;
@@ -46,6 +52,124 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('載入失敗：$e', Colors.red);
+    }
+  }
+
+  /// 🔥 整合讀取今日所有訓練（自由訓練 + 教練計畫）
+  Future<List<Map<String, dynamic>>> _loadTodayWorkoutsUnified() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return [];
+
+    final today = DateTime.now();
+    final dateStr = today.toIso8601String().split('T')[0];
+    
+    List<Map<String, dynamic>> allWorkouts = [];
+
+    try {
+      // 1️⃣ 從 workoutLogs 讀取（包含手動記錄、自由訓練、計畫訓練）
+      final logsSnapshot = await _firestore
+          .collection('workoutLogs')
+          .where('userId', isEqualTo: uid)
+          .where('date', isEqualTo: dateStr)
+          .get();
+
+      for (final doc in logsSnapshot.docs) {
+        final data = doc.data();
+        allWorkouts.add({
+          'id': doc.id,
+          'name': data['name'] ?? '未命名訓練',
+          'type': data['type'] ?? 'weight_training',
+          'duration': data['duration'] ?? 0,
+          'caloriesBurned': (data['caloriesBurned'] ?? 0).toDouble(),
+          'totalSets': data['totalSets'] ?? data['sets'],
+          'totalExercises': data['totalExercises'],
+          'sets': data['sets'],
+          'reps': data['reps'],
+          'weight': data['weight'],
+          'intensity': data['intensity'],
+          'notes': data['notes'],
+          'sessionId': data['sessionId'],
+          'planId': data['planId'],
+          'planName': data['planName'],
+          'createdAt': data['createdAt'],
+          'timestamp': data['timestamp'],
+          // 🔥 判斷來源
+          'source': _determineSource(data),
+        });
+      }
+
+      // 2️⃣ 檢查 workoutSessions 是否有額外的記錄（避免重複）
+      final existingSessionIds = allWorkouts
+          .where((w) => w['sessionId'] != null)
+          .map((w) => w['sessionId'] as String)
+          .toSet();
+
+      final sessionsSnapshot = await _firestore
+          .collection('workoutSessions')
+          .where('userId', isEqualTo: uid)
+          .where('date', isEqualTo: dateStr)
+          .get();
+
+      for (final doc in sessionsSnapshot.docs) {
+        // 避免重複
+        if (existingSessionIds.contains(doc.id)) continue;
+
+        final data = doc.data();
+        allWorkouts.add({
+          'id': doc.id,
+          'name': data['name'] ?? data['planName'] ?? '訓練記錄',
+          'type': data['type'] ?? 'weight_training',
+          'duration': data['duration'] ?? 0,
+          'caloriesBurned': (data['totalCalories'] ?? data['caloriesBurned'] ?? 0).toDouble(),
+          'totalSets': data['totalSets'],
+          'totalExercises': data['totalExercises'],
+          'sessionId': doc.id,
+          'planId': data['planId'],
+          'planName': data['planName'],
+          'createdAt': data['completedAt'] ?? data['endedAt'],
+          'timestamp': data['timestamp'] is Timestamp 
+              ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch 
+              : data['timestamp'],
+          'source': data['planId'] != null ? 'plan' : 'self',
+        });
+      }
+
+      // 3️⃣ 按時間排序（最新的在前）
+      allWorkouts.sort((a, b) {
+        int aTime = 0;
+        int bTime = 0;
+        
+        if (a['timestamp'] != null) {
+          aTime = a['timestamp'] is int ? a['timestamp'] : 0;
+        } else if (a['createdAt'] != null && a['createdAt'] is Timestamp) {
+          aTime = (a['createdAt'] as Timestamp).millisecondsSinceEpoch;
+        }
+        
+        if (b['timestamp'] != null) {
+          bTime = b['timestamp'] is int ? b['timestamp'] : 0;
+        } else if (b['createdAt'] != null && b['createdAt'] is Timestamp) {
+          bTime = (b['createdAt'] as Timestamp).millisecondsSinceEpoch;
+        }
+        
+        return bTime.compareTo(aTime);
+      });
+
+      return allWorkouts;
+    } catch (e) {
+      debugPrint('❌ _loadTodayWorkoutsUnified 錯誤: $e');
+      // 如果整合方法失敗，回退到原始方法
+      return await _workoutService.getTodayWorkouts();
+    }
+  }
+
+  /// 🔥 判斷訓練來源
+  String _determineSource(Map<String, dynamic> data) {
+    if (data['planId'] != null) {
+      return 'plan';  // 教練計畫
+    } else if (data['sessionId'] != null) {
+      return 'self';  // 自由訓練
+    } else {
+      return 'manual';  // 手動記錄
     }
   }
 
@@ -268,6 +392,11 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
       );
     }
 
+    // 🔥 統計不同來源的訓練數量
+    int selfCount = _todayWorkouts.where((w) => w['source'] == 'self').length;
+    int planCount = _todayWorkouts.where((w) => w['source'] == 'plan').length;
+    int manualCount = _todayWorkouts.where((w) => w['source'] == 'manual').length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -278,9 +407,19 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
               '今日訓練',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            Text(
-              '${_todayWorkouts.length} 筆記錄',
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            Row(
+              children: [
+                if (selfCount > 0)
+                  _buildCountChip('自由', selfCount, Colors.blue),
+                if (planCount > 0) ...[
+                  const SizedBox(width: 6),
+                  _buildCountChip('計畫', planCount, Colors.orange),
+                ],
+                if (manualCount > 0) ...[
+                  const SizedBox(width: 6),
+                  _buildCountChip('手動', manualCount, Colors.grey),
+                ],
+              ],
             ),
           ],
         ),
@@ -290,11 +429,63 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  Widget _buildWorkoutCard(WorkoutModel workout) {
+  /// 🔥 來源統計小標籤
+  Widget _buildCountChip(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        '$label $count',
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkoutCard(Map<String, dynamic> workout) {
+    final type = workout['type'] ?? 'other';
+    final name = workout['name'] ?? '訓練記錄';
+    final planName = workout['planName'] as String?;
+    final duration = workout['duration'] ?? 0;
+    final caloriesBurned = (workout['caloriesBurned'] ?? 0.0).toDouble();
+    final totalSets = workout['totalSets'];
+    final totalExercises = workout['totalExercises'];
+    final sessionId = workout['sessionId'];
+    final source = workout['source'] as String? ?? 'manual';
+    
+    // 🔥 根據來源設定顏色和標籤
+    Color sourceColor;
+    String sourceLabel;
+    IconData sourceIcon;
+
+    switch (source) {
+      case 'plan':
+        sourceColor = Colors.orange;
+        sourceLabel = '計畫';
+        sourceIcon = Icons.event_note;
+        break;
+      case 'self':
+        sourceColor = Colors.blue;
+        sourceLabel = '自由';
+        sourceIcon = Icons.self_improvement;
+        break;
+      default:
+        sourceColor = Colors.grey;
+        sourceLabel = '手動';
+        sourceIcon = Icons.edit;
+    }
+    
     IconData typeIcon;
     Color typeColor;
 
-    switch (workout.type) {
+    switch (type) {
       case 'weight_training':
         typeIcon = Icons.fitness_center;
         typeColor = Colors.red;
@@ -316,29 +507,34 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         typeColor = Colors.orange;
     }
 
-    // 🔥 格式化時間顯示（精確到秒）
-    final timeStr = DateFormat('HH:mm:ss').format(workout.createdAt);
-
-    // 🔥 時長顯示（精確到秒）
-    String durationText = '${workout.duration} 分鐘';
+    // 🔥 格式化時間顯示
+    String timeStr = '';
+    final createdAt = workout['createdAt'];
+    final timestamp = workout['timestamp'];
     
+    if (createdAt != null) {
+      try {
+        final dateTime = createdAt is Timestamp 
+            ? createdAt.toDate() 
+            : DateTime.fromMillisecondsSinceEpoch(createdAt);
+        timeStr = DateFormat('HH:mm').format(dateTime);
+      } catch (e) {
+        // 忽略解析錯誤
+      }
+    } else if (timestamp != null) {
+      try {
+        final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+        timeStr = DateFormat('HH:mm').format(dateTime);
+      } catch (e) {
+        // 忽略解析錯誤
+      }
+    }
+
+    // 🔥 顯示名稱（計畫訓練優先顯示計畫名稱）
+    final displayName = planName ?? name;
+
     return GestureDetector(
-      onTap: () {
-        // 🔥 關鍵修正：根據是否有 sessionId 決定顯示方式
-        final sid = workout.sessionId;
-        if (sid != null && sid.isNotEmpty) {
-          // 有 sessionId - 跳轉到詳情頁面
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => WorkoutDetailPage(workout: workout),
-            ),
-          );
-        } else {
-          // 沒有 sessionId - 顯示簡單對話框
-          _showSimpleWorkoutDetail(workout);
-        }
-      },
+      onTap: () => _navigateToDetail(workout),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
@@ -355,13 +551,14 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         ),
         child: Row(
           children: [
+            // 🔥 使用來源顏色而不是類型顏色
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: typeColor.withOpacity(0.1),
+                color: sourceColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(typeIcon, color: typeColor, size: 28),
+              child: Icon(sourceIcon, color: sourceColor, size: 28),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -369,58 +566,109 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Text(
-                          workout.name,
+                          displayName,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      // 🔥 顯示時間（精確到秒）
-                      Text(
-                        timeStr,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
+                      // 🔥 來源標籤
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: sourceColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: sourceColor.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          sourceLabel,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: sourceColor,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    durationText,
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      if (timeStr.isNotEmpty) ...[
+                        Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
+                        const SizedBox(width: 4),
+                        Text(
+                          timeStr,
+                          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      Icon(Icons.timer, size: 14, color: Colors.grey[500]),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$duration 分鐘',
+                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      ),
+                    ],
                   ),
                   // 🔥 顯示總組數和動作數
-                  if (workout.totalSets != null && workout.totalExercises != null)
-                    Text(
-                      '${workout.totalExercises} 個動作 · ${workout.totalSets} 組',
-                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  if (totalSets != null || totalExercises != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (totalExercises != null) ...[
+                          Text(
+                            '$totalExercises 個動作',
+                            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                          ),
+                        ],
+                        if (totalSets != null && totalExercises != null)
+                          Text(' · ', style: TextStyle(color: Colors.grey[400])),
+                        if (totalSets != null)
+                          Text(
+                            '$totalSets 組',
+                            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                          ),
+                      ],
                     ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(width: 12),
             Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (workout.caloriesBurned != null) ...[
-                  const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
+                if (caloriesBurned > 0) ...[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.local_fire_department, color: Colors.orange, size: 18),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${caloriesBurned.toInt()}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
                   Text(
-                    '${workout.caloriesBurned!.toInt()}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange,
-                    ),
+                    '卡',
+                    style: TextStyle(fontSize: 10, color: Colors.grey[500]),
                   ),
                 ],
               ],
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             Icon(Icons.chevron_right, color: Colors.grey[400]),
           ],
         ),
@@ -428,31 +676,114 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  void _showSimpleWorkoutDetail(WorkoutModel workout) {
+  /// 🔥 導航到詳情頁面 - 關鍵修正
+  Future<void> _navigateToDetail(Map<String, dynamic> workout) async {
+    final sessionId = workout['sessionId'] as String?;
+    
+    if (sessionId != null && sessionId.isNotEmpty) {
+      // 🔥 有 sessionId - 從 workoutSessions 獲取完整詳情
+      try {
+        final details = await _workoutService.getWorkoutSessionDetails(sessionId);
+        
+        if (details != null && mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => WorkoutSessionDetailPage(
+                workoutSession: details,
+              ),
+            ),
+          );
+        } else {
+          // 如果詳情不存在，顯示簡單對話框
+          _showSimpleWorkoutDetail(workout);
+        }
+      } catch (e) {
+        _showSnackBar('載入詳情失敗：$e', Colors.red);
+      }
+    } else {
+      // 沒有 sessionId - 顯示簡單對話框
+      _showSimpleWorkoutDetail(workout);
+    }
+  }
+
+  void _showSimpleWorkoutDetail(Map<String, dynamic> workout) {
+    final name = workout['name'] ?? '訓練記錄';
+    final planName = workout['planName'] as String?;
+    final date = workout['date'] ?? '';
+    final duration = workout['duration'] ?? 0;
+    final sets = workout['sets'];
+    final reps = workout['reps'];
+    final weight = workout['weight'];
+    final caloriesBurned = (workout['caloriesBurned'] ?? 0.0).toDouble();
+    final intensity = workout['intensity'];
+    final notes = workout['notes'];
+    final source = workout['source'] as String? ?? 'manual';
+    
+    String timeStr = '';
+    final createdAt = workout['createdAt'];
+    if (createdAt != null) {
+      try {
+        final dateTime = createdAt is Timestamp 
+            ? createdAt.toDate() 
+            : DateTime.fromMillisecondsSinceEpoch(createdAt);
+        timeStr = DateFormat('HH:mm:ss').format(dateTime);
+      } catch (e) {
+        // 忽略解析錯誤
+      }
+    }
+
+    // 來源標籤
+    String sourceText;
+    Color sourceColor;
+    switch (source) {
+      case 'plan':
+        sourceText = '教練計畫';
+        sourceColor = Colors.orange;
+        break;
+      case 'self':
+        sourceText = '自由訓練';
+        sourceColor = Colors.blue;
+        break;
+      default:
+        sourceText = '手動記錄';
+        sourceColor = Colors.grey;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(workout.name),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Expanded(child: Text(planName ?? name)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: sourceColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                sourceText,
+                style: TextStyle(fontSize: 12, color: sourceColor, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildDetailRow('日期', workout.date),
-              _buildDetailRow('時間', DateFormat('HH:mm:ss').format(workout.createdAt)),
-              _buildDetailRow('時長', '${workout.duration} 分鐘'),
-              if (workout.sets != null)
-                _buildDetailRow('組數', '${workout.sets} 組'),
-              if (workout.reps != null)
-                _buildDetailRow('次數', '${workout.reps} 次'),
-              if (workout.weight != null)
-                _buildDetailRow('重量', '${workout.weight} kg'),
-              if (workout.caloriesBurned != null)
-                _buildDetailRow('卡路里', '${workout.caloriesBurned!.toInt()} 大卡'),
-              if (workout.intensity != null)
-                _buildDetailRow('強度', _getIntensityText(workout.intensity!)),
-              if (workout.notes != null && workout.notes!.isNotEmpty)
-                _buildDetailRow('備註', workout.notes!),
+              if (date.isNotEmpty) _buildDetailRow('日期', date),
+              if (timeStr.isNotEmpty) _buildDetailRow('時間', timeStr),
+              _buildDetailRow('時長', '$duration 分鐘'),
+              if (sets != null) _buildDetailRow('組數', '$sets 組'),
+              if (reps != null) _buildDetailRow('次數', '$reps 次'),
+              if (weight != null) _buildDetailRow('重量', '$weight kg'),
+              if (caloriesBurned > 0) _buildDetailRow('卡路里', '${caloriesBurned.toInt()} 大卡'),
+              if (intensity != null) _buildDetailRow('強度', _getIntensityText(intensity)),
+              if (notes != null && notes.isNotEmpty) _buildDetailRow('備註', notes),
             ],
           ),
         ),
@@ -461,9 +792,52 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
             onPressed: () => Navigator.pop(context),
             child: const Text('關閉'),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteWorkout(workout);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('刪除'),
+          ),
         ],
       ),
     );
+  }
+
+  /// 🔥 刪除訓練記錄
+  Future<void> _deleteWorkout(Map<String, dynamic> workout) async {
+    final workoutId = workout['id'] as String?;
+    if (workoutId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('確認刪除'),
+        content: const Text('確定要刪除這筆訓練記錄嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('刪除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _workoutService.deleteWorkout(workoutId);
+        _showSnackBar('已刪除訓練記錄', Colors.green);
+        _loadTodayWorkouts();
+      } catch (e) {
+        _showSnackBar('刪除失敗：$e', Colors.red);
+      }
+    }
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -574,6 +948,9 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                 final endTs = data['endedAt'] as Timestamp?;
                 final start = startTs?.toDate();
                 final end = endTs?.toDate();
+                final planId = data['planId'];
+                final planName = data['planName'] as String?;
+                final source = planId != null ? 'plan' : 'self';
 
                 String dateText = '未記錄時間';
                 String durationText = '—';
@@ -588,6 +965,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                     durationText = '$minutes分$seconds秒';
                   }
                 }
+
+                // 來源標籤
+                Color sourceColor = source == 'plan' ? Colors.orange : Colors.blue;
+                String sourceLabel = source == 'plan' ? '計畫' : '自由';
 
                 return FutureBuilder<QuerySnapshot>(
                   future: _firestore
@@ -633,10 +1014,14 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF6C63FF).withOpacity(0.1),
+                                color: sourceColor.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: const Icon(Icons.history, color: Color(0xFF6C63FF), size: 28),
+                              child: Icon(
+                                source == 'plan' ? Icons.event_note : Icons.history,
+                                color: sourceColor,
+                                size: 28,
+                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -644,26 +1029,42 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        dateText,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
+                                      Expanded(
+                                        child: Text(
+                                          planName ?? dateText,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      if (start != null)
-                                        Text(
-                                          DateFormat('HH:mm').format(start),
+                                      // 來源標籤
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: sourceColor.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          sourceLabel,
                                           style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[500],
+                                            fontSize: 10,
+                                            color: sourceColor,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
+                                  if (planName != null)
+                                    Text(
+                                      dateText,
+                                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                                    ),
                                   Text(
                                     '時長：$durationText · 動作：$exercises · 組數：$totalSets',
                                     style: TextStyle(fontSize: 13, color: Colors.grey[600]),
@@ -751,6 +1152,8 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
     {'name': '引體向上', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 8, 'restSec': 90},
     {'name': '二頭彎舉', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60},
     {'name': '三頭下壓', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60},
+    {'name': '啞鈴飛鳥', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60},
+    {'name': '腿推', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 10, 'restSec': 90},
     {'name': '跑步', 'type': 'duration', 'defaultDuration': 30, 'restSec': 0},
     {'name': '棒式', 'type': 'duration', 'defaultDuration': 60, 'defaultSets': 3, 'restSec': 60},
   ];
@@ -808,6 +1211,7 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: _selectedExercises.asMap().entries.map((entry) {
                 final index = entry.key;
                 final ex = entry.value;

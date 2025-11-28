@@ -1,10 +1,10 @@
 // lib/pages/workout/workout_plan_detail_page.dart
-// ✅ 更新版 - 啟用進度追蹤功能，保留所有原有功能
+// ✅ 更新版 - 使用 WorkoutPlanExecutionPage 並啟用進度追蹤功能
 import 'package:flutter/material.dart';
 import '../../models/workout_model.dart';
 import '../../services/workout_service.dart';
-import '../../services/workout_progress_service.dart'; // 🆕 導入進度服務
-import 'workout_execution_page.dart';
+import '../../services/workout_progress_service.dart';
+import 'workout_plan_execution_page.dart'; // ✅ 使用整合版執行頁面
 
 class WorkoutPlanDetailPage extends StatefulWidget {
   final WorkoutPlanModel plan;
@@ -17,9 +17,8 @@ class WorkoutPlanDetailPage extends StatefulWidget {
 
 class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   final WorkoutService _workoutService = WorkoutService();
-  final WorkoutProgressService _progressService = WorkoutProgressService(); // 🆕 進度服務
+  final WorkoutProgressService _progressService = WorkoutProgressService();
   
-  // ✅ 啟用進度功能
   Map<String, int> _completions = {};
   bool _isLoadingProgress = true;
 
@@ -36,10 +35,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   @override
   void initState() {
     super.initState();
-    _loadProgress(); // ✅ 載入進度
+    _loadProgress();
   }
 
-  // ✅ 啟用進度載入
   Future<void> _loadProgress() async {
     if (widget.plan.id != null) {
       try {
@@ -95,7 +93,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
           children: [
             _buildPlanHeader(),
             const SizedBox(height: 16),
-            // ✅ 檢查載入狀態
             _isLoadingProgress
                 ? const Center(
                     child: Padding(
@@ -111,7 +108,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   }
 
   Widget _buildPlanHeader() {
-    // ✅ 計算完成次數
     int totalCompletions = _completions.values.fold(0, (sum, count) => sum + count);
     int totalDays = widget.plan.days.length;
 
@@ -164,7 +160,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                // ✅ 顯示實際完成次數
                 _buildStatItem('已完成', '$totalCompletions 次', Icons.check_circle),
                 Container(width: 1, height: 40, color: Colors.white.withOpacity(0.3)),
                 _buildStatItem('本週目標', '$totalDays 天', Icons.fitness_center),
@@ -219,7 +214,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
   }
 
   Widget _buildDayCard(WorkoutPlanDay day, int index) {
-    // ✅ 顯示完成次數
     int completionCount = _completions[day.dayOfWeek] ?? 0;
     
     return Card(
@@ -259,7 +253,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
                   '${day.exercises.length} 個動作',
                   style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                 ),
-                // ✅ 顯示完成次數
                 const Spacer(),
                 if (completionCount > 0)
                   Container(
@@ -449,6 +442,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
     return '${date.year}/${date.month}/${date.day}';
   }
 
+  /// 🔥 開始訓練 - 使用 WorkoutPlanExecutionPage
   Future<void> _startWorkout(WorkoutPlanDay day) async {
     if (widget.plan.id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -460,13 +454,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage> {
       return;
     }
 
+    // ✅ 使用整合版執行頁面
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WorkoutExecutionPage(
-          planDay: day,
-          planId: widget.plan.id!,
-          planName: widget.plan.planName,
+        builder: (context) => WorkoutPlanExecutionPage(
+          plan: widget.plan,
+          selectedDay: day,
         ),
       ),
     );

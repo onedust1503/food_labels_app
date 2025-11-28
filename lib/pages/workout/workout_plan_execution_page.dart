@@ -1,6 +1,8 @@
 // lib/pages/workout/workout_plan_execution_page.dart
-// 🎯 訓練計畫執行頁面 - 整合版
+// 🎯 訓練計畫執行頁面 - 修正版
+// ✅ 修正方法調用以匹配 UnifiedWorkoutService
 // ✅ 支援計畫訓練的完整執行流程
+// ✅ 不使用 Session 系統（避免複雜性），使用簡化方法
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -33,6 +35,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
   Timer? _timer;
   int _seconds = 0;
   bool _isRunning = false;
+  DateTime? _startTime;
 
   // 休息計時器
   Timer? _restTimer;
@@ -58,6 +61,10 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     for (int i = 0; i < widget.selectedDay.exercises.length; i++) {
       _exerciseRecords[i] = [];
     }
+
+    _startTime = DateTime.now();
+    // 自動開始計時
+    _toggleTimer();
 
     if (kDebugMode) {
       debugPrint('📋 開始計畫訓練:');
@@ -86,6 +93,9 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
 
   int get _completedExercisesCount =>
       _exerciseRecords.values.where((records) => records.isNotEmpty).length;
+
+  int get _totalCompletedSets =>
+      _exerciseRecords.values.fold(0, (sum, records) => sum + records.length);
 
   /// 開始/暫停總計時器
   void _toggleTimer() {
@@ -137,7 +147,6 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
   void _completeRest() {
     _restTimer?.cancel();
     setState(() => _isResting = false);
-    // 可以添加音效提示
   }
 
   /// 跳過休息
@@ -146,7 +155,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     setState(() => _isResting = false);
   }
 
-  /// 添加當前動作的一組記錄
+  /// 添加當前動作的一組記錄（本地記錄）
   void _addSet() {
     final reps = int.tryParse(_repsController.text);
     if (reps == null || reps <= 0) {
@@ -158,6 +167,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
         ? double.tryParse(_weightController.text)
         : null;
 
+    // 本地記錄
     setState(() {
       _currentRecords.add(ExerciseSetRecord(
         setNumber: _currentRecords.length + 1,
@@ -170,7 +180,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
 
     _showSnackBar('已新增第 ${_currentRecords.length} 組');
 
-    // 如果還有組數要做,開始休息
+    // 如果還有組數要做，開始休息
     final targetSets = _currentExercise.sets ?? 3;
     if (_currentRecords.length < targetSets) {
       _startRest(seconds: 60);
@@ -211,7 +221,27 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     }
   }
 
-  /// 完成整個訓練
+  /// 🔥 計算卡路里（簡化版本）
+  double _calculateCalories() {
+    double totalCalories = 0;
+    for (int i = 0; i < widget.selectedDay.exercises.length; i++) {
+      final records = _exerciseRecords[i] ?? [];
+      for (final record in records) {
+        // 簡化的卡路里計算：每組約 5-10 卡
+        double setCalories = 5.0;
+        if (record.weight != null && record.weight! > 0) {
+          setCalories += (record.weight! * 0.1);
+        }
+        setCalories += (record.reps * 0.3);
+        totalCalories += setCalories;
+      }
+    }
+    // 加上時間消耗（每分鐘約 3-5 卡）
+    totalCalories += (_seconds / 60) * 4;
+    return totalCalories;
+  }
+
+  /// 🔥 完成整個訓練
   Future<void> _completeWorkout() async {
     // 檢查是否有記錄
     if (_completedExercisesCount == 0 && _seconds == 0) {
@@ -219,10 +249,14 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
       return;
     }
 
+    // 計算總卡路里
+    double totalCalories = _calculateCalories();
+
     // 確認對話框
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
             Icon(Icons.check_circle, color: Colors.green),
@@ -249,12 +283,32 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('✅ 已完成 $_completedExercisesCount/${widget.selectedDay.exercises.length} 個動作'),
+                  Text('💪 總共 $_totalCompletedSets 組'),
                   Text('⏱️ 訓練時長：${_formatDuration(_seconds)}'),
-                  const Text(
-                    '📋 此訓練將計入計畫進度',
-                    style: TextStyle(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.w600,
+                  Text('🔥 消耗約 ${totalCalories.toInt()} 大卡'),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.event_note, color: Colors.orange, size: 16),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '此訓練將計入計畫進度',
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -285,52 +339,12 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     setState(() => _isSaving = true);
 
     try {
-      // 保存每個已完成的動作
-      for (int i = 0; i < widget.selectedDay.exercises.length; i++) {
-        final records = _exerciseRecords[i] ?? [];
-        if (records.isEmpty) continue;
-
-        final exercise = widget.selectedDay.exercises[i];
-        
-        // 計算平均重量和總次數
-        double? avgWeight;
-        int totalReps = 0;
-
-        if (records.isNotEmpty) {
-          final weights =
-              records.where((s) => s.weight != null).map((s) => s.weight!).toList();
-          if (weights.isNotEmpty) {
-            avgWeight = weights.reduce((a, b) => a + b) / weights.length;
-          }
-          totalReps = records.map((s) => s.reps).reduce((a, b) => a + b);
-        }
-
-        final avgReps = records.isNotEmpty 
-            ? (totalReps / records.length).round() 
-            : 0;
-
-        // 保存記錄,帶上 planId
-        await _workoutService.addWorkoutLog(
-          type: _mapCategoryToType(exercise.type),
-          name: exercise.name,
-          duration: (_seconds / widget.selectedDay.exercises.length / 60).ceil(), // 平均分配時間
-          sets: records.length,
-          reps: avgReps,
-          weight: avgWeight,
-          notes: _notesController.text.trim().isNotEmpty
-              ? '${exercise.name}: ${_notesController.text.trim()}'
-              : null,
-          planId: widget.plan.id, // ✅ 關鍵：傳入 planId
-        );
-
-        if (kDebugMode) {
-          debugPrint('✅ 已保存: ${exercise.name} (${records.length}組)');
-        }
-      }
+      // 🔥 使用簡化方法保存：一次性寫入 workoutLogs
+      await _saveWorkoutLog(totalCalories);
 
       if (!mounted) return;
 
-      _showSnackBar('訓練記錄已保存並計入計畫進度');
+      _showSnackBar('✅ 訓練記錄已保存並計入計畫進度');
       Navigator.pop(context, true); // 返回並標記完成
     } catch (e) {
       if (kDebugMode) {
@@ -338,24 +352,84 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
       }
       if (!mounted) return;
       setState(() => _isSaving = false);
-      _showSnackBar('保存失敗，請重試');
+      _showSnackBar('保存失敗，請重試: $e');
     }
   }
 
-  /// 映射類型
-  String _mapCategoryToType(String type) {
-    switch (type.toLowerCase()) {
-      case 'cardio':
-      case '有氧':
-        return 'cardio';
-      case 'yoga':
-      case '瑜伽':
-        return 'yoga';
-      case 'stretching':
-      case '伸展':
-        return 'stretching';
-      default:
-        return 'weight_training';
+  /// 🔥 保存訓練記錄
+  Future<void> _saveWorkoutLog(double totalCalories) async {
+    final durationMinutes = (_seconds / 60).ceil();
+    
+    // 構建訓練詳情
+    List<String> exerciseDetails = [];
+    for (int i = 0; i < widget.selectedDay.exercises.length; i++) {
+      final exercise = widget.selectedDay.exercises[i];
+      final records = _exerciseRecords[i] ?? [];
+      if (records.isNotEmpty) {
+        final totalReps = records.map((r) => r.reps).reduce((a, b) => a + b);
+        final avgReps = (totalReps / records.length).round();
+        final weights = records.where((r) => r.weight != null).map((r) => r.weight!);
+        final avgWeight = weights.isNotEmpty 
+            ? weights.reduce((a, b) => a + b) / weights.length 
+            : null;
+        
+        String detail = '${exercise.name}: ${records.length}組';
+        if (avgWeight != null) {
+          detail += ' @${avgWeight.toStringAsFixed(1)}kg';
+        }
+        detail += ' (平均$avgReps次)';
+        exerciseDetails.add(detail);
+      }
+    }
+
+    // 備註內容
+    String? notes;
+    if (_notesController.text.trim().isNotEmpty || exerciseDetails.isNotEmpty) {
+      notes = [
+        if (exerciseDetails.isNotEmpty) exerciseDetails.join('\n'),
+        if (_notesController.text.trim().isNotEmpty) _notesController.text.trim(),
+      ].join('\n---\n');
+    }
+
+    // 使用 addWorkoutLog 保存
+    // 計算平均次數
+    int? avgReps;
+    if (_totalCompletedSets > 0) {
+      final allReps = _exerciseRecords.values
+          .expand((records) => records)
+          .map((r) => r.reps);
+      if (allReps.isNotEmpty) {
+        avgReps = (allReps.reduce((a, b) => a + b) / _totalCompletedSets).round();
+      }
+    }
+
+    // 構建完整備註（包含動作數和組數資訊）
+    final fullNotes = [
+      '動作: $_completedExercisesCount/${widget.selectedDay.exercises.length}',
+      '總組數: $_totalCompletedSets',
+      if (notes != null && notes.isNotEmpty) '---',
+      if (notes != null && notes.isNotEmpty) notes,
+    ].join('\n');
+
+    await _workoutService.addWorkoutLog(
+      type: 'weight_training',
+      name: '${widget.plan.planName} - ${widget.selectedDay.dayOfWeek}',
+      duration: durationMinutes,
+      caloriesBurned: totalCalories,
+      sets: _totalCompletedSets,
+      reps: avgReps,
+      notes: fullNotes,
+      planId: widget.plan.id,
+      planName: widget.plan.planName,
+    );
+
+    if (kDebugMode) {
+      debugPrint('✅ 已保存計畫訓練記錄');
+      debugPrint('   計畫: ${widget.plan.planName}');
+      debugPrint('   時長: $durationMinutes 分鐘');
+      debugPrint('   動作: $_completedExercisesCount 個');
+      debugPrint('   組數: $_totalCompletedSets 組');
+      debugPrint('   卡路里: ${totalCalories.toInt()}');
     }
   }
 
@@ -432,20 +506,47 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
                 fontSize: 18,
               ),
             ),
-            Text(
-              '📋 計畫訓練',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: 12,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    '計畫',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  widget.selectedDay.dayOfWeek,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
       body: _isSaving
           ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                  ),
+                  SizedBox(height: 16),
+                  Text('正在保存訓練記錄...'),
+                ],
               ),
             )
           : Column(
@@ -527,13 +628,33 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Text(
-                '$_completedExercisesCount/${widget.selectedDay.exercises.length} 完成',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w600,
-                ),
+              Row(
+                children: [
+                  Text(
+                    '$_completedExercisesCount/${widget.selectedDay.exercises.length} 動作',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$_totalCompletedSets 組',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -577,12 +698,18 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
         iconColor = Colors.orange;
     }
 
+    final targetSets = _currentExercise.sets ?? 3;
+    final completedSets = _currentRecords.length;
+    final isCompleted = completedSets >= targetSets;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.green[400]!, Colors.green[600]!],
+          colors: isCompleted 
+              ? [Colors.green[600]!, Colors.green[800]!]
+              : [Colors.green[400]!, Colors.green[600]!],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -605,37 +732,49 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
                   fontSize: 14,
                 ),
               ),
-              if (_currentRecords.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.check_circle, size: 16, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${_currentRecords.length}組完成',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isCompleted
+                      ? Colors.white.withValues(alpha: 0.3)
+                      : Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$completedSets/$targetSets 組',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Icon(icon, size: 48, color: iconColor),
           ),
@@ -1056,6 +1195,68 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
             ),
           ),
           const SizedBox(height: 12),
+          // 🔥 動作快速選擇
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: List.generate(widget.selectedDay.exercises.length, (index) {
+              final exercise = widget.selectedDay.exercises[index];
+              final records = _exerciseRecords[index] ?? [];
+              final isSelected = index == _currentExerciseIndex;
+              final hasRecords = records.isNotEmpty;
+
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _currentExerciseIndex = index;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.green
+                        : hasRecords
+                            ? Colors.green.shade50
+                            : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? Colors.green
+                          : hasRecords
+                              ? Colors.green.shade300
+                              : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasRecords)
+                        Icon(
+                          Icons.check_circle,
+                          size: 14,
+                          color: isSelected ? Colors.white : Colors.green,
+                        ),
+                      if (hasRecords) const SizedBox(width: 4),
+                      Text(
+                        '${index + 1}. ${exercise.name}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isSelected
+                              ? Colors.white
+                              : hasRecords
+                                  ? Colors.green.shade700
+                                  : Colors.grey.shade600,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(

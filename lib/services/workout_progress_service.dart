@@ -1,7 +1,9 @@
 // lib/services/workout_progress_service.dart
-// ✅ 簡化版 - 減少複合索引需求，在代碼中過濾日期
+// ✅ 修正版 - 從 workoutLogs 讀取 planId 計算完成天數
+// 🔧 關鍵修正：getCompletedDays 改為查詢 workoutLogs 而非 workoutCompletions
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/workout_model.dart';
 
 /// 訓練進度追蹤服務
@@ -100,35 +102,92 @@ class WorkoutProgressService {
 
   /// 📈 獲取訓練計畫的完成天數
   /// 返回該計畫已完成的訓練天數
+  /// 🔥 關鍵修正：從 workoutLogs 讀取（與 workout_plan_execution_page 保存位置一致）
   Future<int> getCompletedDays(String planId) async {
     if (_currentUserId == null) return 0;
 
-    final snapshot = await _firestore
-        .collection('workoutCompletions')
-        .where('planId', isEqualTo: planId)
-        .where('userId', isEqualTo: _currentUserId)
-        .get();
+    try {
+      // ✅ 優先從 workoutLogs 讀取（主要資料來源）
+      final logsSnapshot = await _firestore
+          .collection('workoutLogs')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
 
-    return snapshot.docs.length;
+      if (kDebugMode) {
+        debugPrint('📊 計畫進度查詢: planId=$planId');
+        debugPrint('   workoutLogs 找到 ${logsSnapshot.docs.length} 筆');
+      }
+
+      if (logsSnapshot.docs.isNotEmpty) {
+        return logsSnapshot.docs.length;
+      }
+
+      // 🔄 備用：如果 workoutLogs 沒有，檢查 workoutCompletions（舊資料相容）
+      final completionsSnapshot = await _firestore
+          .collection('workoutCompletions')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
+
+      if (kDebugMode) {
+        debugPrint('   workoutCompletions 找到 ${completionsSnapshot.docs.length} 筆');
+      }
+
+      return completionsSnapshot.docs.length;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取計畫進度失敗: $e');
+      }
+      return 0;
+    }
   }
 
   /// 📊 獲取每週完成狀態
   /// 返回 Map<星期幾, 完成次數>
+  /// 🔥 修正：同時從 workoutLogs 和 workoutCompletions 讀取
   Future<Map<String, int>> getWeeklyCompletion(String planId) async {
     if (_currentUserId == null) return {};
 
-    final snapshot = await _firestore
-        .collection('workoutCompletions')
-        .where('planId', isEqualTo: planId)
-        .where('userId', isEqualTo: _currentUserId)
-        .get();
-
     final Map<String, int> weeklyCompletion = {};
 
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final dayOfWeek = data['dayOfWeek'] as String;
-      weeklyCompletion[dayOfWeek] = (weeklyCompletion[dayOfWeek] ?? 0) + 1;
+    try {
+      // ✅ 從 workoutLogs 讀取（主要來源）
+      final logsSnapshot = await _firestore
+          .collection('workoutLogs')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
+
+      for (var doc in logsSnapshot.docs) {
+        final data = doc.data();
+        // 從訓練名稱中提取星期幾（格式：planName - dayOfWeek）
+        final name = data['name'] as String? ?? '';
+        final parts = name.split(' - ');
+        if (parts.length >= 2) {
+          final dayOfWeek = parts.last.trim().toLowerCase();
+          weeklyCompletion[dayOfWeek] = (weeklyCompletion[dayOfWeek] ?? 0) + 1;
+        }
+      }
+
+      // 🔄 備用：從 workoutCompletions 讀取（舊資料）
+      if (weeklyCompletion.isEmpty) {
+        final completionsSnapshot = await _firestore
+            .collection('workoutCompletions')
+            .where('planId', isEqualTo: planId)
+            .where('userId', isEqualTo: _currentUserId)
+            .get();
+
+        for (var doc in completionsSnapshot.docs) {
+          final data = doc.data();
+          final dayOfWeek = data['dayOfWeek'] as String;
+          weeklyCompletion[dayOfWeek] = (weeklyCompletion[dayOfWeek] ?? 0) + 1;
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取每週完成狀態失敗: $e');
+      }
     }
 
     return weeklyCompletion;
@@ -136,31 +195,50 @@ class WorkoutProgressService {
 
   /// 🗓️ 檢查今天是否已完成訓練
   /// 檢查特定計畫和星期幾的訓練是否已完成
-  /// ✅ 簡化版：減少查詢條件
+  /// 🔥 修正：從 workoutLogs 讀取
   Future<bool> isCompletedToday(String planId, String dayOfWeek) async {
     if (_currentUserId == null) return false;
 
     final now = DateTime.now();
-    final dateOnly = DateTime(now.year, now.month, now.day);
+    final today = now.toIso8601String().split('T')[0];
 
-    // ✅ 簡化查詢
-    final snapshot = await _firestore
-        .collection('workoutCompletions')
-        .where('planId', isEqualTo: planId)
-        .where('userId', isEqualTo: _currentUserId)
-        .where('dayOfWeek', isEqualTo: dayOfWeek)
-        .get();
+    try {
+      // ✅ 從 workoutLogs 檢查今日記錄
+      final logsSnapshot = await _firestore
+          .collection('workoutLogs')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .where('date', isEqualTo: today)
+          .get();
 
-    // 在代碼中過濾今天的記錄
-    final todayRecords = snapshot.docs.where((doc) {
-      final data = doc.data();
-      final completionDate = (data['completionDate'] as Timestamp).toDate();
-      return completionDate.year == dateOnly.year &&
-             completionDate.month == dateOnly.month &&
-             completionDate.day == dateOnly.day;
-    });
+      if (logsSnapshot.docs.isNotEmpty) {
+        return true;
+      }
 
-    return todayRecords.isNotEmpty;
+      // 🔄 備用：從 workoutCompletions 檢查
+      final completionsSnapshot = await _firestore
+          .collection('workoutCompletions')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .where('dayOfWeek', isEqualTo: dayOfWeek)
+          .get();
+
+      // 在代碼中過濾今天的記錄
+      final todayRecords = completionsSnapshot.docs.where((doc) {
+        final data = doc.data();
+        final completionDate = (data['completionDate'] as Timestamp).toDate();
+        return completionDate.year == now.year &&
+               completionDate.month == now.month &&
+               completionDate.day == now.day;
+      });
+
+      return todayRecords.isNotEmpty;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 檢查今日完成狀態失敗: $e');
+      }
+      return false;
+    }
   }
 
   /// 📅 獲取計畫的所有完成記錄
@@ -199,6 +277,7 @@ class WorkoutProgressService {
 
   /// 📊 獲取訓練統計
   /// 返回該計畫的詳細統計信息
+  /// 🔥 修正：從 workoutLogs 讀取統計
   Future<Map<String, dynamic>> getWorkoutStats(String planId) async {
     if (_currentUserId == null) {
       return {
@@ -209,29 +288,59 @@ class WorkoutProgressService {
       };
     }
 
-    final snapshot = await _firestore
-        .collection('workoutCompletions')
-        .where('planId', isEqualTo: planId)
-        .where('userId', isEqualTo: _currentUserId)
-        .get();
+    try {
+      // ✅ 從 workoutLogs 讀取統計
+      final logsSnapshot = await _firestore
+          .collection('workoutLogs')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
 
-    int totalCompletions = snapshot.docs.length;
-    int totalExercises = 0;
-    int totalDuration = 0;
+      int totalCompletions = logsSnapshot.docs.length;
+      int totalExercises = 0;
+      int totalDuration = 0;
 
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      totalExercises += (data['exercisesCompleted'] ?? 0) as int;
-      totalDuration += (data['totalDuration'] ?? 0) as int;
+      for (var doc in logsSnapshot.docs) {
+        final data = doc.data();
+        totalExercises += (data['totalExercises'] ?? 1) as int;
+        totalDuration += (data['duration'] ?? 0) as int;
+      }
+
+      // 如果 workoutLogs 沒有資料，嘗試從 workoutCompletions 讀取
+      if (totalCompletions == 0) {
+        final completionsSnapshot = await _firestore
+            .collection('workoutCompletions')
+            .where('planId', isEqualTo: planId)
+            .where('userId', isEqualTo: _currentUserId)
+            .get();
+
+        totalCompletions = completionsSnapshot.docs.length;
+
+        for (var doc in completionsSnapshot.docs) {
+          final data = doc.data();
+          totalExercises += (data['exercisesCompleted'] ?? 0) as int;
+          totalDuration += (data['totalDuration'] ?? 0) as int;
+        }
+      }
+
+      return {
+        'totalCompletions': totalCompletions,
+        'totalExercises': totalExercises,
+        'totalDuration': totalDuration,
+        'averageDuration':
+            totalCompletions > 0 ? (totalDuration / totalCompletions).round() : 0,
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取訓練統計失敗: $e');
+      }
+      return {
+        'totalCompletions': 0,
+        'totalExercises': 0,
+        'totalDuration': 0,
+        'averageDuration': 0,
+      };
     }
-
-    return {
-      'totalCompletions': totalCompletions,
-      'totalExercises': totalExercises,
-      'totalDuration': totalDuration,
-      'averageDuration':
-          totalCompletions > 0 ? (totalDuration / totalCompletions).round() : 0,
-    };
   }
 
   /// 🔥 刪除完成記錄

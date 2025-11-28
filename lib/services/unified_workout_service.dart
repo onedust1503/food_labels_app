@@ -1,7 +1,9 @@
 // lib/services/unified_workout_service.dart
-// 🔧 統一訓練記錄服務 - 完整版：包含訓練計畫功能
-// ✅ 新增: getTodayWorkoutSessions, getAllWorkoutSessions, getWorkoutSessionDetails
-// ✅ 改進: 更準確的卡路里計算
+// 🔧 統一訓練記錄服務 - 完整整合版 v3
+// ✅ 保留所有原有功能
+// ✅ 新增 Plan Session 方法（教練計畫訓練）
+// ✅ 新增整合讀取方法（同時顯示自由訓練和計畫訓練）
+// ✅ 修正 adHocEndRest 狀態更新
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -28,6 +30,8 @@ class UnifiedWorkoutService {
     String? intensity,
     String? notes,
     String? planId,
+    String? planName,
+    String? sessionId,
   }) async {
     if (_currentUserId == null) throw Exception('用戶未登入');
 
@@ -51,6 +55,8 @@ class UnifiedWorkoutService {
       if (intensity != null) 'intensity': intensity,
       if (notes != null) 'notes': notes,
       if (planId != null) 'planId': planId,
+      if (planName != null) 'planName': planName,
+      if (sessionId != null) 'sessionId': sessionId,
       'createdAt': FieldValue.serverTimestamp(),
       'timestamp': now.millisecondsSinceEpoch,
     };
@@ -374,6 +380,16 @@ class UnifiedWorkoutService {
     }
   }
 
+  /// 🔥 獲取今日訓練總結（別名方法，供頁面使用）
+  Future<Map<String, dynamic>> getTodayWorkoutSummary() async {
+    return getTodayStats();
+  }
+
+  /// 🔥 獲取本週訓練統計（別名方法）
+  Future<Map<String, dynamic>> getWeeklyWorkoutStats() async {
+    return getWeeklyStats();
+  }
+
   /// 🔥 刪除運動記錄（同時刪除新舊系統）
   Future<void> deleteWorkout(String workoutId) async {
     if (_currentUserId == null) throw Exception('用戶未登入');
@@ -435,6 +451,11 @@ class UnifiedWorkoutService {
     }
   }
 
+  /// 🔥 刪除運動記錄（別名方法）
+  Future<void> deleteWorkoutLog(String workoutId) async {
+    return deleteWorkout(workoutId);
+  }
+
   /// 刪除後更新統計
   Future<void> _updateDailySummaryAfterDelete(
       String date, int duration, double calories) async {
@@ -467,7 +488,7 @@ class UnifiedWorkoutService {
     });
   }
 
-  /// ✅ 新增：獲取訓練歷史記錄
+  /// ✅ 獲取訓練歷史記錄
   Future<List<Map<String, dynamic>>> getWorkoutHistory({int days = 30}) async {
     if (_currentUserId == null) return [];
 
@@ -750,10 +771,916 @@ class UnifiedWorkoutService {
     }
   }
 
-  // ========== 訓練記錄詳情相關 (新增) ==========
+  // ========== 🔥 自由訓練（AdHoc Session）相關 ==========
+
+  /// 🔥 開始自由訓練會話
+  Future<String> startAdHocSession({
+    required List<Map<String, dynamic>> exercises,
+  }) async {
+    final uid = _currentUserId!;
+    final sessionRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc();
+
+    await sessionRef.set({
+      'userId': uid,
+      'source': 'self',
+      'planId': null,
+      'startedAt': FieldValue.serverTimestamp(),
+      'totalActiveSec': 0,
+      'totalRestSec': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    for (int i = 0; i < exercises.length; i++) {
+      final ex = exercises[i];
+      final exRef = sessionRef.collection('exercises').doc('ex$i');
+      final plannedSets = (ex['plannedSets'] ?? 1) as int;
+
+      await exRef.set({
+        'exerciseName': ex['name'],
+        'type': ex['type'] ?? 'reps',
+        'category': ex['category'] ?? '未分類',
+        'plannedSets': plannedSets,
+        'plannedReps': ex['plannedReps'],
+        'plannedDurationSec': ex['plannedDurationSec'],
+        'restSec': ex['restSec'] ?? 90,
+        'currentSetIndex': 0,
+      });
+
+      for (int s = 0; s < plannedSets; s++) {
+        await exRef.collection('sets').doc('$s').set({
+          'index': s,
+          'status': 'pending',
+          'targetReps': ex['plannedReps'],
+          'targetDurationSec': ex['plannedDurationSec'],
+          'restPlannedSec': ex['restSec'] ?? 90,
+        });
+      }
+    }
+
+    if (kDebugMode) {
+      debugPrint('✅ 開始自由訓練: ${sessionRef.id}');
+    }
+
+    return sessionRef.id;
+  }
+
+  /// 🔥 開始當前組
+  Future<void> adHocStartSet(
+    String sessionId,
+    String exerciseDocId,
+    int setIndex,
+  ) async {
+    final uid = _currentUserId!;
+    final setRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId)
+        .collection('sets')
+        .doc('$setIndex');
+
+    await setRef.update({
+      'status': 'active',
+      'startedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// 🔥 完成當前組
+  Future<void> adHocCompleteSet({
+    required String sessionId,
+    required String exerciseDocId,
+    required int setIndex,
+    int? reps,
+    double? weight,
+    int? durationSec,
+    double? rpe,
+    String? note,
+  }) async {
+    final uid = _currentUserId!;
+    final setRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId)
+        .collection('sets')
+        .doc('$setIndex');
+
+    await setRef.update({
+      'status': 'resting',
+      'completedAt': FieldValue.serverTimestamp(),
+      if (reps != null) 'actualReps': reps,
+      if (weight != null) 'weight': weight,
+      if (durationSec != null) 'actualDurationSec': durationSec,
+      if (rpe != null) 'rpe': rpe,
+      if (note != null) 'note': note,
+    });
+  }
+
+  /// 🔥 結束休息（已修正：狀態改為 completed）
+  Future<void> adHocEndRest({
+    required String sessionId,
+    required String exerciseDocId,
+    required int setIndex,
+    required int restTakenSec,
+  }) async {
+    final uid = _currentUserId!;
+    final exRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId);
+
+    final setRef = exRef.collection('sets').doc('$setIndex');
+
+    // 🔥 修正：休息結束後，狀態改為 completed
+    await setRef.update({
+      'restTakenSec': restTakenSec,
+      'status': 'completed',  // ✅ 關鍵修正
+    });
+
+    final exSnap = await exRef.get();
+    final totalSets = (exSnap.data()?['plannedSets'] ?? 0) as int;
+    final next = setIndex + 1;
+
+    await exRef.update({
+      'currentSetIndex': next < totalSets ? next : setIndex,
+    });
+
+    final sessionRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId);
+
+    await sessionRef.update({
+      'totalRestSec': FieldValue.increment(restTakenSec),
+    });
+  }
+
+  /// 🔥 略過當前組
+  Future<void> adHocSkipSet({
+    required String sessionId,
+    required String exerciseDocId,
+    required int setIndex,
+  }) async {
+    final uid = _currentUserId!;
+    final setRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId)
+        .collection('sets')
+        .doc('$setIndex');
+
+    await setRef.update({
+      'status': 'skipped',
+      'completedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// 🔥 新增一組
+  Future<void> adHocAddSet({
+    required String sessionId,
+    required String exerciseDocId,
+    required int targetReps,
+    int? targetDurationSec,
+  }) async {
+    final uid = _currentUserId!;
+    final exRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId);
+
+    final exSnap = await exRef.get();
+    final planned = (exSnap.data()?['plannedSets'] ?? 0) as int;
+    final newIndex = planned;
+
+    await exRef.update({'plannedSets': planned + 1});
+
+    await exRef.collection('sets').doc('$newIndex').set({
+      'index': newIndex,
+      'status': 'pending',
+      'targetReps': targetReps,
+      'targetDurationSec': targetDurationSec,
+      'restPlannedSec': exSnap.data()?['restSec'] ?? 90,
+    });
+  }
+
+  /// 🔥 完成自由訓練會話 - 統一寫入 workoutSessions 和 workoutLogs
+  Future<void> finishAdHocSession({
+    required String sessionId,
+    int? sessionRpe,
+    double? calories,
+  }) async {
+    final uid = _currentUserId!;
+    final sessionRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId);
+
+    // 1. 先計算卡路里(如果沒有傳入)
+    double? estimatedCaloriesTemp;
+    if (calories == null) {
+      final exercisesSnapTemp = await sessionRef.collection('exercises').get();
+      int totalSetsTemp = 0;
+      for (final exDoc in exercisesSnapTemp.docs) {
+        final setsSnap = await exDoc.reference.collection('sets').get();
+        for (final setDoc in setsSnap.docs) {
+          final status = setDoc.data()['status'] as String?;
+          if (status == 'completed' || status == 'resting') {
+            totalSetsTemp++;
+          }
+        }
+      }
+      estimatedCaloriesTemp = totalSetsTemp * 12.0;
+    }
+
+    final finalCaloriesForUpdate = calories ?? estimatedCaloriesTemp ?? 0.0;
+
+    // 2. 標記 session 為已完成 + 寫入卡路里
+    await sessionRef.update({
+      'endedAt': FieldValue.serverTimestamp(),
+      'calories': finalCaloriesForUpdate,
+      if (sessionRpe != null) 'sessionRpe': sessionRpe,
+    });
+
+    final sessionSnap = await sessionRef.get();
+    final sessionData = sessionSnap.data();
+    if (sessionData == null) {
+      if (kDebugMode) {
+        debugPrint('⚠️ Session 資料不存在');
+      }
+      return;
+    }
+
+    final startedAt = (sessionData['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final endedAt = (sessionData['endedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final dateStr = startedAt.toIso8601String().split('T')[0];
+    
+    // 計算總時長(秒和分鐘)
+    final totalDurationSec = endedAt.difference(startedAt).inSeconds.clamp(1, 18000);
+    final totalDurationMin = (totalDurationSec / 60).ceil().clamp(1, 300);
+
+    // 3. 獲取所有動作的詳細資訊
+    final exercisesSnap = await sessionRef.collection('exercises').get();
+    
+    if (exercisesSnap.docs.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 沒有任何動作記錄');
+      }
+      return;
+    }
+
+    // 收集所有動作的組數詳情
+    List<Map<String, dynamic>> exerciseDetails = [];
+    int totalCompletedSets = 0;
+    double estimatedCalories = 0;
+
+    for (final exDoc in exercisesSnap.docs) {
+      final exData = exDoc.data();
+      final exerciseName = exData['exerciseName'] ?? '未命名動作';
+      
+      // 獲取該動作的所有組數
+      final setsSnap = await exDoc.reference.collection('sets').get();
+      
+      if (setsSnap.docs.isEmpty) continue;
+
+      List<Map<String, dynamic>> setsInfo = [];
+      int completedSets = 0;
+      
+      for (final setDoc in setsSnap.docs) {
+        final setData = setDoc.data();
+        final status = setData['status'] as String?;
+        
+        // 只記錄已完成或休息中的組
+        if (status == 'completed' || status == 'resting') {
+          completedSets++;
+          setsInfo.add({
+            'setIndex': setData['index'],
+            'reps': setData['actualReps'],
+            'weight': setData['weight'],
+            'durationSec': setData['actualDurationSec'],
+            'rpe': setData['rpe'],
+            'note': setData['note'],
+            'status': status,
+          });
+        } else if (status == 'skipped') {
+          // 🔥 修正：只記錄有實際數據的 skipped 組
+          final hasData = setData['actualReps'] != null || 
+                          setData['weight'] != null ||
+                          setData['reps'] != null;
+          if (hasData) {
+            setsInfo.add({
+              'setIndex': setData['index'],
+              'reps': setData['actualReps'] ?? setData['reps'],
+              'weight': setData['weight'],
+              'status': 'skipped',
+            });
+          }
+        }
+        // 🔥 不記錄 pending 狀態的空組
+      }
+
+      if (completedSets > 0 || setsInfo.isNotEmpty) {
+        totalCompletedSets += completedSets;
+        estimatedCalories += completedSets * 12.0;
+        
+        exerciseDetails.add({
+          'name': exerciseName,
+          'exerciseName': exerciseName,
+          'completedSets': completedSets,
+          'sets': setsInfo,
+          'category': exData['category'] ?? '未分類',
+        });
+      }
+    }
+
+    if (exerciseDetails.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 沒有完成任何組數');
+      }
+      return;
+    }
+
+    final finalCalories = calories ?? estimatedCalories;
+
+    // ===== 🔥 使用 WriteBatch 同時寫入兩個集合 =====
+    final batch = _firestore.batch();
+
+    // 4a. ✅ 寫入 workoutLogs (供列表頁面讀取)
+    final workoutLogRef = _firestore.collection('workoutLogs').doc();
+    batch.set(workoutLogRef, {
+      'userId': uid,
+      'date': dateStr,
+      'type': 'weight_training',
+      'name': '自由訓練',
+      'duration': totalDurationMin,
+      'caloriesBurned': finalCalories,
+      'totalSets': totalCompletedSets,
+      'totalExercises': exerciseDetails.length,
+      'intensity': 'medium',
+      'notes': '自由訓練 - ${exerciseDetails.length} 個動作',
+      'sessionId': sessionId,
+      'createdAt': FieldValue.serverTimestamp(),
+      'timestamp': startedAt.millisecondsSinceEpoch,
+    });
+
+    // 4b. ✅ 寫入 workoutSessions (供詳細頁面讀取)
+    final workoutSessionRef = _firestore.collection('workoutSessions').doc(sessionId);
+    batch.set(workoutSessionRef, {
+      'userId': uid,
+      'date': dateStr,
+      'name': '自由訓練',
+      'duration': totalDurationMin,
+      'timestamp': Timestamp.fromDate(startedAt),
+      'startedAt': Timestamp.fromDate(startedAt),
+      'endedAt': Timestamp.fromDate(endedAt),
+      'completedAt': Timestamp.fromDate(endedAt),
+      'totalDurationSeconds': totalDurationSec,
+      'totalCalories': finalCalories,
+      'caloriesBurned': finalCalories,
+      'totalSets': totalCompletedSets,
+      'totalExercises': exerciseDetails.length,
+      'sessionId': sessionId,
+      'source': 'self',
+      'exercises': exerciseDetails,
+    });
+
+    // ✅ 提交批次寫入
+    await batch.commit();
+
+    // 5. 更新每日統計
+    await _updateDailySummary(dateStr, totalDurationMin, finalCalories);
+
+    if (kDebugMode) {
+      debugPrint('✅ Ad-hoc session 完成: $sessionId');
+      debugPrint('   總時長: $totalDurationMin 分鐘 ($totalDurationSec 秒)');
+      debugPrint('   總卡路里: ${finalCalories.toStringAsFixed(1)}');
+      debugPrint('   總組數: $totalCompletedSets');
+      debugPrint('   動作數: ${exerciseDetails.length}');
+      debugPrint('   ✅ 已同時寫入 workoutLogs 和 workoutSessions');
+    }
+  }
+
+  // ========== 🎯 教練計畫訓練（Plan Session）相關 - 新增 ==========
+
+  /// 🔥 開始教練計畫訓練會話
+  Future<String> startPlanSession({
+    required String planId,
+    required String planName,
+    required String dayOfWeek,
+    required List<Map<String, dynamic>> exercises,
+  }) async {
+    final uid = _currentUserId!;
+    final sessionRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc();
+
+    await sessionRef.set({
+      'userId': uid,
+      'source': 'plan',
+      'planId': planId,
+      'planName': planName,
+      'dayOfWeek': dayOfWeek,
+      'startedAt': FieldValue.serverTimestamp(),
+      'totalActiveSec': 0,
+      'totalRestSec': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // 建立每個動作和組數
+    for (int i = 0; i < exercises.length; i++) {
+      final ex = exercises[i];
+      final exRef = sessionRef.collection('exercises').doc('ex$i');
+      final plannedSets = (ex['sets'] ?? ex['plannedSets'] ?? 3) as int;
+      final plannedReps = ex['reps'] ?? ex['plannedReps'];
+
+      await exRef.set({
+        'exerciseName': ex['name'],
+        'category': ex['type'] ?? ex['category'] ?? '未分類',
+        'type': 'reps',
+        'plannedSets': plannedSets,
+        'plannedReps': plannedReps,
+        'restSec': ex['restSec'] ?? 90,
+        'currentSetIndex': 0,
+        'notes': ex['notes'],
+      });
+
+      // 建立每組的初始狀態
+      for (int s = 0; s < plannedSets; s++) {
+        await exRef.collection('sets').doc('$s').set({
+          'index': s,
+          'status': 'pending',
+          'targetReps': plannedReps,
+          'restPlannedSec': ex['restSec'] ?? 90,
+        });
+      }
+    }
+
+    if (kDebugMode) {
+      debugPrint('✅ 開始計畫訓練: ${sessionRef.id}');
+      debugPrint('   計畫: $planName');
+      debugPrint('   動作數: ${exercises.length}');
+    }
+
+    return sessionRef.id;
+  }
+
+  /// 🔥 完成教練計畫訓練會話
+  Future<void> finishPlanSession({
+    required String sessionId,
+    required String planId,
+    required String planName,
+    required String dayOfWeek,
+    int? sessionRpe,
+    double? calories,
+  }) async {
+    final uid = _currentUserId!;
+    final sessionRef = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId);
+
+    // 1. 更新 session 結束時間
+    await sessionRef.update({
+      'endedAt': FieldValue.serverTimestamp(),
+      if (sessionRpe != null) 'sessionRpe': sessionRpe,
+      if (calories != null) 'calories': calories,
+    });
+
+    // 2. 獲取 session 資料
+    final sessionSnap = await sessionRef.get();
+    final sessionData = sessionSnap.data();
+    if (sessionData == null) {
+      if (kDebugMode) {
+        debugPrint('⚠️ Plan Session 資料不存在');
+      }
+      return;
+    }
+
+    final startedAt = (sessionData['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final endedAt = (sessionData['endedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final dateStr = startedAt.toIso8601String().split('T')[0];
+    
+    // 計算總時長
+    final totalDurationSec = endedAt.difference(startedAt).inSeconds.clamp(1, 18000);
+    final totalDurationMin = (totalDurationSec / 60).ceil().clamp(1, 300);
+
+    // 3. 獲取所有動作的詳細資訊
+    final exercisesSnap = await sessionRef.collection('exercises').get();
+    
+    if (exercisesSnap.docs.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 沒有任何動作記錄');
+      }
+      return;
+    }
+
+    // 收集所有動作的組數詳情
+    List<Map<String, dynamic>> exerciseDetails = [];
+    int totalCompletedSets = 0;
+    double estimatedCalories = 0;
+
+    for (final exDoc in exercisesSnap.docs) {
+      final exData = exDoc.data();
+      final exerciseName = exData['exerciseName'] ?? '未命名動作';
+      final category = exData['category'] ?? '未分類';
+      
+      // 獲取該動作的所有組數
+      final setsSnap = await exDoc.reference.collection('sets').get();
+      
+      if (setsSnap.docs.isEmpty) continue;
+
+      List<Map<String, dynamic>> setsInfo = [];
+      int completedSets = 0;
+      
+      for (final setDoc in setsSnap.docs) {
+        final setData = setDoc.data();
+        final status = setData['status'] as String?;
+        
+        // 只記錄已完成或休息中的組
+        if (status == 'completed' || status == 'resting') {
+          completedSets++;
+          setsInfo.add({
+            'setIndex': setData['index'],
+            'reps': setData['actualReps'],
+            'weight': setData['weight'],
+            'durationSec': setData['actualDurationSec'],
+            'rpe': setData['rpe'],
+            'note': setData['note'],
+            'status': 'completed',
+          });
+        } else if (status == 'skipped') {
+          // 只記錄有實際數據的 skipped 組
+          final hasData = setData['actualReps'] != null || 
+                          setData['weight'] != null;
+          if (hasData) {
+            setsInfo.add({
+              'setIndex': setData['index'],
+              'reps': setData['actualReps'],
+              'weight': setData['weight'],
+              'status': 'skipped',
+            });
+          }
+        }
+      }
+
+      if (completedSets > 0 || setsInfo.isNotEmpty) {
+        totalCompletedSets += completedSets;
+        estimatedCalories += completedSets * 12.0;
+        
+        exerciseDetails.add({
+          'name': exerciseName,
+          'exerciseName': exerciseName,
+          'completedSets': completedSets,
+          'sets': setsInfo,
+          'category': category,
+        });
+      }
+    }
+
+    if (exerciseDetails.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 沒有完成任何組數');
+      }
+      return;
+    }
+
+    final finalCalories = calories ?? estimatedCalories;
+
+    // ===== 🔥 使用 WriteBatch 同時寫入多個集合 =====
+    final batch = _firestore.batch();
+
+    // 4a. ✅ 寫入 workoutLogs (供列表頁面讀取)
+    final workoutLogRef = _firestore.collection('workoutLogs').doc();
+    batch.set(workoutLogRef, {
+      'userId': uid,
+      'date': dateStr,
+      'type': 'weight_training',
+      'name': '計畫訓練',
+      'planId': planId,           // ✅ 關鍵：記錄 planId
+      'planName': planName,       // ✅ 記錄計畫名稱
+      'dayOfWeek': dayOfWeek,
+      'duration': totalDurationMin,
+      'caloriesBurned': finalCalories,
+      'totalSets': totalCompletedSets,
+      'totalExercises': exerciseDetails.length,
+      'intensity': 'medium',
+      'notes': '$planName - ${exerciseDetails.length} 個動作',
+      'sessionId': sessionId,
+      'createdAt': FieldValue.serverTimestamp(),
+      'timestamp': startedAt.millisecondsSinceEpoch,
+    });
+
+    // 4b. ✅ 寫入 workoutSessions (供詳細頁面讀取)
+    final workoutSessionRef = _firestore.collection('workoutSessions').doc(sessionId);
+    batch.set(workoutSessionRef, {
+      'userId': uid,
+      'date': dateStr,
+      'name': planName,
+      'planId': planId,
+      'planName': planName,
+      'dayOfWeek': dayOfWeek,
+      'duration': totalDurationMin,
+      'timestamp': Timestamp.fromDate(startedAt),
+      'startedAt': Timestamp.fromDate(startedAt),
+      'endedAt': Timestamp.fromDate(endedAt),
+      'completedAt': Timestamp.fromDate(endedAt),
+      'totalDurationSeconds': totalDurationSec,
+      'totalCalories': finalCalories,
+      'caloriesBurned': finalCalories,
+      'totalSets': totalCompletedSets,
+      'totalExercises': exerciseDetails.length,
+      'sessionId': sessionId,
+      'source': 'plan',
+      'exercises': exerciseDetails,
+    });
+
+    // 4c. ✅ 記錄計畫完成進度（用於追蹤）
+    final completionRef = _firestore.collection('workoutCompletions').doc();
+    batch.set(completionRef, {
+      'planId': planId,
+      'userId': uid,
+      'completionDate': Timestamp.fromDate(DateTime(startedAt.year, startedAt.month, startedAt.day)),
+      'dayOfWeek': dayOfWeek,
+      'exercisesCompleted': exerciseDetails.length,
+      'totalExercises': exercisesSnap.docs.length,
+      'totalDuration': totalDurationMin,
+      'sessionId': sessionId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // ✅ 提交批次寫入
+    await batch.commit();
+
+    // 5. 更新每日統計
+    await _updateDailySummary(dateStr, totalDurationMin, finalCalories);
+
+    if (kDebugMode) {
+      debugPrint('✅ 計畫訓練已完成並保存:');
+      debugPrint('   sessionId: $sessionId');
+      debugPrint('   planId: $planId');
+      debugPrint('   日期: $dateStr');
+      debugPrint('   時長: $totalDurationMin 分鐘');
+      debugPrint('   動作: ${exerciseDetails.length} 個');
+      debugPrint('   完成組數: $totalCompletedSets');
+      debugPrint('   卡路里: $finalCalories');
+    }
+  }
+
+  // ========== 🔥 整合讀取方法 - 新增 ==========
+
+  /// 🔥 獲取今日所有訓練（整合 workoutLogs 和 workoutSessions）
+  Future<List<Map<String, dynamic>>> getTodayWorkoutsUnified() async {
+    if (_currentUserId == null) return [];
+
+    final today = DateTime.now();
+    final dateStr = today.toIso8601String().split('T')[0];
+    
+    List<Map<String, dynamic>> allWorkouts = [];
+
+    try {
+      // 1️⃣ 從 workoutLogs 讀取
+      final logsSnapshot = await _firestore
+          .collection('workoutLogs')
+          .where('userId', isEqualTo: _currentUserId)
+          .where('date', isEqualTo: dateStr)
+          .get();
+
+      for (final doc in logsSnapshot.docs) {
+        final data = doc.data();
+        allWorkouts.add({
+          'id': doc.id,
+          'name': data['name'] ?? '未命名訓練',
+          'type': data['type'] ?? 'weight_training',
+          'duration': data['duration'] ?? 0,
+          'caloriesBurned': (data['caloriesBurned'] ?? 0).toDouble(),
+          'totalSets': data['totalSets'] ?? data['sets'],
+          'totalExercises': data['totalExercises'],
+          'sessionId': data['sessionId'],
+          'planId': data['planId'],
+          'planName': data['planName'],
+          'createdAt': data['createdAt'],
+          'timestamp': data['timestamp'],
+          'source': data['planId'] != null ? 'plan' : (data['sessionId'] != null ? 'self' : 'manual'),
+        });
+      }
+
+      // 2️⃣ 檢查 workoutSessions 是否有額外的記錄（避免重複）
+      final existingSessionIds = allWorkouts
+          .where((w) => w['sessionId'] != null)
+          .map((w) => w['sessionId'] as String)
+          .toSet();
+
+      final sessionsSnapshot = await _firestore
+          .collection('workoutSessions')
+          .where('userId', isEqualTo: _currentUserId)
+          .where('date', isEqualTo: dateStr)
+          .get();
+
+      for (final doc in sessionsSnapshot.docs) {
+        // 避免重複
+        if (existingSessionIds.contains(doc.id)) continue;
+
+        final data = doc.data();
+        allWorkouts.add({
+          'id': doc.id,
+          'name': data['name'] ?? '訓練記錄',
+          'type': data['type'] ?? 'weight_training',
+          'duration': data['duration'] ?? 0,
+          'caloriesBurned': (data['totalCalories'] ?? data['caloriesBurned'] ?? 0).toDouble(),
+          'totalSets': data['totalSets'],
+          'totalExercises': data['totalExercises'],
+          'sessionId': doc.id,
+          'planId': data['planId'],
+          'planName': data['planName'],
+          'createdAt': data['completedAt'] ?? data['endedAt'],
+          'timestamp': data['timestamp'],
+          'source': data['planId'] != null ? 'plan' : 'self',
+        });
+      }
+
+      // 3️⃣ 按時間排序（最新的在前）
+      allWorkouts.sort((a, b) {
+        final aTime = a['timestamp'] ?? 
+            (a['createdAt'] is Timestamp ? (a['createdAt'] as Timestamp).millisecondsSinceEpoch : 0);
+        final bTime = b['timestamp'] ?? 
+            (b['createdAt'] is Timestamp ? (b['createdAt'] as Timestamp).millisecondsSinceEpoch : 0);
+        return (bTime as int).compareTo(aTime as int);
+      });
+
+      if (kDebugMode) {
+        debugPrint('✅ 今日訓練（整合）: ${allWorkouts.length} 筆');
+      }
+
+      return allWorkouts;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ getTodayWorkoutsUnified 錯誤: $e');
+      }
+      return [];
+    }
+  }
+
+  // ========== 訓練記錄詳情相關 ==========
+
+  /// 🔥 獲取訓練詳情(包含所有組數) - 從 workoutSessions 讀取
+  Future<Map<String, dynamic>?> getWorkoutSessionDetails(String sessionId) async {
+    final uid = _currentUserId;
+    if (uid == null) return null;
+
+    try {
+      // 🔥 先嘗試從頂層 workoutSessions 讀取
+      final topLevelDoc = await _firestore
+          .collection('workoutSessions')
+          .doc(sessionId)
+          .get();
+
+      if (topLevelDoc.exists) {
+        final data = topLevelDoc.data()!;
+        if (kDebugMode) {
+          debugPrint('✅ 從 workoutSessions 頂層讀取到詳情');
+        }
+        return {
+          'sessionId': sessionId,
+          'startedAt': data['startedAt'] ?? data['timestamp'],
+          'endedAt': data['endedAt'] ?? data['completedAt'],
+          'totalRestSec': data['totalRestSec'] ?? 0,
+          'calories': data['totalCalories'] ?? data['caloriesBurned'] ?? 0.0,
+          'totalCalories': data['totalCalories'] ?? data['caloriesBurned'] ?? 0.0,
+          'caloriesBurned': data['caloriesBurned'] ?? data['totalCalories'] ?? 0.0,
+          'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
+          'exercises': data['exercises'] ?? [],
+          'name': data['name'] ?? '自由訓練',
+          'duration': data['duration'] ?? 0,
+          'planId': data['planId'],
+          'planName': data['planName'],
+          'source': data['source'] ?? 'self',
+        };
+      }
+
+      // 🔥 如果頂層沒有，從 users/{uid}/workoutSessions 讀取並組合子集合
+      if (kDebugMode) {
+        debugPrint('⚠️ 頂層無資料，從 users/$uid/workoutSessions 讀取');
+      }
+
+      final sessionRef = _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('workoutSessions')
+          .doc(sessionId);
+      
+      final sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        if (kDebugMode) {
+          debugPrint('❌ Session 不存在: $sessionId');
+        }
+        return null;
+      }
+      
+      final sessionData = sessionSnap.data()!;
+      
+      // 獲取所有動作
+      final exercisesSnap = await sessionRef.collection('exercises').get();
+      List<Map<String, dynamic>> exercises = [];
+      
+      for (final exDoc in exercisesSnap.docs) {
+        final exData = exDoc.data();
+        
+        // 獲取所有組數
+        final setsSnap = await exDoc.reference.collection('sets').orderBy('index').get();
+        List<Map<String, dynamic>> sets = setsSnap.docs
+            .map((setDoc) => setDoc.data())
+            .toList();
+        
+        exercises.add({
+          'name': exData['exerciseName'],
+          'exerciseName': exData['exerciseName'],
+          'type': exData['type'],
+          'category': exData['category'],
+          'sets': sets,
+        });
+      }
+      
+      return {
+        'sessionId': sessionId,
+        'startedAt': sessionData['startedAt'],
+        'endedAt': sessionData['endedAt'],
+        'totalRestSec': sessionData['totalRestSec'] ?? 0,
+        'calories': sessionData['calories'] ?? 0.0,
+        'totalCalories': sessionData['calories'] ?? 0.0,
+        'exercises': exercises,
+        'planId': sessionData['planId'],
+        'planName': sessionData['planName'],
+        'source': sessionData['source'] ?? 'self',
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ getWorkoutSessionDetails 錯誤: $e');
+      }
+      return null;
+    }
+  }
+
+  /// 🔥 監聽 Session 狀態
+  Stream<DocumentSnapshot> watchSession(String sessionId) {
+    final uid = _currentUserId!;
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .snapshots();
+  }
+
+  /// 🔥 監聽動作狀態
+  Stream<DocumentSnapshot> watchExercise(String sessionId, String exerciseDocId) {
+    final uid = _currentUserId!;
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId)
+        .snapshots();
+  }
+
+  /// 🔥 監聽組數狀態
+  Stream<QuerySnapshot> watchSets(String sessionId, String exerciseDocId) {
+    final uid = _currentUserId!;
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('workoutSessions')
+        .doc(sessionId)
+        .collection('exercises')
+        .doc(exerciseDocId)
+        .collection('sets')
+        .orderBy('index')
+        .snapshots();
+  }
 
   /// 🔥 取得今日訓練 sessions (用於訓練記錄頁面)
-  /// ✅ 直接從 workoutSessions 讀取，確保數據一致
   Future<List<Map<String, dynamic>>> getTodayWorkoutSessions([String? traineeId]) async {
     try {
       final userId = traineeId ?? _currentUserId;
@@ -807,7 +1734,7 @@ class UnifiedWorkoutService {
           .collection('workoutSessions')
           .where('userId', isEqualTo: userId)
           .orderBy('timestamp', descending: true)
-          .limit(100) // 限制最近100筆
+          .limit(100)
           .get();
 
       if (kDebugMode) {
@@ -832,51 +1759,9 @@ class UnifiedWorkoutService {
     }
   }
 
-  /// 🔥 取得訓練 session 詳細資料
-  Future<Map<String, dynamic>?> getWorkoutSessionDetails(String sessionId) async {
-    try {
-      if (kDebugMode) {
-        debugPrint('🔍 查詢 session 詳情: $sessionId');
-      }
-
-      final doc = await _firestore
-          .collection('workoutSessions')
-          .doc(sessionId)
-          .get();
-
-      if (!doc.exists) {
-        if (kDebugMode) {
-          debugPrint('❌ Session 不存在: $sessionId');
-        }
-        return null;
-      }
-
-      final data = doc.data()!;
-      
-      if (kDebugMode) {
-        debugPrint('✅ 成功取得 session 詳情');
-      }
-
-      return {
-        'sessionId': doc.id,
-        'timestamp': (data['timestamp'] as Timestamp?)?.toDate(),
-        'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
-        'totalCalories': (data['totalCalories'] ?? 0.0).toDouble(),
-        'exercises': data['exercises'] ?? [],
-        'userId': data['userId'],
-      };
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ getWorkoutSessionDetails 錯誤: $e');
-      }
-      return null;
-    }
-  }
-
-  // ========== 改進的卡路里計算 (新增) ==========
+  // ========== 改進的卡路里計算 ==========
 
   /// 🔥 改進的卡路里計算
-  /// 根據運動類型、時長、重量和組數計算更準確的卡路里消耗
   double calculateCaloriesForExercise({
     required String exerciseName,
     required int durationSeconds,
@@ -884,56 +1769,40 @@ class UnifiedWorkoutService {
     int? sets,
     int? reps,
   }) {
-    // 1. 根據動作名稱判斷運動類型和強度
     double met = _getMetValueFromExerciseName(exerciseName);
     
-    // 2. 如果有重量訓練，根據重量調整 MET 值
     if (weight != null && weight > 0) {
-      // 重量越大，消耗越高
-      // 假設：20kg 以下是輕量，20-40kg 是中量，40kg 以上是重量
       if (weight >= 40) {
-        met = met * 1.3; // 重量增加 30%
+        met = met * 1.3;
       } else if (weight >= 20) {
-        met = met * 1.15; // 中量增加 15%
+        met = met * 1.15;
       }
     }
 
-    // 3. 根據組數和次數調整（高組數高次數代表更高強度）
     if (sets != null && reps != null) {
       int totalReps = sets * reps;
       if (totalReps > 50) {
-        met = met * 1.2; // 高訓練量增加 20%
+        met = met * 1.2;
       } else if (totalReps > 30) {
-        met = met * 1.1; // 中訓練量增加 10%
+        met = met * 1.1;
       }
     }
 
-    // 4. 計算卡路里
-    // 公式: 卡路里 = MET × 體重(kg) × 時間(小時)
-    const double standardBodyWeight = 70.0; // 標準體重 70kg
+    const double standardBodyWeight = 70.0;
     double hours = durationSeconds / 3600.0;
-    double calories = met * standardBodyWeight * hours;
+    double calculatedCalories = met * standardBodyWeight * hours;
 
-    // 5. 確保最小值
-    if (calories < 1.0) {
-      calories = durationSeconds / 60.0; // 每分鐘至少 1 卡
+    if (calculatedCalories < 1.0) {
+      calculatedCalories = durationSeconds / 60.0;
     }
 
-    if (kDebugMode) {
-      debugPrint('💪 卡路里計算: $exerciseName');
-      debugPrint('   MET: ${met.toStringAsFixed(1)}');
-      debugPrint('   時長: ${durationSeconds}秒');
-      debugPrint('   結果: ${calories.toStringAsFixed(1)} 卡');
-    }
-
-    return calories;
+    return calculatedCalories;
   }
 
   /// 根據動作名稱取得 MET 值
   double _getMetValueFromExerciseName(String name) {
     final nameLower = name.toLowerCase();
 
-    // 高強度動作 (MET 6.0-8.0)
     if (nameLower.contains('深蹲') || 
         nameLower.contains('squat') ||
         nameLower.contains('硬舉') || 
@@ -941,7 +1810,6 @@ class UnifiedWorkoutService {
       return 7.0;
     }
 
-    // 中高強度 (MET 5.0-6.0)
     if (nameLower.contains('臥推') || 
         nameLower.contains('bench press') ||
         nameLower.contains('肩推') || 
@@ -951,7 +1819,6 @@ class UnifiedWorkoutService {
       return 5.5;
     }
 
-    // 中等強度 (MET 4.0-5.0)
     if (nameLower.contains('彎舉') || 
         nameLower.contains('curl') ||
         nameLower.contains('飛鳥') || 
@@ -961,7 +1828,6 @@ class UnifiedWorkoutService {
       return 4.5;
     }
 
-    // 低強度 (MET 3.0-4.0)
     if (nameLower.contains('伸展') || 
         nameLower.contains('stretch') ||
         nameLower.contains('捲腹') || 
@@ -969,7 +1835,6 @@ class UnifiedWorkoutService {
       return 3.5;
     }
 
-    // 有氧運動 (MET 6.0-8.0)
     if (nameLower.contains('跑步') || 
         nameLower.contains('running') ||
         nameLower.contains('踩腳踏車') || 
@@ -977,7 +1842,6 @@ class UnifiedWorkoutService {
       return 7.0;
     }
 
-    // 預設中等強度
     return 5.0;
   }
 
@@ -989,41 +1853,34 @@ class UnifiedWorkoutService {
       final exerciseName = exercise['exerciseName'] as String? ?? '';
       final sets = exercise['sets'] as List? ?? [];
       
-      // 計算該動作的總時長（所有組的時長加總）
       int totalDurationSeconds = 0;
       double totalWeight = 0.0;
       int validSetsCount = 0;
 
       for (var set in sets) {
         final duration = set['duration'] as int? ?? 0;
-        final weight = (set['weight'] as num?)?.toDouble() ?? 0.0;
+        final setWeight = (set['weight'] as num?)?.toDouble() ?? 0.0;
         
         totalDurationSeconds += duration;
-        if (weight > 0) {
-          totalWeight += weight;
+        if (setWeight > 0) {
+          totalWeight += setWeight;
           validSetsCount++;
         }
       }
 
-      // 計算平均重量
       double avgWeight = validSetsCount > 0 ? totalWeight / validSetsCount : 0.0;
 
-      // 計算該動作的卡路里
       if (totalDurationSeconds > 0) {
         double exerciseCalories = calculateCaloriesForExercise(
           exerciseName: exerciseName,
           durationSeconds: totalDurationSeconds,
           weight: avgWeight > 0 ? avgWeight : null,
           sets: sets.length,
-          reps: null, // 這裡可以進一步計算總次數
+          reps: null,
         );
 
         totalCalories += exerciseCalories;
       }
-    }
-
-    if (kDebugMode) {
-      debugPrint('🔥 Session 總卡路里: ${totalCalories.toStringAsFixed(1)}');
     }
 
     return totalCalories;

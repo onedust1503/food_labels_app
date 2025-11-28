@@ -1,11 +1,11 @@
-// lib/pages/workout/free_workout_execution_page_v3.dart
+// lib/pages/workout/free_workout_execution_page.dart
 // 🔥 自由訓練執行頁 - 完全符合 FitFit 邏輯
-// ✅ 修正版 - 新增組數時同步到 Firestore
+// ✅ 修正版 - 使用 UnifiedWorkoutService 統一服務
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/workout_service.dart';
+import '../../services/unified_workout_service.dart'; // ✅ 改用統一服務
 
 class FreeWorkoutExecutionPage extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -22,7 +22,7 @@ class FreeWorkoutExecutionPage extends StatefulWidget {
 
 class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     with TickerProviderStateMixin {
-  final _service = WorkoutService();
+  final _service = UnifiedWorkoutService(); // ✅ 改用統一服務
   late String _sessionId;
 
   int _currentExerciseIndex = 0;

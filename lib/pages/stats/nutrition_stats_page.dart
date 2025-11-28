@@ -1,10 +1,13 @@
 // lib/pages/stats/nutrition_stats_page.dart
 // 🔥 優化版 - 響應式設計、快速載入、精簡佈局
 // ✨ 明亮版莫蘭迪風格
+// 🔥 修正：本週定義改為「週一到今天」
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/stats_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -18,6 +21,8 @@ class NutritionStatsPage extends StatefulWidget {
 class _NutritionStatsPageState extends State<NutritionStatsPage> 
     with SingleTickerProviderStateMixin {
   final StatsService _statsService = StatsService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   
   bool _isLoading = true;
   bool _isSwitching = false; // 切換時的輕量載入狀態
@@ -28,6 +33,10 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
   // 時間範圍選擇
   int _selectedPeriodIndex = 0;
   final List<String> _periods = ['本週', '本月'];
+  
+  // 🔥 新增：日期範圍顯示
+  String _dateRangeText = '';
+  int _actualDays = 7;
 
   late TabController _tabController;
 
@@ -44,16 +53,54 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     super.dispose();
   }
 
-  // 🔥 優化：一次性載入，使用快取
+  // 🔥 新增：計算正確的本週範圍（週一到今天）
+  Map<String, dynamic> _getWeekRange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final daysFromMonday = now.weekday - 1; // 週一=0, 週二=1, ..., 週日=6
+    final monday = today.subtract(Duration(days: daysFromMonday));
+    final days = daysFromMonday + 1; // 週一到今天的天數
+    
+    return {
+      'startDate': monday,
+      'endDate': today,
+      'days': days,
+      'text': '${DateFormat('MM/dd').format(monday)} - ${DateFormat('MM/dd').format(today)}',
+    };
+  }
+
+  // 🔥 新增：計算正確的本月範圍
+  Map<String, dynamic> _getMonthRange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstDayOfMonth = DateTime(now.year, now.month, 1);
+    final days = now.day;
+    
+    return {
+      'startDate': firstDayOfMonth,
+      'endDate': today,
+      'days': days,
+      'text': '${DateFormat('MM/dd').format(firstDayOfMonth)} - ${DateFormat('MM/dd').format(today)}',
+    };
+  }
+
+  // 🔥 修正：使用正確的日期範圍載入數據
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
     try {
-      // 🔥 一次性載入所有數據
-      _weekData = await _statsService.getAllStats(days: 7);
+      // 🔥 使用正確的本週範圍
+      final weekRange = _getWeekRange();
+      _weekData = await _loadStatsForRange(
+        weekRange['startDate'] as DateTime,
+        weekRange['endDate'] as DateTime,
+        weekRange['days'] as int,
+      );
       
       setState(() {
         _currentData = _weekData!;
+        _dateRangeText = weekRange['text'] as String;
+        _actualDays = weekRange['days'] as int;
         _isLoading = false;
       });
     } catch (e) {
@@ -62,7 +109,193 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     }
   }
 
-  // 🔥 切換時間範圍（使用快取或載入）
+  // 🔥 新增：根據日期範圍載入統計數據
+  Future<AllStatsData> _loadStatsForRange(DateTime startDate, DateTime endDate, int days) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return AllStatsData.empty();
+
+    final goals = await _statsService.getUserNutritionGoals();
+    
+    List<DailyNutritionStats> nutritionStats = [];
+    List<DailyWaterStats> waterStats = [];
+    
+    // 逐天載入數據
+    for (int i = 0; i < days; i++) {
+      final date = startDate.add(Duration(days: i));
+      final dateStr = DateFormat('yyyy-MM-dd').format(date);
+      
+      // 並行載入當天的營養、喝水、餐數數據
+      final results = await Future.wait([
+        _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('dailySummary')
+            .doc(dateStr)
+            .get(),
+        _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('waterLogs')
+            .doc(dateStr)
+            .get(),
+        _firestore
+            .collection('nutritionLogs')
+            .where('userId', isEqualTo: userId)
+            .where('date', isEqualTo: dateStr)
+            .get(),
+      ]);
+      
+      final summaryDoc = results[0] as DocumentSnapshot;
+      final waterDoc = results[1] as DocumentSnapshot;
+      final nutritionLogsSnapshot = results[2] as QuerySnapshot;
+      
+      // 解析營養數據
+      double calories = 0, protein = 0, carbs = 0, fat = 0;
+      double targetCalories = goals.calories;
+      double targetProtein = goals.protein;
+      double targetCarbs = goals.carbs;
+      double targetFat = goals.fat;
+      int mealCount = nutritionLogsSnapshot.docs.length;
+      
+      if (summaryDoc.exists) {
+        final data = summaryDoc.data() as Map<String, dynamic>;
+        calories = ((data['totalCalories'] ?? 0) as num).toDouble();
+        protein = ((data['totalProtein'] ?? 0) as num).toDouble();
+        carbs = ((data['totalCarbs'] ?? 0) as num).toDouble();
+        fat = ((data['totalFat'] ?? 0) as num).toDouble();
+        targetCalories = ((data['targetCalories'] ?? goals.calories) as num).toDouble();
+        targetProtein = ((data['targetProtein'] ?? goals.protein) as num).toDouble();
+        targetCarbs = ((data['targetCarbs'] ?? goals.carbs) as num).toDouble();
+        targetFat = ((data['targetFat'] ?? goals.fat) as num).toDouble();
+      }
+      
+      nutritionStats.add(DailyNutritionStats(
+        date: date,
+        calories: calories,
+        protein: protein,
+        carbs: carbs,
+        fat: fat,
+        targetCalories: targetCalories,
+        targetProtein: targetProtein,
+        targetCarbs: targetCarbs,
+        targetFat: targetFat,
+        mealCount: mealCount,
+      ));
+      
+      // 解析喝水數據
+      double waterAmount = 0;
+      double waterGoal = goals.water;
+      
+      if (waterDoc.exists) {
+        final data = waterDoc.data() as Map<String, dynamic>;
+        waterAmount = ((data['totalWater'] ?? 0) as num).toDouble();
+        waterGoal = ((data['goal'] ?? goals.water) as num).toDouble();
+      }
+      
+      waterStats.add(DailyWaterStats(
+        date: date,
+        amount: waterAmount,
+        goal: waterGoal,
+      ));
+    }
+    
+    // 計算摘要
+    final nutritionSummary = _calculateNutritionSummary(nutritionStats);
+    final waterSummary = _calculateWaterSummary(waterStats);
+    
+    return AllStatsData(
+      goals: goals,
+      nutritionStats: nutritionStats,
+      waterStats: waterStats,
+      nutritionSummary: nutritionSummary,
+      waterSummary: waterSummary,
+    );
+  }
+
+  // 🔥 新增：計算營養摘要
+  NutritionSummary _calculateNutritionSummary(List<DailyNutritionStats> stats) {
+    if (stats.isEmpty) return NutritionSummary.empty();
+    
+    double totalCalories = 0, totalProtein = 0, totalCarbs = 0, totalFat = 0;
+    int totalMeals = 0;
+    int caloriesCompletedDays = 0, proteinCompletedDays = 0;
+    int carbsCompletedDays = 0, fatCompletedDays = 0;
+    int daysWithData = 0;
+    
+    for (var day in stats) {
+      if (day.calories > 0) daysWithData++;
+      
+      totalCalories += day.calories;
+      totalProtein += day.protein;
+      totalCarbs += day.carbs;
+      totalFat += day.fat;
+      totalMeals += day.mealCount;
+      
+      // 達標標準：達到 80%
+      if (day.targetCalories > 0 && day.calories >= day.targetCalories * 0.8) {
+        caloriesCompletedDays++;
+      }
+      if (day.targetProtein > 0 && day.protein >= day.targetProtein * 0.8) {
+        proteinCompletedDays++;
+      }
+      if (day.targetCarbs > 0 && day.carbs >= day.targetCarbs * 0.8) {
+        carbsCompletedDays++;
+      }
+      if (day.targetFat > 0 && day.fat >= day.targetFat * 0.8) {
+        fatCompletedDays++;
+      }
+    }
+    
+    int totalDays = stats.length;
+    
+    return NutritionSummary(
+      totalCalories: totalCalories,
+      avgCalories: daysWithData > 0 ? totalCalories / daysWithData : 0,
+      totalProtein: totalProtein,
+      avgProtein: daysWithData > 0 ? totalProtein / daysWithData : 0,
+      totalCarbs: totalCarbs,
+      avgCarbs: daysWithData > 0 ? totalCarbs / daysWithData : 0,
+      totalFat: totalFat,
+      avgFat: daysWithData > 0 ? totalFat / daysWithData : 0,
+      caloriesCompletionRate: totalDays > 0 ? (caloriesCompletedDays / totalDays * 100) : 0,
+      proteinCompletionRate: totalDays > 0 ? (proteinCompletedDays / totalDays * 100) : 0,
+      carbsCompletionRate: totalDays > 0 ? (carbsCompletedDays / totalDays * 100) : 0,
+      fatCompletionRate: totalDays > 0 ? (fatCompletedDays / totalDays * 100) : 0,
+      totalMeals: totalMeals,
+      avgMeals: daysWithData > 0 ? totalMeals / daysWithData : 0,
+      daysWithData: daysWithData,
+      totalDays: totalDays,
+    );
+  }
+
+  // 🔥 新增：計算喝水摘要
+  WaterSummary _calculateWaterSummary(List<DailyWaterStats> stats) {
+    if (stats.isEmpty) return WaterSummary.empty();
+    
+    double totalAmount = 0;
+    int completedDays = 0;
+    int daysWithData = 0;
+    
+    for (var day in stats) {
+      if (day.amount > 0) daysWithData++;
+      totalAmount += day.amount;
+      // 🔥 修正：喝水達標標準改為 100%
+      if (day.goal > 0 && day.amount >= day.goal) {
+        completedDays++;
+      }
+    }
+    
+    return WaterSummary(
+      totalAmount: totalAmount,
+      avgAmount: daysWithData > 0 ? totalAmount / daysWithData : 0,
+      completedDays: completedDays,
+      completionRate: stats.isNotEmpty ? (completedDays / stats.length * 100) : 0,
+      daysWithData: daysWithData,
+      totalDays: stats.length,
+    );
+  }
+
+  // 🔥 修正：切換時間範圍（使用正確的日期範圍）
   Future<void> _switchPeriod(int index) async {
     if (_selectedPeriodIndex == index) return;
 
@@ -73,18 +306,31 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
 
     try {
       if (index == 0) {
-        // 本週
+        // 本週（週一到今天）
+        final weekRange = _getWeekRange();
         if (_weekData == null) {
-          _weekData = await _statsService.getAllStats(days: 7);
+          _weekData = await _loadStatsForRange(
+            weekRange['startDate'] as DateTime,
+            weekRange['endDate'] as DateTime,
+            weekRange['days'] as int,
+          );
         }
         _currentData = _weekData!;
+        _dateRangeText = weekRange['text'] as String;
+        _actualDays = weekRange['days'] as int;
       } else {
-        // 本月
+        // 本月（1號到今天）
+        final monthRange = _getMonthRange();
         if (_monthData == null) {
-          DateTime now = DateTime.now();
-          _monthData = await _statsService.getAllStats(days: now.day);
+          _monthData = await _loadStatsForRange(
+            monthRange['startDate'] as DateTime,
+            monthRange['endDate'] as DateTime,
+            monthRange['days'] as int,
+          );
         }
         _currentData = _monthData!;
+        _dateRangeText = monthRange['text'] as String;
+        _actualDays = monthRange['days'] as int;
       }
     } catch (e) {
       _showSnackBar('載入失敗：$e');
@@ -218,7 +464,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 時間範圍選擇器
+  // 🔥 修正：時間範圍選擇器 - 顯示日期範圍
   Widget _buildPeriodSelector() {
     return Container(
       decoration: BoxDecoration(
@@ -239,13 +485,28 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
                   gradient: isSelected ? AppColors.primaryGradient : null,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  _periods[index],
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.textSecondary,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
+                child: Column(
+                  children: [
+                    Text(
+                      _periods[index],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : AppColors.textSecondary,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    // 🔥 新增：顯示日期範圍
+                    if (isSelected && _dateRangeText.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        _dateRangeText,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -403,7 +664,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 摘要卡片（響應式）
+  // 🔥 修正：摘要卡片（使用正確的天數）
   Widget _buildSummaryCards(bool isSmallScreen) {
     final summary = _currentData.nutritionSummary;
     final waterSummary = _currentData.waterSummary;
@@ -437,7 +698,8 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
             icon: Icons.water_drop,
             color: AppColors.info,
             title: '喝水',
-            value: '${waterSummary.completedDays}/${waterSummary.totalDays}',
+            // 🔥 修正：使用實際天數
+            value: '${waterSummary.completedDays}/$_actualDays',
             unit: '天達標',
             isSmallScreen: isSmallScreen,
           ),
@@ -545,7 +807,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 熱量趨勢圖
+  // 🔥 修正：熱量趨勢圖（優化 X 軸間隔）
   Widget _buildCaloriesChart(bool isSmallScreen) {
     if (_currentData.nutritionStats.isEmpty) {
       return _buildEmptyChartContent('還沒有數據');
@@ -597,8 +859,9 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
               getTitlesWidget: (value, meta) {
                 int index = value.toInt();
                 if (index < 0 || index >= stats.length) return const SizedBox();
-                // 只顯示部分標籤避免擁擠
-                if (stats.length > 7 && index % 2 != 0) return const SizedBox();
+                // 🔥 修正：根據數據量動態調整間隔
+                int interval = stats.length > 14 ? 3 : (stats.length > 7 ? 2 : 1);
+                if (index % interval != 0 && index != stats.length - 1) return const SizedBox();
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
@@ -679,7 +942,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
     );
   }
 
-  // 喝水統計圖
+  // 🔥 修正：喝水統計圖（優化 X 軸間隔和柱寬）
   Widget _buildWaterChart(bool isSmallScreen) {
     if (_currentData.waterStats.isEmpty) {
       return _buildEmptyChartContent('還沒有數據');
@@ -730,7 +993,9 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
               getTitlesWidget: (value, meta) {
                 int index = value.toInt();
                 if (index < 0 || index >= stats.length) return const SizedBox();
-                if (stats.length > 7 && index % 2 != 0) return const SizedBox();
+                // 🔥 修正：根據數據量動態調整間隔
+                int interval = stats.length > 14 ? 3 : (stats.length > 7 ? 2 : 1);
+                if (index % interval != 0 && index != stats.length - 1) return const SizedBox();
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
@@ -750,14 +1015,17 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
         borderData: FlBorderData(show: false),
         barGroups: List.generate(stats.length, (i) {
           final s = stats[i];
-          final isCompleted = s.amount >= s.goal * 0.8;
+          // 🔥 修正：喝水達標標準改為 100%
+          final isCompleted = s.amount >= s.goal;
+          // 🔥 修正：根據數據量動態調整柱寬
+          double barWidth = stats.length > 20 ? 6 : (stats.length > 15 ? 8 : (stats.length > 7 ? 12 : 16));
           return BarChartGroupData(
             x: i,
             barRods: [
               BarChartRodData(
                 toY: s.amount,
                 color: isCompleted ? AppColors.info : AppColors.info.withValues(alpha: 0.4),
-                width: stats.length > 15 ? 8 : (stats.length > 7 ? 12 : 16),
+                width: barWidth,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
               ),
             ],
@@ -859,7 +1127,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
         boxShadow: AppShadows.small,
       ),
       child: Column(
-        children: List.generate(stats.length.clamp(0, 7), (i) {
+        children: List.generate(stats.length.clamp(0, 10), (i) {
           final day = stats[i];
           final isToday = DateFormat('yyyy-MM-dd').format(day.date) ==
               DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -871,7 +1139,7 @@ class _NutritionStatsPageState extends State<NutritionStatsPage>
             ),
             decoration: BoxDecoration(
               color: isToday ? AppColors.primary.withValues(alpha: 0.08) : null,
-              border: i < stats.length - 1
+              border: i < stats.length.clamp(0, 10) - 1
                   ? Border(bottom: BorderSide(color: Colors.grey.shade100))
                   : null,
             ),

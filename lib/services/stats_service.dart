@@ -304,7 +304,8 @@ class StatsService {
         daysWithData++;
       }
       totalAmount += day.amount;
-      if (day.goal > 0 && day.amount >= day.goal * 0.8) {
+      // 🔥 修正：喝水達標標準改為 100%
+      if (day.goal > 0 && day.amount >= day.goal) {
         completedDays++;
       }
     }

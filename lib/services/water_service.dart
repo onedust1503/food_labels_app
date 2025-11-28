@@ -742,7 +742,8 @@ class WaterService {
         
         totalWater += dayWater;
         
-        if (dayTarget > 0 && dayWater >= dayTarget * 0.8) {
+        // 🔥 修正：喝水達標標準改為 100%
+        if (dayTarget > 0 && dayWater >= dayTarget) {
           daysCompleted++;
         }
       }

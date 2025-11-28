@@ -1,6 +1,7 @@
 // lib/services/water_service.dart
 // 🎯 增強版喝水服務 - 支援編輯、自訂水杯、進階分析
 // 🔧 修復版 - 解決類型錯誤
+// 🔥 同步版 - 創建新記錄時使用用戶的預設目標
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,7 +24,28 @@ class WaterService {
     return timestamp.toDate().toUtc().add(const Duration(hours: 8));
   }
 
-  // ✨ 新增：編輯記錄
+  // 🔥 新增：獲取用戶的預設喝水目標（從 users 集合）
+  Future<int> _getDefaultWaterTarget() async {
+    try {
+      if (_currentUserId == null) return 2000;
+      
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(_currentUserId)
+          .get();
+      
+      if (userDoc.exists) {
+        Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
+        return (data['waterTargetDefault'] ?? 2000) as int;
+      }
+      return 2000;
+    } catch (e) {
+      print('獲取預設喝水目標失敗: $e');
+      return 2000;
+    }
+  }
+
+  // ✨ 編輯記錄
   Future<void> editWaterLog({
     required String date,
     required int logIndex,
@@ -82,7 +104,7 @@ class WaterService {
     }
   }
 
-  // ✨ 新增：獲取自訂水杯列表
+  // ✨ 獲取自訂水杯列表
   Future<List<int>> getCustomCups() async {
     try {
       String userId = _currentUserId!;
@@ -107,7 +129,7 @@ class WaterService {
     }
   }
 
-  // ✨ 新增:更新自訂水杯
+  // ✨ 更新自訂水杯
   Future<void> updateCustomCups(List<int> cups) async {
     try {
       String userId = _currentUserId!;
@@ -124,15 +146,19 @@ class WaterService {
   }
 
   // 🔥 添加喝水記錄（使用台灣時間）
+  // 🔧 修改：創建新記錄時使用用戶的預設目標
   Future<void> addWaterLog({
     required int amount,
     String? note,
-    DateTime? customTime,  // 允許自訂時間
+    DateTime? customTime,
   }) async {
     try {
       String userId = _currentUserId!;
       String today = _todayTaiwan;
       DateTime recordTime = customTime ?? _taiwanNow;
+
+      // 🔥 先獲取預設目標（在 transaction 外面）
+      int defaultTarget = await _getDefaultWaterTarget();
 
       DocumentReference docRef = _firestore
           .collection('users')
@@ -163,10 +189,11 @@ class WaterService {
             'updatedAt': FieldValue.serverTimestamp(),
           });
         } else {
+          // 🔥 創建新記錄時使用用戶的預設目標
           transaction.set(docRef, {
             'date': today,
             'totalWater': amount,
-            'targetWater': 2000,
+            'targetWater': defaultTarget,  // 🔥 使用預設目標而非硬編碼 2000
             'logs': [newLog],
             'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
@@ -225,7 +252,7 @@ class WaterService {
     }
   }
 
-  // 🔥 更新每日喝水目標
+  // 🔥 更新每日喝水目標（同時更新用戶預設值）
   Future<void> updateWaterTarget(int targetMl) async {
     try {
       String userId = _currentUserId!;
@@ -255,6 +282,7 @@ class WaterService {
         });
       }
 
+      // 🔥 同時更新用戶的預設目標（讓設定頁面和教練端可以看到）
       await _firestore.collection('users').doc(userId).update({
         'waterTargetDefault': targetMl,
       });
@@ -272,6 +300,9 @@ class WaterService {
       String userId = _currentUserId!;
       DateTime nowTaiwan = _taiwanNow;
       List<Map<String, dynamic>> results = [];
+      
+      // 🔥 獲取用戶預設目標
+      int defaultTarget = await _getDefaultWaterTarget();
 
       for (int i = 0; i < days; i++) {
         DateTime date = nowTaiwan.subtract(Duration(days: i));
@@ -289,14 +320,14 @@ class WaterService {
           results.add({
             'date': dateStr,
             'totalWater': data['totalWater'] ?? 0,
-            'targetWater': data['targetWater'] ?? 2000,
+            'targetWater': data['targetWater'] ?? defaultTarget,  // 🔥 使用預設目標
             'logs': data['logs'] ?? [],
           });
         } else {
           results.add({
             'date': dateStr,
             'totalWater': 0,
-            'targetWater': 2000,
+            'targetWater': defaultTarget,  // 🔥 使用預設目標
             'logs': [],
           });
         }
@@ -309,10 +340,9 @@ class WaterService {
     }
   }
 
-  // 📊 新增：每小時攝水量分析 (修復版)
+  // 📊 每小時攝水量分析 (修復版)
   Future<Map<int, int>> getHourlyDistribution({int days = 7}) async {
     try {
-      String userId = _currentUserId!;
       Map<int, int> hourlyData = {};
       
       // 初始化 0-23 小時
@@ -344,11 +374,14 @@ class WaterService {
     }
   }
 
-  // 📊 新增：本月達標率趨勢
+  // 📊 本月達標率趨勢
   Future<Map<String, dynamic>> getMonthlyTrend() async {
     try {
       String userId = _currentUserId!;
       DateTime nowTaiwan = _taiwanNow;
+      
+      // 🔥 獲取用戶預設目標
+      int defaultTarget = await _getDefaultWaterTarget();
       
       List<bool> dailyCompletion = [];
       int totalWater = 0;
@@ -368,7 +401,7 @@ class WaterService {
         if (doc.exists) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
           int dayTotal = data['totalWater'] ?? 0;
-          int dayTarget = data['targetWater'] ?? 2000;
+          int dayTarget = data['targetWater'] ?? defaultTarget;  // 🔥 使用預設目標
           
           totalWater += dayTotal;
           bool completed = dayTotal >= dayTarget;
@@ -397,7 +430,7 @@ class WaterService {
     }
   }
 
-  // 📊 新增：喝水時間熱力圖數據
+  // 📊 喝水時間熱力圖數據
   Future<Map<String, dynamic>> getDrinkingPattern({int days = 30}) async {
     try {
       Map<int, Map<int, int>> pattern = {}; // [hour][weekday] = count
@@ -509,50 +542,55 @@ class WaterService {
   }
 
   // 🔥 即時監聽今日喝水數據
+  // 🔧 修改：如果今日記錄不存在，使用用戶預設目標
   Stream<Map<String, dynamic>> getTodayWaterStream() {
-    try {
-      String userId = _currentUserId!;
-      String today = _todayTaiwan;
-
-      return _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('waterLogs')
-          .doc(today)
-          .snapshots()
-          .map((snapshot) {
-            if (snapshot.exists) {
-              Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-              
-              if (data['logs'] != null) {
-                List<dynamic> logs = data['logs'];
-                data['logs'] = logs.map((log) {
-                  if (log['timestamp'] != null) {
-                    DateTime twTime = _toTaiwanTime(log['timestamp']);
-                    log['displayTime'] = 
-                        '${twTime.hour.toString().padLeft(2, '0')}:${twTime.minute.toString().padLeft(2, '0')}';
-                  }
-                  return log;
-                }).toList();
-              }
-              
-              return data;
-            }
-            return {
-              'date': today,
-              'totalWater': 0,
-              'targetWater': 2000,
-              'logs': [],
-            };
-          });
-    } catch (e) {
-      print('監聽今日喝水數據失敗: $e');
+    if (_currentUserId == null) {
       return Stream.value({
         'totalWater': 0,
         'targetWater': 2000,
         'logs': [],
       });
     }
+
+    String userId = _currentUserId!;
+    String today = _todayTaiwan;
+
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('waterLogs')
+        .doc(today)
+        .snapshots()
+        .asyncMap((snapshot) async {
+      if (snapshot.exists) {
+        Map<String, dynamic> data = Map<String, dynamic>.from(snapshot.data()!);
+        
+        if (data['logs'] != null) {
+          List<dynamic> logs = List.from(data['logs']);
+          data['logs'] = logs.map((log) {
+            Map<String, dynamic> logMap = Map<String, dynamic>.from(log);
+            if (logMap['timestamp'] != null) {
+              DateTime twTime = _toTaiwanTime(logMap['timestamp']);
+              logMap['displayTime'] = 
+                  '${twTime.hour.toString().padLeft(2, '0')}:${twTime.minute.toString().padLeft(2, '0')}';
+            }
+            return logMap;
+          }).toList();
+        }
+        
+        return data;
+      }
+      
+      // 🔥 如果今日記錄不存在，使用用戶的預設目標
+      int defaultTarget = await _getDefaultWaterTarget();
+      
+      return {
+        'date': today,
+        'totalWater': 0,
+        'targetWater': defaultTarget,
+        'logs': [],
+      };
+    });
   }
 
   // 🔥 僅獲取今日喝水總量
@@ -604,6 +642,127 @@ class WaterService {
       return '🎉 太棒了!您的喝水習慣很好,本週達標率${completionRate}%,繼續保持!';
     } else {
       return '💪 您的喝水狀況良好,可以嘗試在上午和下午各補充500ml水分。';
+    }
+  }
+
+  // 🔥 為教練端：獲取指定學員的喝水數據
+  Future<Map<String, dynamic>> getStudentWaterData(String studentId, {String? date}) async {
+    try {
+      String targetDate = date ?? _todayTaiwan;
+
+      DocumentSnapshot doc = await _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('waterLogs')
+          .doc(targetDate)
+          .get();
+
+      if (doc.exists) {
+        return doc.data() as Map<String, dynamic>;
+      }
+
+      // 獲取學員的預設目標
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(studentId)
+          .get();
+      
+      int target = 2000;
+      if (userDoc.exists) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        target = (userData['waterTargetDefault'] ?? 2000) as int;
+      }
+
+      return {
+        'date': targetDate,
+        'totalWater': 0,
+        'targetWater': target,
+        'logs': [],
+      };
+    } catch (e) {
+      print('獲取學員喝水數據失敗: $e');
+      return {
+        'totalWater': 0,
+        'targetWater': 2000,
+        'logs': [],
+      };
+    }
+  }
+
+  // 🔥 為教練端：獲取指定學員的本週喝水統計
+  Future<Map<String, dynamic>> getStudentWeeklyWaterStats(String studentId) async {
+    try {
+      DateTime nowTaiwan = _taiwanNow;
+      List<Map<String, dynamic>> weekData = [];
+
+      // 獲取學員的預設目標
+      int defaultTarget = 2000;
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(studentId)
+          .get();
+      if (userDoc.exists) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+        defaultTarget = (userData['waterTargetDefault'] ?? 2000) as int;
+      }
+
+      for (int i = 0; i < 7; i++) {
+        DateTime date = nowTaiwan.subtract(Duration(days: i));
+        String dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+        DocumentSnapshot doc = await _firestore
+            .collection('users')
+            .doc(studentId)
+            .collection('waterLogs')
+            .doc(dateStr)
+            .get();
+
+        if (doc.exists) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          weekData.add({
+            'date': dateStr,
+            'totalWater': data['totalWater'] ?? 0,
+            'targetWater': data['targetWater'] ?? defaultTarget,
+          });
+        } else {
+          weekData.add({
+            'date': dateStr,
+            'totalWater': 0,
+            'targetWater': defaultTarget,
+          });
+        }
+      }
+
+      int totalWater = 0;
+      int daysCompleted = 0;
+
+      for (var day in weekData) {
+        int dayWater = day['totalWater'] ?? 0;
+        int dayTarget = day['targetWater'] ?? 2000;
+        
+        totalWater += dayWater;
+        
+        if (dayTarget > 0 && dayWater >= dayTarget * 0.8) {
+          daysCompleted++;
+        }
+      }
+
+      return {
+        'weekData': weekData,
+        'totalWater': totalWater,
+        'avgDaily': weekData.isNotEmpty ? totalWater ~/ weekData.length : 0,
+        'daysCompleted': daysCompleted,
+        'defaultTarget': defaultTarget,
+      };
+    } catch (e) {
+      print('獲取學員本週喝水統計失敗: $e');
+      return {
+        'weekData': [],
+        'totalWater': 0,
+        'avgDaily': 0,
+        'daysCompleted': 0,
+        'defaultTarget': 2000,
+      };
     }
   }
 }

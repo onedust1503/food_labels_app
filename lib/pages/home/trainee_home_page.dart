@@ -1,5 +1,6 @@
 // lib/pages/home/trainee_home_page.dart
 // ✨ 明亮版莫蘭迪風格 + 動態配色 + 微動畫效果
+// 🔥 修正：加入 UserGoalsService 確保目標同步
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -12,6 +13,7 @@ import '../water/water_log_page.dart';
 import '../../services/water_service.dart';
 import '../../components/weekly_summary_card.dart';
 import '../../services/workout_service.dart';
+import '../../services/user_goals_service.dart'; // 🔥 新增
 import 'dart:async';
 import '../improved_workout_log_page.dart';
 
@@ -31,6 +33,7 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final WaterService _waterService = WaterService();
+  final UserGoalsService _goalsService = UserGoalsService(); // 🔥 新增
   
   User? firebaseUser;
   String realUserName = '';
@@ -139,6 +142,9 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
           realUserName = firebaseUser!.displayName ?? '學員';
         }
         
+        // 🔥 關鍵：確保今日的目標數據存在且同步
+        await _goalsService.ensureTodayGoalsExist();
+        
         _listenToTodayNutrition();
       }
       
@@ -190,9 +196,12 @@ class _TraineeHomePageState extends State<TraineeHomePage> with SingleTickerProv
         });
         
         if (kDebugMode) {
-          debugPrint('✅ 營養資料已更新: 卡路里=$todayCalories');
+          debugPrint('✅ 營養資料已更新: 卡路里=$todayCalories/$targetCalories');
         }
       } else if (mounted) {
+        // 🔥 如果文檔不存在，重新確保今日目標存在
+        _goalsService.ensureTodayGoalsExist();
+        
         setState(() {
           todayCalories = 0;
           carbsPercent = 0.0;

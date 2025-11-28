@@ -1,9 +1,11 @@
 // lib/pages/profile/trainee_setup_page.dart
 // 學生專用的初始資料設定頁面
+// 🔥 修正：使用 UserGoalsService 同步更新目標到所有位置
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/user_goals_service.dart'; // 🔥 新增
 
 class TraineeSetupPage extends StatefulWidget {
   const TraineeSetupPage({Key? key}) : super(key: key);
@@ -16,9 +18,10 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
   final PageController _pageController = PageController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final UserGoalsService _goalsService = UserGoalsService(); // 🔥 新增
   
   int _currentStep = 0;
-  final int _totalSteps = 3; // 學生只需要 3 步
+  final int _totalSteps = 3;
 
   // 表單控制器
   final TextEditingController _nameController = TextEditingController();
@@ -26,6 +29,9 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _targetWeightController = TextEditingController();
   final TextEditingController _dailyCaloriesController = TextEditingController();
+  final TextEditingController _proteinController = TextEditingController();   // 🔥 新增
+  final TextEditingController _carbsController = TextEditingController();     // 🔥 新增
+  final TextEditingController _fatController = TextEditingController();       // 🔥 新增
   final TextEditingController _waterTargetController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
@@ -33,6 +39,7 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
   String _gender = 'male';
   DateTime? _birthDate;
   String _goal = '減重';
+  String _activityLevel = 'light'; // 🔥 新增
   bool _isLoading = false;
 
   @override
@@ -49,6 +56,9 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
     _weightController.dispose();
     _targetWeightController.dispose();
     _dailyCaloriesController.dispose();
+    _proteinController.dispose();
+    _carbsController.dispose();
+    _fatController.dispose();
     _waterTargetController.dispose();
     _phoneController.dispose();
     super.dispose();
@@ -70,6 +80,11 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
   void _nextStep() {
     if (_currentStep < _totalSteps - 1) {
       if (_validateCurrentStep()) {
+        // 🔥 在第二步完成後自動計算建議目標
+        if (_currentStep == 1) {
+          _autoCalculateGoals();
+        }
+        
         setState(() => _currentStep++);
         _pageController.animateToPage(
           _currentStep,
@@ -93,9 +108,37 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
     }
   }
 
+  /// 🔥 新增：自動計算建議目標
+  void _autoCalculateGoals() {
+    final height = double.tryParse(_heightController.text);
+    final weight = double.tryParse(_weightController.text);
+    final age = _birthDate != null 
+        ? DateTime.now().year - _birthDate!.year 
+        : 25; // 預設 25 歲
+
+    if (height != null && weight != null) {
+      final recommendations = UserGoalsService.calculateRecommendedGoals(
+        height: height,
+        weight: weight,
+        age: age,
+        gender: _gender,
+        activityLevel: _activityLevel,
+        fitnessGoal: _goal,
+      );
+
+      setState(() {
+        _dailyCaloriesController.text = recommendations['targetCalories'].toString();
+        _proteinController.text = recommendations['targetProtein'].toString();
+        _carbsController.text = recommendations['targetCarbs'].toString();
+        _fatController.text = recommendations['targetFat'].toString();
+        _waterTargetController.text = recommendations['targetWater'].toString();
+      });
+    }
+  }
+
   bool _validateCurrentStep() {
     switch (_currentStep) {
-      case 0: // 基本資料
+      case 0:
         if (_nameController.text.isEmpty) {
           _showError('請輸入姓名');
           return false;
@@ -105,7 +148,7 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
           return false;
         }
         return true;
-      case 1: // 身體數據
+      case 1:
         if (_heightController.text.isEmpty) {
           _showError('請輸入身高');
           return false;
@@ -115,11 +158,7 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
           return false;
         }
         return true;
-      case 2: // 健身目標
-        if (_targetWeightController.text.isEmpty) {
-          _showError('請輸入目標體重');
-          return false;
-        }
+      case 2:
         if (_dailyCaloriesController.text.isEmpty) {
           _showError('請輸入每日熱量目標');
           return false;
@@ -141,7 +180,7 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
           ? DateTime.now().year - _birthDate!.year 
           : null;
 
-      // 學生專用資料結構
+      // 1️⃣ 儲存基本用戶資料
       await _firestore.collection('users').doc(user.uid).set({
         'displayName': _nameController.text.trim(),
         'gender': _gender,
@@ -150,24 +189,35 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
         'height': int.tryParse(_heightController.text),
         'weight': double.tryParse(_weightController.text),
         'targetWeight': double.tryParse(_targetWeightController.text),
-        'dailyCalories': int.tryParse(_dailyCaloriesController.text),
-        'waterTargetDefault': int.tryParse(_waterTargetController.text) ?? 3000,
         'goal': _goal,
+        'activityLevel': _activityLevel,
         'phone': _phoneController.text.trim(),
         'profileSetupCompleted': true,
         'profileSetupAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      // 2️⃣ 🔥 使用 UserGoalsService 同步更新目標到所有位置
+      await _goalsService.updateUserGoals(
+        targetCalories: int.tryParse(_dailyCaloriesController.text),
+        targetProtein: double.tryParse(_proteinController.text),
+        targetCarbs: double.tryParse(_carbsController.text),
+        targetFat: double.tryParse(_fatController.text),
+        targetWater: int.tryParse(_waterTargetController.text),
+      );
+
+      // 3️⃣ 🔥 確保今日的目標數據存在
+      await _goalsService.ensureTodayGoalsExist();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('設定完成！開始你的健身之旅！'),
+            content: Text('🎉 設定完成！開始你的健身之旅！'),
             backgroundColor: Colors.green,
           ),
         );
         
-        Navigator.of(context).pushReplacementNamed('/home');
+        Navigator.of(context).pushReplacementNamed('/studentHome');
       }
     } catch (e) {
       _showError('儲存失敗：$e');
@@ -402,6 +452,11 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
                 ),
                 const SizedBox(height: 20),
                 
+                // 🔥 新增：活動量選擇
+                _buildActivityLevelSelector(),
+                
+                const SizedBox(height: 20),
+                
                 if (_heightController.text.isNotEmpty && 
                     _weightController.text.isNotEmpty)
                   _buildBMIDisplay(),
@@ -454,6 +509,33 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
                   icon: Icons.flag,
                 ),
                 const SizedBox(height: 20),
+
+                // 🔥 新增：顯示計算來源提示
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue.shade600, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '以下目標已根據你的身體數據自動計算，你可以手動調整',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 _buildNumberField(
                   controller: _dailyCaloriesController,
                   label: '每日熱量目標',
@@ -461,11 +543,45 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
                   unit: 'kcal',
                   icon: Icons.local_fire_department,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+                
+                // 🔥 新增：三大營養素目標
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildCompactNumberField(
+                        controller: _proteinController,
+                        label: '蛋白質',
+                        unit: 'g',
+                        color: Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildCompactNumberField(
+                        controller: _carbsController,
+                        label: '碳水',
+                        unit: 'g',
+                        color: Colors.orange,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildCompactNumberField(
+                        controller: _fatController,
+                        label: '脂肪',
+                        unit: 'g',
+                        color: Colors.purple,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
                 _buildNumberField(
                   controller: _waterTargetController,
                   label: '每日喝水目標',
-                  hint: '例如：3000',
+                  hint: '例如：2000',
                   unit: 'ml',
                   icon: Icons.water_drop,
                 ),
@@ -607,6 +723,48 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
     );
   }
 
+  /// 🔥 新增：緊湊型數字輸入框
+  Widget _buildCompactNumberField({
+    required TextEditingController controller,
+    required String label,
+    required String unit,
+    required Color color,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          decoration: InputDecoration(
+            suffixText: unit,
+            filled: true,
+            fillColor: color.withOpacity(0.1),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: color, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildGenderButton(String value, String label, IconData icon) {
     final isSelected = _gender == value;
     return InkWell(
@@ -643,10 +801,75 @@ class _TraineeSetupPageState extends State<TraineeSetupPage> {
     );
   }
 
+  /// 🔥 新增：活動量選擇器
+  Widget _buildActivityLevelSelector() {
+    final levels = {
+      'sedentary': '久坐（幾乎不運動）',
+      'light': '輕度（每週1-3天）',
+      'moderate': '中度（每週3-5天）',
+      'active': '高度（每週6-7天）',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '活動量',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...levels.entries.map((entry) {
+          final isSelected = _activityLevel == entry.key;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: InkWell(
+              onTap: () => setState(() => _activityLevel = entry.key),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFF3B82F6).withOpacity(0.1) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected ? const Color(0xFF3B82F6) : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isSelected ? Icons.check_circle : Icons.circle_outlined,
+                      color: isSelected ? const Color(0xFF3B82F6) : Colors.grey,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      entry.value,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isSelected ? const Color(0xFF3B82F6) : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildGoalButton(String goalValue, String description) {
     final isSelected = _goal == goalValue;
     return InkWell(
-      onTap: () => setState(() => _goal = goalValue),
+      onTap: () {
+        setState(() => _goal = goalValue);
+        // 🔥 切換目標時重新計算
+        _autoCalculateGoals();
+      },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

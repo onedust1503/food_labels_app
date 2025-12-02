@@ -3,12 +3,14 @@
 // ✅ 修正方法調用以匹配 UnifiedWorkoutService
 // ✅ 支援計畫訓練的完整執行流程
 // ✅ 不使用 Session 系統（避免複雜性），使用簡化方法
+// 🔥 v4.2：新增用戶體重讀取，用於精確卡路里計算
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../models/workout_model.dart';
 import '../../services/unified_workout_service.dart';
+import '../../services/user_service.dart'; // 🔥 新增：導入 UserService
 
 class WorkoutPlanExecutionPage extends StatefulWidget {
   final WorkoutPlanModel plan;
@@ -27,6 +29,7 @@ class WorkoutPlanExecutionPage extends StatefulWidget {
 
 class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
   final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
+  final UserService _userService = UserService(); // 🔥 新增
 
   // 當前執行的動作索引
   int _currentExerciseIndex = 0;
@@ -54,6 +57,9 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
 
   bool _isSaving = false;
 
+  // 🔥 新增：用戶體重（用於卡路里計算）
+  double _userBodyWeight = 65.0;
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +71,9 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     _startTime = DateTime.now();
     // 自動開始計時
     _toggleTimer();
+    
+    // 🔥 新增：載入用戶體重
+    _loadUserBodyWeight();
 
     if (kDebugMode) {
       debugPrint('📋 開始計畫訓練:');
@@ -72,6 +81,24 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
       debugPrint('   日期: ${widget.selectedDay.dayOfWeek}');
       debugPrint('   動作數: ${widget.selectedDay.exercises.length}');
       debugPrint('   planId: ${widget.plan.id}');
+    }
+  }
+
+  // 🔥 新增：載入用戶體重
+  Future<void> _loadUserBodyWeight() async {
+    try {
+      final weight = await _userService.getBodyWeightForCalories();
+      setState(() {
+        _userBodyWeight = weight;
+      });
+      if (kDebugMode) {
+        debugPrint('✅ 計畫訓練載入用戶體重: $_userBodyWeight kg');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 載入用戶體重失敗，使用預設值: $e');
+      }
+      // 保持預設值 65.0
     }
   }
 
@@ -221,23 +248,41 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     }
   }
 
-  /// 🔥 計算卡路里（簡化版本）
+  /// 🔥 計算卡路里（改進版本 - 使用用戶體重）
   double _calculateCalories() {
     double totalCalories = 0;
+    
     for (int i = 0; i < widget.selectedDay.exercises.length; i++) {
       final records = _exerciseRecords[i] ?? [];
       for (final record in records) {
-        // 簡化的卡路里計算：每組約 5-10 卡
-        double setCalories = 5.0;
+        // 🔥 改進：使用用戶體重計算
+        // 基礎卡路里 = MET × 體重(kg) × 時間(小時)
+        // 每組約 30 秒 = 0.00833 小時
+        // 重量訓練 MET ≈ 5.0
+        double setCalories = 5.0 * _userBodyWeight * 0.00833;
+        
+        // 根據重量調整
         if (record.weight != null && record.weight! > 0) {
-          setCalories += (record.weight! * 0.1);
+          // 較重的重量消耗更多卡路里
+          setCalories *= (1 + record.weight! / 100);
         }
-        setCalories += (record.reps * 0.3);
+        
+        // 根據次數調整
+        setCalories *= (1 + record.reps / 20);
+        
         totalCalories += setCalories;
       }
     }
-    // 加上時間消耗（每分鐘約 3-5 卡）
-    totalCalories += (_seconds / 60) * 4;
+    
+    // 加上時間消耗（基於用戶體重）
+    // 休息時 MET ≈ 1.5
+    double restCalories = 1.5 * _userBodyWeight * (_seconds / 3600);
+    totalCalories += restCalories;
+    
+    if (kDebugMode) {
+      debugPrint('🔥 卡路里計算: 體重=${_userBodyWeight}kg, 總消耗=${totalCalories.toInt()}kcal');
+    }
+    
     return totalCalories;
   }
 
@@ -286,6 +331,8 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
                   Text('💪 總共 $_totalCompletedSets 組'),
                   Text('⏱️ 訓練時長：${_formatDuration(_seconds)}'),
                   Text('🔥 消耗約 ${totalCalories.toInt()} 大卡'),
+                  // 🔥 新增：顯示使用的體重
+                  Text('⚖️ 計算體重：${_userBodyWeight.toStringAsFixed(1)} kg'),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(8),
@@ -407,6 +454,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
     final fullNotes = [
       '動作: $_completedExercisesCount/${widget.selectedDay.exercises.length}',
       '總組數: $_totalCompletedSets',
+      '體重: ${_userBodyWeight.toStringAsFixed(1)}kg', // 🔥 新增：記錄使用的體重
       if (notes != null && notes.isNotEmpty) '---',
       if (notes != null && notes.isNotEmpty) notes,
     ].join('\n');
@@ -430,6 +478,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage> {
       debugPrint('   動作: $_completedExercisesCount 個');
       debugPrint('   組數: $_totalCompletedSets 組');
       debugPrint('   卡路里: ${totalCalories.toInt()}');
+      debugPrint('   體重: $_userBodyWeight kg'); // 🔥 新增 log
     }
   }
 

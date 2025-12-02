@@ -10,6 +10,68 @@ class UserService {
 
   String? get currentUserId => _auth.currentUser?.uid;
 
+  // ============================================================
+  // 🔥 新增：體重獲取方法（用於卡路里計算）
+  // ============================================================
+
+  /// 🔥 獲取用戶體重（用於卡路里計算）
+  /// 優先從 users 集合讀取 weight 欄位（trainee_edit_page 儲存的位置）
+  /// 如果用戶沒有設定體重，返回預設值 65kg
+  Future<double> getUserBodyWeight() async {
+    if (currentUserId == null) return 65.0;
+
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(currentUserId!)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        // trainee_edit_page 使用 'weight' 欄位
+        final weight = (data['weight'] as num?)?.toDouble();
+        if (weight != null && weight >= 30 && weight <= 300) {
+          debugPrint('✅ 讀取用戶體重: $weight kg');
+          return weight;
+        }
+      }
+      debugPrint('⚠️ 用戶未設定體重，使用預設值 65kg');
+      return 65.0;
+    } catch (e) {
+      debugPrint('❌ 獲取用戶體重失敗: $e');
+      return 65.0;
+    }
+  }
+
+  /// 🔥 專門用於卡路里計算的體重獲取（帶緩存考量）
+  /// 可以在訓練開始時調用一次，避免多次查詢
+  Future<double> getBodyWeightForCalories({double defaultWeight = 65.0}) async {
+    if (currentUserId == null) return defaultWeight;
+
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(currentUserId!)
+          .get();
+
+      if (!doc.exists) return defaultWeight;
+
+      final data = doc.data() as Map<String, dynamic>;
+      // trainee_edit_page 使用 'weight' 欄位
+      final weight = (data['weight'] as num?)?.toDouble();
+      
+      // 體重範圍檢查：30kg - 300kg
+      if (weight != null && weight >= 30 && weight <= 300) {
+        debugPrint('✅ 卡路里計算使用體重: $weight kg');
+        return weight;
+      }
+      return defaultWeight;
+    } catch (e) {
+      debugPrint('❌ 獲取體重失敗，使用預設值: $e');
+      return defaultWeight;
+    }
+  }
+
   // ========== ✅ 原有方法 - 完全保留，一個字都不改 ==========
 
   // 獲取推薦教練

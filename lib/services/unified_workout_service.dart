@@ -1,10 +1,11 @@
 // lib/services/unified_workout_service.dart
-// 🔧 統一訓練記錄服務 - 完整整合版 v4
+// 🔧 統一訓練記錄服務 - 完整整合版 v5
 // ✅ 保留所有原有功能
 // ✅ 新增 Plan Session 方法（教練計畫訓練）
 // ✅ 新增整合讀取方法（同時顯示自由訓練和計畫訓練）
 // ✅ 修正 adHocEndRest 狀態更新
 // ✅ 🔥 新增：精確卡路里計算（基於 Compendium of Physical Activities 2024 MET 值）
+// ✅ 🔥 v5 新增：訓練命名功能（workoutName 參數）
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -952,9 +953,10 @@ class UnifiedWorkoutService {
 
   // ========== 🔥 自由訓練（AdHoc Session）相關 ==========
 
-  /// 🔥 開始自由訓練會話
+  /// 🔥 開始自由訓練會話 - v5 支援訓練命名
   Future<String> startAdHocSession({
     required List<Map<String, dynamic>> exercises,
+    String workoutName = '自由訓練',  // 🔥 新增：訓練名稱參數
   }) async {
     final uid = _currentUserId!;
     final sessionRef = _firestore
@@ -965,6 +967,7 @@ class UnifiedWorkoutService {
 
     await sessionRef.set({
       'userId': uid,
+      'name': workoutName,  // 🔥 新增：存儲訓練名稱
       'source': 'self',
       'planId': null,
       'startedAt': FieldValue.serverTimestamp(),
@@ -1002,6 +1005,7 @@ class UnifiedWorkoutService {
 
     if (kDebugMode) {
       debugPrint('✅ 開始自由訓練: ${sessionRef.id}');
+      debugPrint('   訓練名稱: $workoutName');  // 🔥 調試輸出
     }
 
     return sessionRef.id;
@@ -1199,12 +1203,12 @@ class UnifiedWorkoutService {
   }
 
 
-  /// 🔥 完成自由訓練會話 - 使用精確卡路里計算
+  /// 🔥 完成自由訓練會話 - v5 使用存儲的訓練名稱
   Future<void> finishAdHocSession({
     required String sessionId,
     int? sessionRpe,
     double? calories,
-    double? userBodyWeight, // 🔥 新增：可選的用戶體重參數
+    double? userBodyWeight,
   }) async {
     final uid = _currentUserId!;
     final sessionRef = _firestore
@@ -1230,6 +1234,9 @@ class UnifiedWorkoutService {
       return;
     }
 
+    // 🔥 讀取存儲的訓練名稱
+    final workoutName = sessionData['name'] as String? ?? '自由訓練';
+
     final startedAt = (sessionData['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
     final endedAt = (sessionData['endedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
     final dateStr = startedAt.toIso8601String().split('T')[0];
@@ -1251,7 +1258,7 @@ class UnifiedWorkoutService {
     // 收集所有動作的組數詳情
     List<Map<String, dynamic>> exerciseDetails = [];
     int totalCompletedSets = 0;
-    double totalCalories = 0; // 🔥 使用精確計算
+    double totalCalories = 0;
 
     for (final exDoc in exercisesSnap.docs) {
       final exData = exDoc.data();
@@ -1294,7 +1301,7 @@ class UnifiedWorkoutService {
             'reps': setData['actualReps'] ?? reps,
             'weight': weight,
             'durationSec': duration,
-            'calories': setCalories.roundToDouble(), // 🔥 記錄每組卡路里
+            'calories': setCalories.roundToDouble(),
             'rpe': setData['rpe'],
             'note': setData['note'],
             'status': status,
@@ -1342,30 +1349,30 @@ class UnifiedWorkoutService {
     // ===== 🔥 使用 WriteBatch 同時寫入兩個集合 =====
     final batch = _firestore.batch();
 
-    // 4a. ✅ 寫入 workoutLogs (供列表頁面讀取)
+    // 4a. ✅ 寫入 workoutLogs (供列表頁面讀取) - 🔥 使用存儲的名稱
     final workoutLogRef = _firestore.collection('workoutLogs').doc();
     batch.set(workoutLogRef, {
       'userId': uid,
       'date': dateStr,
       'type': 'weight_training',
-      'name': '自由訓練',
+      'name': workoutName,  // 🔥 使用存儲的訓練名稱
       'duration': totalDurationMin,
       'caloriesBurned': finalCalories.roundToDouble(),
       'totalSets': totalCompletedSets,
       'totalExercises': exerciseDetails.length,
       'intensity': 'medium',
-      'notes': '自由訓練 - ${exerciseDetails.length} 個動作',
+      'notes': '$workoutName - ${exerciseDetails.length} 個動作',  // 🔥 使用名稱
       'sessionId': sessionId,
       'createdAt': FieldValue.serverTimestamp(),
       'timestamp': startedAt.millisecondsSinceEpoch,
     });
 
-    // 4b. ✅ 寫入 workoutSessions (供詳細頁面讀取)
+    // 4b. ✅ 寫入 workoutSessions (供詳細頁面讀取) - 🔥 使用存儲的名稱
     final workoutSessionRef = _firestore.collection('workoutSessions').doc(sessionId);
     batch.set(workoutSessionRef, {
       'userId': uid,
       'date': dateStr,
-      'name': '自由訓練',
+      'name': workoutName,  // 🔥 使用存儲的訓練名稱
       'duration': totalDurationMin,
       'timestamp': Timestamp.fromDate(startedAt),
       'startedAt': Timestamp.fromDate(startedAt),
@@ -1389,6 +1396,7 @@ class UnifiedWorkoutService {
 
     if (kDebugMode) {
       debugPrint('✅ Ad-hoc session 完成: $sessionId');
+      debugPrint('   🔥 訓練名稱: $workoutName');  // 🔥 調試輸出
       debugPrint('   總時長: $totalDurationMin 分鐘 ($totalDurationSec 秒)');
       debugPrint('   🔥 精確卡路里: ${finalCalories.toStringAsFixed(1)} (基於 MET 計算)');
       debugPrint('   總組數: $totalCompletedSets');
@@ -1418,6 +1426,7 @@ class UnifiedWorkoutService {
       'source': 'plan',
       'planId': planId,
       'planName': planName,
+      'name': planName,  // 🔥 確保 name 欄位也存在
       'dayOfWeek': dayOfWeek,
       'startedAt': FieldValue.serverTimestamp(),
       'totalActiveSec': 0,
@@ -1471,7 +1480,7 @@ class UnifiedWorkoutService {
     required String dayOfWeek,
     int? sessionRpe,
     double? calories,
-    double? userBodyWeight, // 🔥 新增：可選的用戶體重參數
+    double? userBodyWeight,
   }) async {
     final uid = _currentUserId!;
     final sessionRef = _firestore
@@ -1519,7 +1528,7 @@ class UnifiedWorkoutService {
     // 收集所有動作的組數詳情
     List<Map<String, dynamic>> exerciseDetails = [];
     int totalCompletedSets = 0;
-    double totalCalories = 0; // 🔥 使用精確計算
+    double totalCalories = 0;
 
     for (final exDoc in exercisesSnap.docs) {
       final exData = exDoc.data();
@@ -1614,9 +1623,9 @@ class UnifiedWorkoutService {
       'userId': uid,
       'date': dateStr,
       'type': 'weight_training',
-      'name': '計畫訓練',
-      'planId': planId,           // ✅ 關鍵：記錄 planId
-      'planName': planName,       // ✅ 記錄計畫名稱
+      'name': planName,  // 🔥 使用計畫名稱
+      'planId': planId,
+      'planName': planName,
       'dayOfWeek': dayOfWeek,
       'duration': totalDurationMin,
       'caloriesBurned': finalCalories.roundToDouble(),
@@ -1867,6 +1876,7 @@ class UnifiedWorkoutService {
         'calories': sessionData['calories'] ?? 0.0,
         'totalCalories': sessionData['calories'] ?? 0.0,
         'exercises': exercises,
+        'name': sessionData['name'] ?? '自由訓練',  // 🔥 讀取名稱
         'planId': sessionData['planId'],
         'planName': sessionData['planName'],
         'source': sessionData['source'] ?? 'self',
@@ -1952,6 +1962,7 @@ class UnifiedWorkoutService {
           'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
           'totalCalories': (data['totalCalories'] ?? 0.0).toDouble(),
           'exercises': data['exercises'] ?? [],
+          'name': data['name'] ?? '自由訓練',  // 🔥 讀取名稱
         };
       }).toList();
     } catch (e) {
@@ -1987,6 +1998,7 @@ class UnifiedWorkoutService {
           'totalDurationSeconds': data['totalDurationSeconds'] ?? 0,
           'totalCalories': (data['totalCalories'] ?? 0.0).toDouble(),
           'exercises': data['exercises'] ?? [],
+          'name': data['name'] ?? '自由訓練',  // 🔥 讀取名稱
         };
       }).toList();
     } catch (e) {

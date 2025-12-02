@@ -2,6 +2,7 @@
 // ✅ 完全匹配 UnifiedWorkoutService 數據結構
 // ✅ 支援計畫訓練 (source: 'plan') 和自由訓練 (source: 'self')
 // ✅ 添加 share_plus 分享功能
+// 🔥 v2 新增：顯示訓練名稱（而非固定文字）
 // ⚠️ 需要在 pubspec.yaml 添加: share_plus: ^7.2.1
 
 import 'package:flutter/material.dart';
@@ -120,6 +121,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         debugPrint('═══════════════════════════════════════════');
         debugPrint('✅ 載入完成:');
         debugPrint('   訓練類型: ${_isPlanWorkout ? "計畫訓練" : "自由訓練"}');
+        debugPrint('   🔥 訓練名稱: $_workoutName');  // 🔥 新增
         debugPrint('   計畫名稱: $_planName');
         debugPrint('   訓練時長: $_duration 分鐘');
         debugPrint('   動作數量: $_totalExercises');
@@ -191,6 +193,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         debugPrint('✅ 從 workoutSessions 讀取成功');
         debugPrint('   source: ${_sessionData['source']}');
         debugPrint('   planName: ${_sessionData['planName']}');
+        debugPrint('   🔥 name: ${_sessionData['name']}');  // 🔥 新增
       }
       _extractExercises();
       return;
@@ -312,11 +315,21 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
            _sessionData['planName'] != null;
   }
 
-  /// 訓練名稱
+  /// 🔥 訓練名稱（用於顯示）
   String get _workoutName {
-    if (_isPlanWorkout) {
-      return _sessionData['planName'] ?? _sessionData['name'] ?? '計畫訓練';
+    // 優先使用 name 欄位（訓練命名功能存儲的值）
+    if (_sessionData['name'] != null && 
+        (_sessionData['name'] as String).isNotEmpty &&
+        _sessionData['name'] != '自由訓練') {
+      return _sessionData['name'] as String;
     }
+    
+    // 計畫訓練使用 planName
+    if (_isPlanWorkout) {
+      return _sessionData['planName'] ?? '計畫訓練';
+    }
+    
+    // 預設
     return _sessionData['name'] ?? '自由訓練';
   }
 
@@ -437,14 +450,16 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     return null;
   }
 
-  // ===== 分享內容生成 =====
+  // ===== 🔥 分享內容生成（更新：包含訓練名稱）=====
   String _generateShareText() {
     final buffer = StringBuffer();
     
-    buffer.writeln('🏋️ 訓練完成！');
+    // 🔥 使用訓練名稱
+    buffer.writeln('🏋️ $_workoutName 完成！');
     buffer.writeln();
     
-    if (_isPlanWorkout && _planName != null) {
+    // 計畫訓練額外資訊
+    if (_isPlanWorkout && _planName != null && _planName != _workoutName) {
       buffer.writeln('📋 $_planName');
       if (_dayOfWeek != null) {
         buffer.writeln('📆 $_dayOfWeek');
@@ -567,6 +582,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     );
   }
 
+  // 🔥 修改：顯示訓練名稱
   Widget _buildSuccessHeader() {
     return ScaleTransition(
       scale: _scaleAnimation,
@@ -591,20 +607,75 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
               child: const Icon(Icons.check_rounded, color: Colors.white, size: 40),
             ),
             const SizedBox(height: 16),
-            // 標題
+            
+            // 🔥 訓練名稱（主標題）
             Text(
-              _isPlanWorkout ? '完成訓練計畫' : '訓練完成',
-              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              _workoutName,
+              style: const TextStyle(
+                color: Colors.white, 
+                fontSize: 26, 
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
             ),
-            // 計畫名稱（僅計畫訓練顯示）
-            if (_isPlanWorkout && _planName != null) ...[
-              const SizedBox(height: 8),
+            const SizedBox(height: 6),
+            
+            // 🔥 「完成」標籤
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(51), 
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded, 
+                    color: Colors.white.withAlpha(230), 
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '訓練完成',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(230), 
+                      fontSize: 14, 
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // 計畫名稱（僅計畫訓練且名稱不同時顯示）
+            if (_isPlanWorkout && _planName != null && _planName != _workoutName) ...[
+              const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(color: Colors.white.withAlpha(51), borderRadius: BorderRadius.circular(20)),
-                child: Text(_planName!, style: TextStyle(color: Colors.white.withAlpha(230), fontSize: 14, fontWeight: FontWeight.w500)),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(38), 
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.description_rounded, 
+                      color: Colors.white.withAlpha(200), 
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _planName!, 
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(200), 
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
+            
             // 星期幾（僅計畫訓練顯示）
             if (_isPlanWorkout && _dayOfWeek != null) ...[
               const SizedBox(height: 6),
@@ -613,17 +684,31 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
                 style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 13),
               ),
             ],
-            const SizedBox(height: 8),
+            
+            const SizedBox(height: 12),
+            
             // 日期
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(color: Colors.white.withAlpha(38), borderRadius: BorderRadius.circular(20)),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(38), 
+                borderRadius: BorderRadius.circular(20),
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.calendar_today_rounded, color: Colors.white.withAlpha(217), size: 14),
+                  Icon(Icons.calendar_today_rounded, 
+                    color: Colors.white.withAlpha(217), 
+                    size: 14,
+                  ),
                   const SizedBox(width: 6),
-                  Text(_dateString, style: TextStyle(color: Colors.white.withAlpha(230), fontSize: 13)),
+                  Text(
+                    _dateString, 
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(230), 
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ),

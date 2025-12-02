@@ -8,23 +8,26 @@ import '../../services/user_service.dart';
 import '../../utils/exercise_calorie_calculator.dart';
 import 'workout_summary_page.dart';
 
-/// 自由訓練執行頁面 - v5.1 精簡專業版
+/// 自由訓練執行頁面 - v5.2 訓練命名版
 /// 
 /// 核心改進：
-/// 1. 極簡流程 - 完成動作後提示自動消失，不彈對話框
-/// 2. 隨時休息 - 懸浮休息按鈕，任何時候都能休息
-/// 3. 全螢幕慶祝 - 全部完成時顯示慶祝畫面
-/// 4. 滑動切換 - 左右滑動切換動作
-/// 5. 中途新增 - 訓練中可新增動作
-/// 6. 計時保留 - 切換組數時暫停計時，回來可繼續
+/// 1. 🔥 新增 workoutName 參數 - 支援自訂訓練名稱
+/// 2. 極簡流程 - 完成動作後提示自動消失，不彈對話框
+/// 3. 隨時休息 - 懸浮休息按鈕，任何時候都能休息
+/// 4. 全螢幕慶祝 - 全部完成時顯示慶祝畫面
+/// 5. 滑動切換 - 左右滑動切換動作
+/// 6. 中途新增 - 訓練中可新增動作
+/// 7. 計時保留 - 切換組數時暫停計時，回來可繼續
 /// 
 /// 設計理念：減少打斷，讓用戶「無腦跟著做」
 class FreeWorkoutExecutionPage extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
+  final String workoutName;  // 🔥 新增：訓練名稱參數
 
   const FreeWorkoutExecutionPage({
     super.key,
     required this.exercises,
+    this.workoutName = '自由訓練',  // 🔥 預設值
   });
 
   @override
@@ -41,6 +44,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   int _currentSetIndex = 0;
   String? _sessionId;
   bool _isInitialized = false;
+
+  // 🔥 新增：訓練名稱
+  late String _workoutName;
 
   // 用戶體重（用於卡路里計算）
   double _userBodyWeight = 65.0;
@@ -83,6 +89,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   @override
   void initState() {
     super.initState();
+    // 🔥 初始化訓練名稱
+    _workoutName = widget.workoutName;
+    
     _exercises = List<Map<String, dynamic>>.from(
       widget.exercises.map((e) => Map<String, dynamic>.from(e))
     );
@@ -123,8 +132,10 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
 
   Future<void> _initializeSession() async {
     try {
+      // 🔥 傳入訓練名稱
       _sessionId = await _service.startAdHocSession(
         exercises: _exercises,
+        workoutName: _workoutName,  // 🔥 使用訓練名稱
       );
 
       for (int i = 0; i < _exercises.length; i++) {
@@ -133,6 +144,8 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
 
       setState(() => _isInitialized = true);
       _startTotalTimer();
+      
+      debugPrint('[初始化] 訓練名稱: $_workoutName, SessionId: $_sessionId');
     } catch (e) {
       debugPrint('[錯誤] 初始化失敗: $e');
     }
@@ -976,9 +989,10 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                '所有動作都完成了',
-                style: TextStyle(
+              // 🔥 顯示訓練名稱
+              Text(
+                '$_workoutName 完成',
+                style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 18,
                 ),
@@ -1573,7 +1587,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   }
 
   // ============================================================
-  // AppBar
+  // AppBar - 🔥 顯示訓練名稱
   // ============================================================
 
   Widget _buildAppBar() {
@@ -1600,9 +1614,11 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
           Expanded(
             child: Column(
               children: [
-                const Text(
-                  '自由訓練',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                // 🔥 顯示訓練名稱
+                Text(
+                  _workoutName,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   _formatDuration(_totalElapsedSeconds),

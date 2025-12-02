@@ -1,6 +1,6 @@
 // lib/pages/workout/exercise_selection_page.dart
 // 多選運動頁面 - Soft UI 清新綠風格
-// 修正：顏色更明亮清新、UI 溢出問題
+// 🔥 v2 新增：訓練命名功能（智能推薦 + 快速選擇標籤）
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -79,6 +79,13 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     '有氧',
   ];
 
+  // 🔥 快速選擇的訓練名稱
+  final List<String> _quickNames = [
+    '胸部訓練', '背部訓練', '腿部訓練', '肩部訓練',
+    '手臂訓練', '核心訓練', '全身訓練', '有氧運動',
+    '上半身', '下半身', '推力日', '拉力日',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -152,12 +159,307 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
     return _selectedExercises.any((e) => e.exercise.id == exercise.id);
   }
 
-  Future<void> _startWorkout() async {
+  // 🔥 智能推薦訓練名稱
+  String _getSuggestedName() {
+    if (_selectedExercises.isEmpty) return '自由訓練';
+
+    // 統計各分類的動作數量
+    final Map<String, int> categoryCounts = {};
+    for (var selected in _selectedExercises) {
+      final category = selected.exercise.category;
+      categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+    }
+
+    // 找出數量最多的分類
+    String? mainCategory;
+    int maxCount = 0;
+    categoryCounts.forEach((category, count) {
+      if (count > maxCount) {
+        maxCount = count;
+        mainCategory = category;
+      }
+    });
+
+    // 如果超過 60% 的動作屬於同一分類，則推薦該分類
+    if (mainCategory != null && maxCount >= _selectedExercises.length * 0.6) {
+      // 將分類轉換為訓練名稱
+      switch (mainCategory) {
+        case '胸部':
+          return '胸部訓練';
+        case '背部':
+          return '背部訓練';
+        case '腿部':
+          return '腿部訓練';
+        case '肩膀':
+          return '肩部訓練';
+        case '手臂':
+          return '手臂訓練';
+        case '腹肌':
+          return '核心訓練';
+        case '有氧':
+          return '有氧運動';
+        default:
+          return '$mainCategory訓練';
+      }
+    }
+
+    // 檢查是否為上半身或下半身
+    final upperBody = ['胸部', '背部', '肩膀', '手臂'];
+    final lowerBody = ['腿部'];
+
+    int upperCount = 0;
+    int lowerCount = 0;
+
+    for (var selected in _selectedExercises) {
+      if (upperBody.contains(selected.exercise.category)) {
+        upperCount++;
+      } else if (lowerBody.contains(selected.exercise.category)) {
+        lowerCount++;
+      }
+    }
+
+    if (upperCount > 0 && lowerCount == 0) {
+      return '上半身訓練';
+    }
+    if (lowerCount > 0 && upperCount == 0) {
+      return '下半身訓練';
+    }
+
+    return '自由訓練';
+  }
+
+  // 🔥 顯示訓練命名對話框
+  Future<void> _showWorkoutNameDialog() async {
     if (_selectedExercises.isEmpty) {
       _showSnackBar('請至少選擇一個動作');
       return;
     }
 
+    final TextEditingController nameController = TextEditingController(
+      text: _getSuggestedName(),
+    );
+    String? selectedQuickName;
+
+    // 檢查推薦名稱是否在快速選擇列表中
+    final suggestedName = _getSuggestedName();
+    if (_quickNames.contains(suggestedName)) {
+      selectedQuickName = suggestedName;
+    }
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          backgroundColor: _cardColor,
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 圖標
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: _primaryLight,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Icon(
+                    Icons.fitness_center_rounded,
+                    color: _primaryColor,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 標題
+                Text(
+                  '為這次訓練命名',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: _textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // 副標題
+                Text(
+                  '已選擇 ${_selectedExercises.length} 個動作',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // 輸入框
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: _textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '輸入訓練名稱',
+                    hintStyle: TextStyle(
+                      color: _textSecondary.withOpacity(0.5),
+                      fontWeight: FontWeight.normal,
+                    ),
+                    filled: true,
+                    fillColor: _primaryLight.withOpacity(0.5),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: _primaryColor, width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    suffixIcon: nameController.text.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear_rounded, 
+                              color: _textSecondary, 
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              nameController.clear();
+                              setDialogState(() => selectedQuickName = null);
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      if (_quickNames.contains(value)) {
+                        selectedQuickName = value;
+                      } else {
+                        selectedQuickName = null;
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                // 快速選擇標籤
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '快速選擇',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _quickNames.map((name) {
+                    final isSelected = selectedQuickName == name;
+                    return GestureDetector(
+                      onTap: () {
+                        nameController.text = name;
+                        nameController.selection = TextSelection.fromPosition(
+                          TextPosition(offset: name.length),
+                        );
+                        setDialogState(() => selectedQuickName = name);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected ? _primaryColor : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected 
+                                ? _primaryColor 
+                                : _primaryColor.withOpacity(0.4),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isSelected 
+                                ? FontWeight.bold 
+                                : FontWeight.w500,
+                            color: isSelected ? Colors.white : _primaryColor,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            // 跳過按鈕
+            TextButton(
+              onPressed: () => Navigator.pop(context, '自由訓練'),
+              child: Text(
+                '跳過',
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            // 開始訓練按鈕
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                Navigator.pop(context, name.isEmpty ? '自由訓練' : name);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                '開始訓練',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      await _startWorkoutWithName(result);
+    }
+  }
+
+  // 🔥 帶名稱開始訓練
+  Future<void> _startWorkoutWithName(String workoutName) async {
     final exercises = _selectedExercises.map((selected) {
       return {
         'id': selected.exercise.id,
@@ -168,11 +470,17 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
       };
     }).toList();
 
+    if (kDebugMode) {
+      debugPrint('🏋️ 開始訓練: $workoutName');
+      debugPrint('   動作數: ${exercises.length}');
+    }
+
     final sessionId = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => FreeWorkoutExecutionPage(
           exercises: exercises,
+          workoutName: workoutName,  // 🔥 傳入訓練名稱
         ),
       ),
     );
@@ -732,7 +1040,7 @@ class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
             ),
             const SizedBox(height: 14),
             GestureDetector(
-              onTap: _startWorkout,
+              onTap: _showWorkoutNameDialog,  // 🔥 改為顯示命名對話框
               child: Container(
                 width: double.infinity,
                 height: 56,

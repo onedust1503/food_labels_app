@@ -83,6 +83,9 @@ dependencies:
   # icon 圖示庫
   flutter_lucide: ^1.7.0
 
+  # 分享功能
+  share_plus: ^7.2.1
+
 
 
 dev_dependencies:

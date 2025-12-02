@@ -1,12 +1,12 @@
 // lib/pages/workout/exercise_selection_page.dart
-// 🎯 多選運動頁面 - FitFit 風格
-// ✅ 修正導航流程：完成訓練 → 總結頁面 → 返回上一頁
+// 多選運動頁面 - Soft UI 清新綠風格
+// 修正：顏色更明亮清新、UI 溢出問題
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/wger_api_service.dart';
 import 'workout/free_workout_execution_page.dart';
-import 'workout/workout_summary_page.dart'; // 🔥 新增引入
+import 'workout/workout_summary_page.dart';
 
 class ExerciseSelectionPage extends StatefulWidget {
   final bool isCoach;
@@ -21,12 +21,10 @@ class ExerciseSelectionPage extends StatefulWidget {
   });
 
   @override
-  State<ExerciseSelectionPage> createState() =>
-      _ExerciseSelectionPageState();
+  State<ExerciseSelectionPage> createState() => _ExerciseSelectionPageState();
 }
 
-class _ExerciseSelectionPageState
-    extends State<ExerciseSelectionPage> {
+class _ExerciseSelectionPageState extends State<ExerciseSelectionPage> {
   final WgerApiService _wgerService = WgerApiService();
   final TextEditingController _searchController = TextEditingController();
 
@@ -36,6 +34,39 @@ class _ExerciseSelectionPageState
 
   bool _isLoading = true;
   String _selectedCategory = '全部';
+
+  // ===== 清爽淡雅 Soft UI 配色（參考現代極簡風格）=====
+  // 主色：淡薄荷綠（不會太綠，很清爽）
+  static const Color _primaryColor = Color(0xFF81C784);      // 薄荷綠（主按鈕）
+  static const Color _primaryLight = Color(0xFFE8F5E9);      // 超淡綠（選中背景）
+  static const Color _primarySoft = Color(0xFFC8E6C9);       // 淡綠（色塊）
+  static const Color _primaryDark = Color(0xFF66BB6A);       // 深綠（漸層用）
+  
+  // 基礎色 - 幾乎純白
+  static const Color _backgroundColor = Color(0xFFFAFBFC);   // 極淺灰白背景
+  static const Color _cardColor = Color(0xFFFFFFFF);         // 純白卡片
+  static const Color _surfaceColor = Color(0xFFF5F7F6);      // 淺灰表面
+  
+  // 文字色
+  static const Color _textPrimary = Color(0xFF2D3436);       // 深灰文字
+  static const Color _textSecondary = Color(0xFF8E9AAF);     // 柔和灰文字
+  
+  // Soft UI 陰影 - 更柔和
+  static List<BoxShadow> get _softShadow => [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.04),
+      blurRadius: 20,
+      offset: const Offset(0, 4),
+    ),
+  ];
+
+  static List<BoxShadow> get _softShadowSmall => [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.03),
+      blurRadius: 10,
+      offset: const Offset(0, 2),
+    ),
+  ];
 
   final List<String> _categories = [
     '全部',
@@ -121,7 +152,6 @@ class _ExerciseSelectionPageState
     return _selectedExercises.any((e) => e.exercise.id == exercise.id);
   }
 
-  // 🔥 修正：開始訓練 → 完成後先顯示總結 → 再返回
   Future<void> _startWorkout() async {
     if (_selectedExercises.isEmpty) {
       _showSnackBar('請至少選擇一個動作');
@@ -138,7 +168,6 @@ class _ExerciseSelectionPageState
       };
     }).toList();
 
-    // 1. 先進入訓練執行頁面
     final sessionId = await Navigator.push<String>(
       context,
       MaterialPageRoute(
@@ -150,7 +179,6 @@ class _ExerciseSelectionPageState
 
     if (!mounted) return;
 
-    // 2. 如果訓練完成（有返回 sessionId），顯示總結頁面
     if (sessionId != null && sessionId.isNotEmpty) {
       await Navigator.push(
         context,
@@ -160,9 +188,6 @@ class _ExerciseSelectionPageState
       );
 
       if (!mounted) return;
-
-      // 3. 總結頁面關閉後，返回到上一頁（workout_log_page）
-      // 傳遞 true 表示訓練已完成，上一頁需要刷新
       Navigator.pop(context, true);
     }
   }
@@ -173,6 +198,7 @@ class _ExerciseSelectionPageState
         SnackBar(
           content: Text(message),
           behavior: SnackBarBehavior.floating,
+          backgroundColor: _primaryColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -184,49 +210,8 @@ class _ExerciseSelectionPageState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              '選擇運動',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            if (widget.planId != null)
-              Text(
-                '📋 計畫訓練',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                ),
-              ),
-          ],
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0,
-        actions: [
-          if (_selectedExercises.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6C63FF),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '已選 ${_selectedExercises.length}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-        ],
-      ),
+      backgroundColor: _backgroundColor,
+      appBar: _buildAppBar(),
       body: Column(
         children: [
           _buildSearchAndFilter(),
@@ -234,18 +219,19 @@ class _ExerciseSelectionPageState
           if (!_isLoading) _buildResultCount(),
           Expanded(
             child: _isLoading
-                ? const Center(
+                ? Center(
                     child: CircularProgressIndicator(
-                      color: Color(0xFF6C63FF),
+                      color: _primaryColor,
+                      strokeWidth: 3,
                     ),
                   )
                 : _filteredExercises.isEmpty
                     ? _buildEmptyState()
                     : RefreshIndicator(
                         onRefresh: _loadExercises,
-                        color: const Color(0xFF6C63FF),
+                        color: _primaryColor,
                         child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                           itemCount: _filteredExercises.length,
                           itemBuilder: (context, index) {
                             final exercise = _filteredExercises[index];
@@ -262,32 +248,79 @@ class _ExerciseSelectionPageState
     );
   }
 
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: const Text(
+        '選擇運動',
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 18,
+        ),
+      ),
+      centerTitle: true,
+      backgroundColor: _cardColor,
+      foregroundColor: _textPrimary,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      leading: IconButton(
+        onPressed: () => Navigator.pop(context),
+        icon: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.arrow_back_rounded, size: 20),
+        ),
+      ),
+      actions: [
+        if (_selectedExercises.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: _primarySoft,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '已選 ${_selectedExercises.length}',
+              style: TextStyle(
+                color: _primaryColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildSearchAndFilter() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: _cardColor,
+        boxShadow: _softShadowSmall,
       ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              TextField(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          children: [
+            // 搜尋框 - 大圓角、淡色
+            Container(
+              decoration: BoxDecoration(
+                color: _surfaceColor,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: '搜尋運動名稱...',
-                  prefixIcon: const Icon(Icons.search, color: Color(0xFF6C63FF)),
+                  hintStyle: TextStyle(color: _textSecondary.withOpacity(0.7), fontSize: 15),
+                  prefixIcon: Icon(Icons.search_rounded, color: _textSecondary, size: 22),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
+                          icon: Icon(Icons.clear_rounded, size: 20, color: _textSecondary),
                           onPressed: () {
                             _searchController.clear();
                             _filterExercises();
@@ -295,9 +328,9 @@ class _ExerciseSelectionPageState
                         )
                       : null,
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: Colors.transparent,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
                   ),
                   contentPadding: const EdgeInsets.symmetric(
@@ -306,45 +339,54 @@ class _ExerciseSelectionPageState
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 40,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _categories.length,
-                  itemBuilder: (context, index) {
-                    final category = _categories[index];
-                    final isSelected = category == _selectedCategory;
+            ),
+            const SizedBox(height: 14),
+            
+            // 分類標籤 - 藥丸形狀、淡色
+            SizedBox(
+              height: 38,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _categories.length,
+                itemBuilder: (context, index) {
+                  final category = _categories[index];
+                  final isSelected = category == _selectedCategory;
 
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(category),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedCategory = category;
-                            _filterExercises();
-                          });
-                        },
-                        selectedColor: const Color(0xFF6C63FF),
-                        backgroundColor: Colors.grey.shade200,
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : Colors.black87,
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedCategory = category;
+                          _filterExercises();
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: isSelected ? _primarySoft : _cardColor,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected ? _primaryColor.withOpacity(0.3) : _surfaceColor,
+                            width: 1.5,
+                          ),
                         ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                        child: Text(
+                          category,
+                          style: TextStyle(
+                            color: isSelected ? _primaryDark : _textSecondary,
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -352,40 +394,41 @@ class _ExerciseSelectionPageState
 
   Widget _buildSelectedArea() {
     return Container(
-      height: 120,
+      constraints: const BoxConstraints(maxHeight: 100),
       decoration: BoxDecoration(
-        color: const Color(0xFF6C63FF).withOpacity(0.1),
+        color: _primaryLight.withOpacity(0.5),
         border: Border(
-          bottom: BorderSide(color: const Color(0xFF6C63FF).withOpacity(0.2)),
+          bottom: BorderSide(color: _primarySoft.withOpacity(0.5)),
         ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: Row(
               children: [
-                const Text(
+                Text(
                   '已選擇',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF6C63FF),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _primaryColor,
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(
-                  Icons.drag_indicator,
-                  size: 16,
-                  color: Color(0xFF6C63FF),
+                Icon(
+                  Icons.drag_indicator_rounded,
+                  size: 14,
+                  color: _primaryColor.withOpacity(0.5),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '長按拖曳排序',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+                    fontSize: 11,
+                    color: _textSecondary,
                   ),
                 ),
               ],
@@ -394,7 +437,7 @@ class _ExerciseSelectionPageState
           Expanded(
             child: ReorderableListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               itemCount: _selectedExercises.length,
               onReorder: (oldIndex, newIndex) {
                 setState(() {
@@ -419,62 +462,56 @@ class _ExerciseSelectionPageState
   Widget _buildSelectedChip(SelectedExercise selected, int index, {required Key key}) {
     return Container(
       key: key,
-      width: 140,
-      margin: const EdgeInsets.only(right: 8, bottom: 8),
-      padding: const EdgeInsets.all(12),
+      width: 120,
+      height: 52,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF6C63FF), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6C63FF).withOpacity(0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: _primarySoft, width: 1.5),
+        boxShadow: _softShadowSmall,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6C63FF).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '${index + 1}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF6C63FF),
-                  ),
-                ),
-              ),
-              const Spacer(),
-              InkWell(
-                onTap: () => _toggleSelection(selected.exercise),
-                child: const Icon(
-                  Icons.close,
-                  size: 18,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            selected.exercise.nameZhTw,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: _primaryLight,
+              borderRadius: BorderRadius.circular(8),
             ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+            child: Center(
+              child: Text(
+                '${index + 1}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _primaryColor,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              selected.exercise.nameZhTw,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _textPrimary,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _toggleSelection(selected.exercise),
+            child: Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: _textSecondary.withOpacity(0.5),
+            ),
           ),
         ],
       ),
@@ -484,14 +521,14 @@ class _ExerciseSelectionPageState
   Widget _buildResultCount() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: const Color(0xFF6C63FF).withOpacity(0.05),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: _surfaceColor,
       child: Text(
         '找到 ${_filteredExercises.length} 個運動',
         style: TextStyle(
-          color: Colors.grey[700],
+          color: _textSecondary,
           fontWeight: FontWeight.w600,
-          fontSize: 14,
+          fontSize: 13,
         ),
       ),
     );
@@ -499,109 +536,99 @@ class _ExerciseSelectionPageState
 
   Widget _buildExerciseCard(Exercise exercise) {
     final isSelected = _isSelected(exercise);
+    final categoryColor = _getCategoryColor(exercise.category);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(20),
         border: isSelected
-            ? Border.all(color: const Color(0xFF6C63FF), width: 2)
+            ? Border.all(color: _primarySoft, width: 2)
             : null,
-        boxShadow: [
-          BoxShadow(
-            color: isSelected
-                ? const Color(0xFF6C63FF).withOpacity(0.2)
-                : Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: _softShadowSmall,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: () => _toggleSelection(exercise),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Container(
-                  width: 28,
-                  height: 28,
+                // 選擇框 - 更圓潤
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? const Color(0xFF6C63FF)
-                        : Colors.transparent,
+                    color: isSelected ? _primarySoft : _surfaceColor,
                     border: Border.all(
-                      color: isSelected
-                          ? const Color(0xFF6C63FF)
-                          : Colors.grey.shade300,
-                      width: 2,
+                      color: isSelected ? _primaryColor : Colors.grey.shade300,
+                      width: 1.5,
                     ),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: isSelected
-                      ? const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 18,
+                      ? Icon(
+                          Icons.check_rounded,
+                          color: _primaryColor,
+                          size: 16,
                         )
                       : null,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
+                
+                // 圖標 - 淡色背景塊
                 Container(
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: _getCategoryColor(exercise.category).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    color: categoryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
                     _getCategoryIcon(exercise.category),
-                    color: _getCategoryColor(exercise.category),
-                    size: 24,
+                    color: categoryColor,
+                    size: 22,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
+                
+                // 內容
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         exercise.nameZhTw,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                          color: _textPrimary,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _getCategoryColor(exercise.category)
-                                  .withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              exercise.category,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _getCategoryColor(exercise.category),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: categoryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          exercise.category,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: categoryColor,
+                            fontWeight: FontWeight.w600,
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
@@ -619,40 +646,57 @@ class _ExerciseSelectionPageState
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search_off,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '找不到符合的運動',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade600,
+          Container(
+            width: 90,
+            height: 90,
+            decoration: BoxDecoration(
+              color: _surfaceColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.search_off_rounded,
+              size: 44,
+              color: _textSecondary.withOpacity(0.4),
             ),
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
+          Text(
+            '找不到符合的運動',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: _textSecondary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          GestureDetector(
+            onTap: () {
               setState(() {
                 _searchController.clear();
                 _selectedCategory = '全部';
                 _filterExercises();
               });
             },
-            icon: const Icon(Icons.refresh),
-            label: const Text('重置篩選'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6C63FF),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              decoration: BoxDecoration(
+                color: _primarySoft,
+                borderRadius: BorderRadius.circular(16),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.refresh_rounded, color: _primaryColor, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    '重置篩選',
+                    style: TextStyle(
+                      color: _primaryColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -663,13 +707,14 @@ class _ExerciseSelectionPageState
 
   Widget _buildBottomActionBar() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 16,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
             offset: const Offset(0, -4),
           ),
         ],
@@ -682,33 +727,37 @@ class _ExerciseSelectionPageState
               '可在訓練中新增動作或調整組數',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey[600],
+                color: _textSecondary,
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _startWorkout,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6C63FF),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 0,
+            const SizedBox(height: 14),
+            GestureDetector(
+              onTap: _startWorkout,
+              child: Container(
+                width: double.infinity,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: _primaryColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _primaryColor.withOpacity(0.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.play_arrow, size: 28),
-                    const SizedBox(width: 12),
+                    const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+                    const SizedBox(width: 10),
                     Text(
                       '開始訓練 (${_selectedExercises.length} 個動作)',
                       style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -726,7 +775,7 @@ class _ExerciseSelectionPageState
       case '胸部':
         return Icons.fitness_center;
       case '背部':
-        return Icons.beach_access;
+        return Icons.sports_gymnastics;
       case '腿部':
         return Icons.directions_run;
       case '肩膀':
@@ -734,32 +783,33 @@ class _ExerciseSelectionPageState
       case '手臂':
         return Icons.front_hand;
       case '腹肌':
-        return Icons.boy;
+        return Icons.sports_martial_arts;
       case '有氧':
         return Icons.directions_bike;
       default:
-        return Icons.sports_gymnastics;
+        return Icons.sports;
     }
   }
 
   Color _getCategoryColor(String category) {
+    // 柔和淡雅的分類色彩（參考參考圖的淡色風格）
     switch (category) {
       case '胸部':
-        return Colors.red;
+        return const Color(0xFFE57373);  // 淡紅
       case '背部':
-        return Colors.blue;
+        return const Color(0xFF81C784);  // 淡綠
       case '腿部':
-        return Colors.orange;
+        return const Color(0xFFFFB74D);  // 淡橘
       case '肩膀':
-        return Colors.purple;
+        return const Color(0xFFBA68C8);  // 淡紫
       case '手臂':
-        return Colors.green;
+        return const Color(0xFF4FC3F7);  // 淡青
       case '腹肌':
-        return Colors.teal;
+        return const Color(0xFF64B5F6);  // 淡藍
       case '有氧':
-        return Colors.pink;
+        return const Color(0xFFF06292);  // 淡粉
       default:
-        return Colors.grey;
+        return const Color(0xFF90A4AE);  // 淡灰
     }
   }
 }

@@ -4,13 +4,13 @@
 // ✅ 標籤區分「自由」和「計畫」訓練
 // ✅ 修正詳情頁面導航，確保資料正確傳遞
 // ✅ 保留所有原有功能
+// ✅ Soft UI 風格統一
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../services/unified_workout_service.dart';
-import '../../models/workout_model.dart';
 import 'free_workout_execution_page.dart';
 import 'workout_summary_page.dart';
 import 'workout_session_detail_page.dart';
@@ -30,6 +30,19 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
   List<Map<String, dynamic>> _todayWorkouts = [];
   Map<String, dynamic> _todaySummary = {};
   bool _isLoading = true;
+
+  // ===== 淡雅 Soft UI 配色（類似飲食記錄風格）=====
+  static const Color _primaryColor = Color(0xFF66BB6A);      // 薄荷綠
+  static const Color _primaryLight = Color(0xFFE8F5E9);      // 極淡綠
+  static const Color _backgroundColor = Color(0xFFF0F4F3);   // 淡綠灰背景
+  static const Color _cardColor = Color(0xFFFFFFFF);         // 純白卡片
+  static const Color _textPrimary = Color(0xFF2D3436);       // 深灰文字
+  static const Color _textSecondary = Color(0xFF636E72);     // 中灰文字
+  
+  // 來源顏色（柔和色）
+  static const Color _selfColor = Color(0xFF81C784);         // 自由訓練 - 薄荷綠
+  static const Color _planColor = Color(0xFFFFB74D);         // 計畫訓練 - 柔和橘
+  static const Color _manualColor = Color(0xFF90A4AE);       // 手動記錄 - 柔和灰
 
   @override
   void initState() {
@@ -175,29 +188,78 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        title: const Text('運動記錄'),
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
+        title: Text(
+          '訓練記錄',
+          style: TextStyle(
+            color: _textPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Icon(Icons.arrow_back_rounded, color: _textPrimary, size: 20),
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _showAddWorkoutDialog(),
-            tooltip: '事後記錄',
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(Icons.refresh_rounded, color: _textPrimary, size: 20),
+              ),
+              onPressed: _loadTodayWorkouts,
+            ),
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: _primaryColor))
           : RefreshIndicator(
               onRefresh: _loadTodayWorkouts,
+              color: _primaryColor,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
@@ -205,38 +267,44 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildTodaySummaryCard(),
-                    const SizedBox(height: 20),
-                    _buildStartWorkoutButton(),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
+                    _buildWeekSummaryCard(),
+                    const SizedBox(height: 16),
                     _buildWorkoutList(),
                     const SizedBox(height: 20),
                     _buildCompletedSessionsSection(),
+                    const SizedBox(height: 80), // 給 FAB 留空間
                   ],
                 ),
               ),
             ),
+      floatingActionButton: _buildStartWorkoutFAB(),
     );
   }
 
-  Widget _buildStartWorkoutButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
+  Widget _buildStartWorkoutFAB() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: _primaryColor.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: FloatingActionButton.extended(
         onPressed: _showSelectExercisesDialog,
-        icon: const Icon(Icons.fitness_center, size: 28),
+        backgroundColor: _primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        icon: const Icon(Icons.add_rounded),
         label: const Text(
           '開始訓練',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
     );
   }
@@ -279,7 +347,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
       if (!mounted) return;
 
       await _loadTodayWorkouts();
-      _showSnackBar('✅ 訓練記錄已保存！', Colors.green);
+      _showSnackBar('訓練記錄已保存！', _primaryColor);
     }
   }
 
@@ -289,17 +357,15 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     int workoutCount = _todaySummary['workoutCount'] ?? 0;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Colors.orange, Colors.deepOrange],
-        ),
-        borderRadius: BorderRadius.circular(16),
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.orange.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -307,32 +373,33 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                '今日運動',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _primaryLight,
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: Icon(Icons.calendar_today_rounded, color: _primaryColor, size: 20),
               ),
+              const SizedBox(width: 12),
               Text(
-                DateFormat('yyyy/MM/dd (E)', 'zh_TW').format(DateTime.now()),
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
+                '今日訓練 ${DateFormat('M月d日 (E)', 'zh_TW').format(DateTime.now())}',
+                style: TextStyle(
+                  color: _textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem(Icons.timer, '$totalDuration', '分鐘'),
-              _buildStatItem(Icons.local_fire_department, '${totalCalories.toInt()}', '大卡'),
-              _buildStatItem(Icons.fitness_center, '$workoutCount', '次'),
+              _buildStatItem(Icons.fitness_center_rounded, '$workoutCount', '次訓練', _primaryColor),
+              _buildStatItem(Icons.timer_rounded, '$totalDuration', '分鐘', const Color(0xFFFFB74D)),
+              _buildStatItem(Icons.local_fire_department_rounded, '${totalCalories.toInt()}', '卡路里', const Color(0xFFEF5350)),
             ],
           ),
         ],
@@ -340,23 +407,151 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     );
   }
 
-  Widget _buildStatItem(IconData icon, String value, String label) {
+  Widget _buildStatItem(IconData icon, String value, String label, Color color) {
     return Column(
       children: [
-        Icon(icon, color: Colors.white, size: 28),
-        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: color, size: 26),
+        ),
+        const SizedBox(height: 12),
         Text(
           value,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: _textPrimary,
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: _textSecondary,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeekSummaryCard() {
+    // 使用已載入的今日數據作為本週統計的一部分
+    int trainDays = (_todaySummary['workoutCount'] ?? 0) > 0 ? 1 : 0;
+    int totalDuration = _todaySummary['totalDuration'] ?? 0;
+    double totalCalories = (_todaySummary['totalCalories'] ?? 0).toDouble();
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _primaryLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.date_range_rounded, color: _primaryColor, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '本週統計',
+                style: TextStyle(
+                  color: _textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _primaryLight,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '過去7天',
+                  style: TextStyle(
+                    color: _primaryColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildWeekStatItem(
+                Icons.check_circle_outline_rounded,
+                '$trainDays',
+                '天訓練',
+                _primaryColor,
+              ),
+              _buildWeekStatItem(
+                Icons.timer_outlined,
+                '$totalDuration',
+                '總分鐘',
+                const Color(0xFFFFB74D),
+              ),
+              _buildWeekStatItem(
+                Icons.local_fire_department_outlined,
+                '${totalCalories.toInt()}',
+                '總卡路里',
+                const Color(0xFFEF5350),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeekStatItem(IconData icon, String value, String label, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          value,
+          style: TextStyle(
+            color: _textPrimary,
             fontSize: 22,
             fontWeight: FontWeight.bold,
           ),
         ),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
+          style: TextStyle(
+            color: _textSecondary,
             fontSize: 12,
           ),
         ),
@@ -366,27 +561,62 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
 
   Widget _buildWorkoutList() {
     if (_todayWorkouts.isEmpty) {
-      return Center(
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
         child: Column(
           children: [
-            const SizedBox(height: 60),
-            Icon(Icons.fitness_center, size: 80, color: Colors.grey[300]),
-            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _primaryLight,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.list_alt_rounded, color: _primaryColor, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '今日訓練記錄',
+                  style: TextStyle(
+                    color: _textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: _primaryLight,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(Icons.fitness_center_rounded, size: 48, color: _primaryColor.withOpacity(0.5)),
+            ),
+            const SizedBox(height: 20),
             Text(
               '今天還沒有運動記錄',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 15, color: _textPrimary),
             ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _showSelectExercisesDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('開始訓練'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
+            const SizedBox(height: 6),
+            Text(
+              '點擊右下角按鈕開始訓練',
+              style: TextStyle(fontSize: 13, color: _textSecondary),
             ),
+            const SizedBox(height: 20),
           ],
         ),
       );
@@ -397,46 +627,76 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     int planCount = _todayWorkouts.where((w) => w['source'] == 'plan').length;
     int manualCount = _todayWorkouts.where((w) => w['source'] == 'manual').length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              '今日訓練',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            Row(
-              children: [
-                if (selfCount > 0)
-                  _buildCountChip('自由', selfCount, Colors.blue),
-                if (planCount > 0) ...[
-                  const SizedBox(width: 6),
-                  _buildCountChip('計畫', planCount, Colors.orange),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _primaryLight,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.list_alt_rounded, color: _primaryColor, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '今日訓練記錄',
+                    style: TextStyle(
+                      color: _textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
-                if (manualCount > 0) ...[
-                  const SizedBox(width: 6),
-                  _buildCountChip('手動', manualCount, Colors.grey),
+              ),
+              Row(
+                children: [
+                  if (selfCount > 0)
+                    _buildCountChip('自由', selfCount, _selfColor),
+                  if (planCount > 0) ...[
+                    const SizedBox(width: 6),
+                    _buildCountChip('計畫', planCount, _planColor),
+                  ],
+                  if (manualCount > 0) ...[
+                    const SizedBox(width: 6),
+                    _buildCountChip('手動', manualCount, _manualColor),
+                  ],
                 ],
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ..._todayWorkouts.map((workout) => _buildWorkoutCard(workout)),
-      ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ..._todayWorkouts.map((workout) => _buildWorkoutCard(workout)),
+        ],
+      ),
     );
   }
 
   /// 🔥 來源統計小標籤
   Widget _buildCountChip(String label, int count, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         '$label $count',
@@ -467,44 +727,19 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
 
     switch (source) {
       case 'plan':
-        sourceColor = Colors.orange;
+        sourceColor = _planColor;
         sourceLabel = '計畫';
-        sourceIcon = Icons.event_note;
+        sourceIcon = Icons.event_note_rounded;
         break;
       case 'self':
-        sourceColor = Colors.blue;
+        sourceColor = _selfColor;
         sourceLabel = '自由';
-        sourceIcon = Icons.self_improvement;
+        sourceIcon = Icons.fitness_center_rounded;
         break;
       default:
-        sourceColor = Colors.grey;
+        sourceColor = _manualColor;
         sourceLabel = '手動';
-        sourceIcon = Icons.edit;
-    }
-    
-    IconData typeIcon;
-    Color typeColor;
-
-    switch (type) {
-      case 'weight_training':
-        typeIcon = Icons.fitness_center;
-        typeColor = Colors.red;
-        break;
-      case 'cardio':
-        typeIcon = Icons.directions_run;
-        typeColor = Colors.blue;
-        break;
-      case 'yoga':
-        typeIcon = Icons.self_improvement;
-        typeColor = Colors.purple;
-        break;
-      case 'self_workout':
-        typeIcon = Icons.sports;
-        typeColor = Colors.green;
-        break;
-      default:
-        typeIcon = Icons.sports;
-        typeColor = Colors.orange;
+        sourceIcon = Icons.edit_rounded;
     }
 
     // 🔥 格式化時間顯示
@@ -517,14 +752,14 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         final dateTime = createdAt is Timestamp 
             ? createdAt.toDate() 
             : DateTime.fromMillisecondsSinceEpoch(createdAt);
-        timeStr = DateFormat('HH:mm').format(dateTime);
+        timeStr = DateFormat('HH:mm:ss').format(dateTime);
       } catch (e) {
         // 忽略解析錯誤
       }
     } else if (timestamp != null) {
       try {
         final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
-        timeStr = DateFormat('HH:mm').format(dateTime);
+        timeStr = DateFormat('HH:mm:ss').format(dateTime);
       } catch (e) {
         // 忽略解析錯誤
       }
@@ -539,15 +774,8 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: _primaryLight.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: [
@@ -555,12 +783,12 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: sourceColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+                color: sourceColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(sourceIcon, color: sourceColor, size: 28),
+              child: Icon(sourceIcon, color: sourceColor, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,9 +798,10 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                       Expanded(
                         child: Text(
                           displayName,
-                          style: const TextStyle(
-                            fontSize: 16,
+                          style: TextStyle(
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
+                            color: _textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -580,16 +809,15 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                       ),
                       // 🔥 來源標籤
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: sourceColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: sourceColor.withOpacity(0.3)),
+                          color: sourceColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           sourceLabel,
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 11,
                             color: sourceColor,
                             fontWeight: FontWeight.bold,
                           ),
@@ -597,24 +825,33 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       if (timeStr.isNotEmpty) ...[
-                        Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
-                        const SizedBox(width: 4),
+                        Icon(Icons.access_time_rounded, size: 13, color: _textSecondary),
+                        const SizedBox(width: 3),
                         Text(
                           timeStr,
-                          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                          style: TextStyle(fontSize: 12, color: _textSecondary),
                         ),
                         const SizedBox(width: 12),
                       ],
-                      Icon(Icons.timer, size: 14, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
+                      Icon(Icons.timer_outlined, size: 13, color: _textSecondary),
+                      const SizedBox(width: 3),
                       Text(
                         '$duration 分鐘',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        style: TextStyle(fontSize: 12, color: _textSecondary),
                       ),
+                      if (caloriesBurned > 0) ...[
+                        const SizedBox(width: 12),
+                        Icon(Icons.local_fire_department_rounded, size: 13, color: const Color(0xFFEF5350)),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${caloriesBurned.toInt()} 卡',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFFEF5350)),
+                        ),
+                      ],
                     ],
                   ),
                   // 🔥 顯示總組數和動作數
@@ -625,15 +862,15 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                         if (totalExercises != null) ...[
                           Text(
                             '$totalExercises 個動作',
-                            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                            style: TextStyle(fontSize: 12, color: _textSecondary),
                           ),
                         ],
                         if (totalSets != null && totalExercises != null)
-                          Text(' · ', style: TextStyle(color: Colors.grey[400])),
+                          Text(' · ', style: TextStyle(color: _textSecondary)),
                         if (totalSets != null)
                           Text(
                             '$totalSets 組',
-                            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                            style: TextStyle(fontSize: 12, color: _textSecondary),
                           ),
                       ],
                     ),
@@ -641,35 +878,15 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (caloriesBurned > 0) ...[
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.local_fire_department, color: Colors.orange, size: 18),
-                      const SizedBox(width: 2),
-                      Text(
-                        '${caloriesBurned.toInt()}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    '卡',
-                    style: TextStyle(fontSize: 10, color: Colors.grey[500]),
-                  ),
-                ],
-              ],
+            const SizedBox(width: 8),
+            // 刪除按鈕
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded, color: const Color(0xFFEF5350).withOpacity(0.7), size: 20),
+              onPressed: () => _deleteWorkout(workout),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, color: Colors.grey[400]),
+            Icon(Icons.chevron_right_rounded, color: _textSecondary),
           ],
         ),
       ),
@@ -739,28 +956,28 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     switch (source) {
       case 'plan':
         sourceText = '教練計畫';
-        sourceColor = Colors.orange;
+        sourceColor = _planColor;
         break;
       case 'self':
         sourceText = '自由訓練';
-        sourceColor = Colors.blue;
+        sourceColor = _selfColor;
         break;
       default:
         sourceText = '手動記錄';
-        sourceColor = Colors.grey;
+        sourceColor = _manualColor;
     }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             Expanded(child: Text(planName ?? name)),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: sourceColor.withOpacity(0.1),
+                color: sourceColor.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -813,6 +1030,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('確認刪除'),
         content: const Text('確定要刪除這筆訓練記錄嗎？'),
         actions: [
@@ -832,7 +1050,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
     if (confirmed == true) {
       try {
         await _workoutService.deleteWorkout(workoutId);
-        _showSnackBar('已刪除訓練記錄', Colors.green);
+        _showSnackBar('已刪除訓練記錄', _primaryColor);
         _loadTodayWorkouts();
       } catch (e) {
         _showSnackBar('刪除失敗：$e', Colors.red);
@@ -897,9 +1115,9 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator()),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator(color: _primaryColor)),
           );
         }
 
@@ -920,184 +1138,216 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
           return const SizedBox.shrink();
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '歷史訓練記錄',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${historySessions.length} 筆',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: historySessions.length,
-              itemBuilder: (context, index) {
-                final doc = historySessions[index];
-                final data = doc.data();
-                final startTs = data['startedAt'] as Timestamp?;
-                final endTs = data['endedAt'] as Timestamp?;
-                final start = startTs?.toDate();
-                final end = endTs?.toDate();
-                final planId = data['planId'];
-                final planName = data['planName'] as String?;
-                final source = planId != null ? 'plan' : 'self';
-
-                String dateText = '未記錄時間';
-                String durationText = '—';
-                
-                if (start != null) {
-                  dateText = DateFormat('yyyy/MM/dd (E)', 'zh_TW').format(start);
-                  
-                  if (end != null) {
-                    final diff = end.difference(start);
-                    final minutes = diff.inMinutes;
-                    final seconds = diff.inSeconds % 60;
-                    durationText = '$minutes分$seconds秒';
-                  }
-                }
-
-                // 來源標籤
-                Color sourceColor = source == 'plan' ? Colors.orange : Colors.blue;
-                String sourceLabel = source == 'plan' ? '計畫' : '自由';
-
-                return FutureBuilder<QuerySnapshot>(
-                  future: _firestore
-                      .collection('workoutLogs')
-                      .where('sessionId', isEqualTo: doc.id)
-                      .limit(1)
-                      .get(),
-                  builder: (context, logSnapshot) {
-                    int exercises = 0;
-                    int totalSets = 0;
-                    double calories = 0;
-
-                    if (logSnapshot.hasData && logSnapshot.data!.docs.isNotEmpty) {
-                      final logData = logSnapshot.data!.docs.first.data() as Map<String, dynamic>;
-                      exercises = logData['totalExercises'] ?? 0;
-                      totalSets = logData['totalSets'] ?? 0;
-                      calories = (logData['caloriesBurned'] ?? 0).toDouble();
-                    }
-
-                    return GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => WorkoutSummaryPage(sessionId: doc.id),
-                        ),
-                      ),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: _cardColor,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                          color: _primaryLight,
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: sourceColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                source == 'plan' ? Icons.event_note : Icons.history,
-                                color: sourceColor,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          planName ?? dateText,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      // 來源標籤
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: sourceColor.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          sourceLabel,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: sourceColor,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (planName != null)
-                                    Text(
-                                      dateText,
-                                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                                    ),
-                                  Text(
-                                    '時長：$durationText · 動作：$exercises · 組數：$totalSets',
-                                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            if (calories > 0)
-                              Column(
-                                children: [
-                                  const Icon(Icons.local_fire_department, color: Colors.orange, size: 20),
-                                  Text(
-                                    '${calories.toInt()}',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(width: 8),
-                            Icon(Icons.chevron_right, color: Colors.grey[400]),
-                          ],
+                        child: Icon(Icons.history_rounded, color: _primaryColor, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '歷史訓練記錄',
+                        style: TextStyle(
+                          color: _textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    );
-                  },
-                );
-              },
-            ),
-          ],
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _primaryLight,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${historySessions.length} 筆',
+                      style: TextStyle(fontSize: 12, color: _primaryColor, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: historySessions.length,
+                itemBuilder: (context, index) {
+                  final doc = historySessions[index];
+                  final data = doc.data();
+                  final startTs = data['startedAt'] as Timestamp?;
+                  final endTs = data['endedAt'] as Timestamp?;
+                  final start = startTs?.toDate();
+                  final end = endTs?.toDate();
+                  final planId = data['planId'];
+                  final planName = data['planName'] as String?;
+                  final source = planId != null ? 'plan' : 'self';
+
+                  String dateText = '未記錄時間';
+                  String durationText = '—';
+                  
+                  if (start != null) {
+                    dateText = DateFormat('yyyy/MM/dd (E)', 'zh_TW').format(start);
+                    
+                    if (end != null) {
+                      final diff = end.difference(start);
+                      final minutes = diff.inMinutes;
+                      final seconds = diff.inSeconds % 60;
+                      durationText = '$minutes分$seconds秒';
+                    }
+                  }
+
+                  // 來源標籤
+                  Color sourceColor = source == 'plan' ? _planColor : _selfColor;
+                  String sourceLabel = source == 'plan' ? '計畫' : '自由';
+
+                  return FutureBuilder<QuerySnapshot>(
+                    future: _firestore
+                        .collection('workoutLogs')
+                        .where('sessionId', isEqualTo: doc.id)
+                        .limit(1)
+                        .get(),
+                    builder: (context, logSnapshot) {
+                      int exercises = 0;
+                      int totalSets = 0;
+                      double calories = 0;
+
+                      if (logSnapshot.hasData && logSnapshot.data!.docs.isNotEmpty) {
+                        final logData = logSnapshot.data!.docs.first.data() as Map<String, dynamic>;
+                        exercises = logData['totalExercises'] ?? 0;
+                        totalSets = logData['totalSets'] ?? 0;
+                        calories = (logData['caloriesBurned'] ?? 0).toDouble();
+                      }
+
+                      return GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => WorkoutSummaryPage(sessionId: doc.id),
+                          ),
+                        ),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: _primaryLight.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: sourceColor.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Icon(
+                                  source == 'plan' ? Icons.event_note_rounded : Icons.history_rounded,
+                                  color: sourceColor,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            planName ?? dateText,
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                              color: _textPrimary,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        // 來源標籤
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: sourceColor.withOpacity(0.15),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            sourceLabel,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: sourceColor,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (planName != null)
+                                      Text(
+                                        dateText,
+                                        style: TextStyle(fontSize: 12, color: _textSecondary),
+                                      ),
+                                    Text(
+                                      '時長：$durationText · 動作：$exercises · 組數：$totalSets',
+                                      style: TextStyle(fontSize: 12, color: _textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              if (calories > 0)
+                                Column(
+                                  children: [
+                                    Icon(Icons.local_fire_department_rounded, color: const Color(0xFFEF5350), size: 20),
+                                    Text(
+                                      '${calories.toInt()}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFFEF5350),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              const SizedBox(width: 8),
+                              Icon(Icons.chevron_right_rounded, color: _textSecondary),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1108,7 +1358,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => AddWorkoutDialog(
         onSave: (data) async {
@@ -1123,7 +1373,7 @@ class _WorkoutLogPageState extends State<WorkoutLogPage> {
             notes: data['notes'],
           );
           _loadTodayWorkouts();
-          _showSnackBar('運動記錄成功！', Colors.green);
+          _showSnackBar('運動記錄成功！', _primaryColor);
         },
       ),
     );
@@ -1144,18 +1394,22 @@ class SelectExercisesDialog extends StatefulWidget {
 class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
   final List<Map<String, dynamic>> _selectedExercises = [];
 
+  // Soft UI 配色
+  static const Color _primaryColor = Color(0xFF4CAF50);
+  static const Color _primaryLight = Color(0xFFE8F5E9);
+
   final List<Map<String, dynamic>> _exerciseLibrary = [
-    {'name': '臥推', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 8, 'restSec': 120},
-    {'name': '深蹲', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 8, 'restSec': 120},
-    {'name': '硬舉', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 5, 'restSec': 180},
-    {'name': '肩推', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 10, 'restSec': 90},
-    {'name': '引體向上', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 8, 'restSec': 90},
-    {'name': '二頭彎舉', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60},
-    {'name': '三頭下壓', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60},
-    {'name': '啞鈴飛鳥', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60},
-    {'name': '腿推', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 10, 'restSec': 90},
-    {'name': '跑步', 'type': 'duration', 'defaultDuration': 30, 'restSec': 0},
-    {'name': '棒式', 'type': 'duration', 'defaultDuration': 60, 'defaultSets': 3, 'restSec': 60},
+    {'name': '臥推', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 8, 'restSec': 120, 'category': '胸部'},
+    {'name': '深蹲', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 8, 'restSec': 120, 'category': '腿部'},
+    {'name': '硬舉', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 5, 'restSec': 180, 'category': '背部'},
+    {'name': '肩推', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 10, 'restSec': 90, 'category': '肩膀'},
+    {'name': '引體向上', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 8, 'restSec': 90, 'category': '背部'},
+    {'name': '二頭彎舉', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60, 'category': '手臂'},
+    {'name': '三頭下壓', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60, 'category': '手臂'},
+    {'name': '啞鈴飛鳥', 'type': 'reps', 'defaultSets': 3, 'defaultReps': 12, 'restSec': 60, 'category': '胸部'},
+    {'name': '腿推', 'type': 'reps', 'defaultSets': 4, 'defaultReps': 10, 'restSec': 90, 'category': '腿部'},
+    {'name': '跑步', 'type': 'duration', 'defaultDuration': 30, 'restSec': 0, 'category': '有氧'},
+    {'name': '棒式', 'type': 'duration', 'defaultDuration': 60, 'defaultSets': 3, 'restSec': 60, 'category': '腹肌'},
   ];
 
   void _addExercise(Map<String, dynamic> exercise) {
@@ -1163,6 +1417,7 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
       _selectedExercises.add({
         'name': exercise['name'],
         'type': exercise['type'],
+        'category': exercise['category'],
         'plannedSets': exercise['defaultSets'] ?? 3,
         'plannedReps': exercise['defaultReps'],
         'plannedDurationSec': exercise['defaultDuration'] != null 
@@ -1179,93 +1434,131 @@ class _SelectExercisesDialogState extends State<SelectExercisesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Text(
-                '選擇訓練動作',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
-          const Divider(),
-
-          if (_selectedExercises.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '已選擇：',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _selectedExercises.asMap().entries.map((entry) {
-                final index = entry.key;
-                final ex = entry.value;
-                return Chip(
-                  label: Text('${index + 1}. ${ex['name']}'),
-                  deleteIcon: const Icon(Icons.close, size: 18),
-                  onDeleted: () => _removeExercise(index),
-                  backgroundColor: Colors.orange[100],
-                );
-              }).toList(),
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Text(
+                  '選擇訓練動作',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
             ),
             const Divider(),
-          ],
 
-          Expanded(
-            child: ListView.builder(
-              itemCount: _exerciseLibrary.length,
-              itemBuilder: (context, index) {
-                final ex = _exerciseLibrary[index];
-                return ListTile(
-                  leading: const Icon(Icons.fitness_center, color: Colors.orange),
-                  title: Text(ex['name']),
-                  subtitle: Text(
-                    ex['type'] == 'reps'
-                        ? '${ex['defaultSets']} 組 × ${ex['defaultReps']} 次'
-                        : '${ex['defaultDuration']} 分鐘',
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.add_circle, color: Colors.green),
-                    onPressed: () => _addExercise(ex),
-                  ),
-                );
-              },
-            ),
-          ),
+            if (_selectedExercises.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '已選擇：',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _selectedExercises.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final ex = entry.value;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _primaryLight,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _primaryColor.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${index + 1}. ${ex['name']}',
+                          style: TextStyle(color: _primaryColor, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => _removeExercise(index),
+                          child: Icon(Icons.close_rounded, size: 16, color: _primaryColor),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+              const Divider(),
+            ],
 
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _selectedExercises.isEmpty
-                  ? null
-                  : () => widget.onConfirm(_selectedExercises),
-              icon: const Icon(Icons.check),
-              label: Text('確認（${_selectedExercises.length} 個動作）'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                disabledBackgroundColor: Colors.grey[300],
+            Expanded(
+              child: ListView.builder(
+                itemCount: _exerciseLibrary.length,
+                itemBuilder: (context, index) {
+                  final ex = _exerciseLibrary[index];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F7F6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.fitness_center_rounded, color: _primaryColor, size: 20),
+                      ),
+                      title: Text(ex['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        ex['type'] == 'reps'
+                            ? '${ex['category']} · ${ex['defaultSets']} 組 × ${ex['defaultReps']} 次'
+                            : '${ex['category']} · ${ex['defaultDuration']} 分鐘',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.add_circle_rounded, color: _primaryColor, size: 28),
+                        onPressed: () => _addExercise(ex),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-          ),
-        ],
+
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _selectedExercises.isEmpty
+                    ? null
+                    : () => widget.onConfirm(_selectedExercises),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text(
+                  '開始訓練（${_selectedExercises.length} 個動作）',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  disabledBackgroundColor: Colors.grey[300],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1291,6 +1584,8 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
   final _repsController = TextEditingController();
   String _selectedIntensity = 'medium';
 
+  static const Color _primaryColor = Color(0xFF4CAF50);
+
   final Map<String, String> _workoutTypes = {
     'weight_training': '重量訓練',
     'cardio': '有氧運動',
@@ -1312,6 +1607,17 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             const Text(
               '事後記錄運動',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -1319,9 +1625,9 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
             const SizedBox(height: 20),
             DropdownButtonFormField<String>(
               value: _selectedType,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: '運動類型',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               items: _workoutTypes.entries
                   .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
@@ -1331,9 +1637,9 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: '運動名稱',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
             const SizedBox(height: 16),
@@ -1342,9 +1648,9 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                 Expanded(
                   child: TextField(
                     controller: _durationController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: '時長（分鐘）',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     keyboardType: TextInputType.number,
                   ),
@@ -1353,9 +1659,9 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                 Expanded(
                   child: TextField(
                     controller: _caloriesController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: '消耗卡路里',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     keyboardType: TextInputType.number,
                   ),
@@ -1369,9 +1675,9 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                   Expanded(
                     child: TextField(
                       controller: _setsController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '組數',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       keyboardType: TextInputType.number,
                     ),
@@ -1380,9 +1686,9 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                   Expanded(
                     child: TextField(
                       controller: _repsController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '次數',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       keyboardType: TextInputType.number,
                     ),
@@ -1397,7 +1703,11 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                 onPressed: () {
                   if (_nameController.text.isEmpty || _durationController.text.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('請填寫必填欄位')),
+                      SnackBar(
+                        content: const Text('請填寫必填欄位'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
                     );
                     return;
                   }
@@ -1422,11 +1732,12 @@ class _AddWorkoutDialogState extends State<AddWorkoutDialog> {
                   Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor: _primaryColor,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Text('保存', style: TextStyle(fontSize: 16)),
+                child: const Text('保存', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
             const SizedBox(height: 16),

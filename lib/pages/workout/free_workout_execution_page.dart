@@ -8,14 +8,15 @@ import '../../services/user_service.dart';
 import '../../utils/exercise_calorie_calculator.dart';
 import 'workout_summary_page.dart';
 
-/// 自由訓練執行頁面 - v5.0 極簡流程版
+/// 自由訓練執行頁面 - v5.1 精簡專業版
 /// 
 /// 核心改進：
-/// 1. 🚀 極簡流程 - 完成動作後 Toast 3秒自動跳下一個，不彈對話框
-/// 2. 💤 隨時休息 - 新增「需要休息？」按鈕，任何時候都能休息
-/// 3. 🎉 全螢幕慶祝 - 全部完成時顯示慶祝畫面
-/// 4. 🔀 滑動切換 - 左右滑動切換動作
-/// 5. ➕ 中途新增 - 訓練中可新增動作
+/// 1. 極簡流程 - 完成動作後提示自動消失，不彈對話框
+/// 2. 隨時休息 - 懸浮休息按鈕，任何時候都能休息
+/// 3. 全螢幕慶祝 - 全部完成時顯示慶祝畫面
+/// 4. 滑動切換 - 左右滑動切換動作
+/// 5. 中途新增 - 訓練中可新增動作
+/// 6. 計時保留 - 切換組數時暫停計時，回來可繼續
 /// 
 /// 設計理念：減少打斷，讓用戶「無腦跟著做」
 class FreeWorkoutExecutionPage extends StatefulWidget {
@@ -57,12 +58,10 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   Timer? _totalTimer;
   Timer? _setTimer;
   Timer? _restTimer;
-  Timer? _toastTimer; // 🆕 Toast 自動跳轉計時器
+  Timer? _messageTimer;
   int _totalElapsedSeconds = 0;
-  int _setElapsedSeconds = 0;
   int _remainingRestTime = 0;
   int _totalRestTime = 90;
-  int _toastCountdown = 3; // 🆕 Toast 倒數秒數
 
   // 記錄休息開始時間
   int _restStartTime = 0;
@@ -70,15 +69,16 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   // === 動畫 ===
   late AnimationController _pulseController;
   late AnimationController _restPulseController;
-  late AnimationController _celebrationController; // 🆕 慶祝動畫
+  late AnimationController _celebrationController;
 
   // === UI 狀態 ===
-  bool _showToast = false; // 🆕 是否顯示 Toast
-  String _toastTitle = '';
-  String _toastSubtitle = '';
-  int? _nextExerciseIndex; // 🆕 Toast 跳轉目標
-  bool _showCelebration = false; // 🆕 是否顯示慶祝畫面
-  bool _isManualResting = false; // 🆕 是否為手動休息
+  bool _showCelebration = false;
+  bool _isManualResting = false;
+  String? _completionMessage;
+
+  // 懸浮休息按鈕位置
+  Offset? _floatingButtonPosition;
+  bool _isDragging = false;
 
   @override
   void initState() {
@@ -115,9 +115,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
       setState(() {
         _userBodyWeight = weight;
       });
-      debugPrint('✅ 載入用戶體重: $_userBodyWeight kg');
+      debugPrint('[載入] 用戶體重: $_userBodyWeight kg');
     } catch (e) {
-      debugPrint('⚠️ 載入體重失敗: $e');
+      debugPrint('[警告] 載入體重失敗: $e');
     }
   }
 
@@ -134,7 +134,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
       setState(() => _isInitialized = true);
       _startTotalTimer();
     } catch (e) {
-      debugPrint('❌ 初始化失敗: $e');
+      debugPrint('[錯誤] 初始化失敗: $e');
     }
   }
 
@@ -143,7 +143,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     _totalTimer?.cancel();
     _setTimer?.cancel();
     _restTimer?.cancel();
-    _toastTimer?.cancel();
+    _messageTimer?.cancel();
     _pulseController.dispose();
     _restPulseController.dispose();
     _celebrationController.dispose();
@@ -163,9 +163,13 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
 
   void _startSetTimer() {
     _setTimer?.cancel();
-    _setElapsedSeconds = 0;
+    // 從已累積的時間繼續（支援暫停後繼續）
     _setTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => _setElapsedSeconds++);
+      setState(() {
+        if (currentSet != null) {
+          currentSet!.elapsedSeconds++;
+        }
+      });
     });
   }
 
@@ -197,7 +201,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     
     final restTakenSec = _restStartTime;
     
-    // 🆕 如果是手動休息，不更新 Firebase，直接返回訓練
+    // 如果是手動休息，不更新 Firebase，直接返回訓練
     if (_isManualResting) {
       setState(() {
         _isManualResting = false;
@@ -213,69 +217,47 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         restTakenSec: restTakenSec,
       );
     } catch (e) {
-      debugPrint('❌ 休息結束同步失敗: $e');
+      debugPrint('[錯誤] 休息結束同步失敗: $e');
     }
     
     _moveToNextSet();
   }
 
   // ============================================================
-  // 🆕 Toast 通知系統（取代對話框）
+  // 輕量完成提示
   // ============================================================
 
-  void _showExerciseCompletedToast(int? nextIndex) {
-    _toastTimer?.cancel();
+  void _showCompletionMessage(String message) {
+    _messageTimer?.cancel();
     
-    final currentName = currentExercise['name'] ?? '動作';
-    final nextName = nextIndex != null ? _exercises[nextIndex]['name'] : null;
-
     setState(() {
-      _showToast = true;
-      _toastTitle = '✅ $currentName 完成！';
-      _toastSubtitle = nextName != null ? '即將進入：$nextName' : '所有動作已完成';
-      _toastCountdown = 3;
-      _nextExerciseIndex = nextIndex;
+      _completionMessage = message;
     });
 
     HapticFeedback.mediumImpact();
 
-    // 開始倒數
-    _toastTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_toastCountdown > 1) {
-        setState(() => _toastCountdown--);
-      } else {
-        timer.cancel();
-        _onToastComplete();
+    // 2秒後自動消失
+    _messageTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _completionMessage = null);
       }
     });
   }
 
-  void _onToastComplete() {
-    if (!_showToast) return;
+  void _onExerciseCompleted() {
+    final nextIndex = _nextIncompleteExerciseIndex;
     
-    setState(() {
-      _showToast = false;
-    });
-
-    if (_nextExerciseIndex != null) {
-      // 跳到下一個動作
-      _switchToExercise(_nextExerciseIndex!);
-    } else {
+    if (nextIndex == null) {
       // 全部完成，顯示慶祝畫面
       _showAllCompletedCelebration();
+    } else {
+      // 還有其他動作，顯示提示
+      _showCompletionMessage('完成！滑動選擇下一個動作');
     }
   }
 
-  void _cancelToastAndDoAction(VoidCallback action) {
-    _toastTimer?.cancel();
-    setState(() {
-      _showToast = false;
-    });
-    action();
-  }
-
   // ============================================================
-  // 🆕 全螢幕慶祝畫面
+  // 全螢幕慶祝畫面
   // ============================================================
 
   void _showAllCompletedCelebration() {
@@ -293,15 +275,15 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   }
 
   // ============================================================
-  // 🆕 手動休息功能
+  // 手動休息功能
   // ============================================================
 
   void _startManualRest() {
-    // 如果正在訓練中，先停止計時
+    // 如果正在訓練中，先停止計時（但保留已累積時間）
     if (currentSet?.status == 'active') {
       _stopSetTimer();
       setState(() {
-        currentSet!.status = 'pending';
+        currentSet!.status = 'paused'; // 改用 paused 狀態
       });
     }
 
@@ -318,6 +300,11 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     _restTimer?.cancel();
     setState(() {
       _isManualResting = false;
+      // 如果之前是暫停狀態，恢復為 active 並繼續計時
+      if (currentSet?.status == 'paused') {
+        currentSet!.status = 'active';
+        _startSetTimer();
+      }
     });
   }
 
@@ -338,33 +325,53 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   String get currentExerciseDocId => 'ex$_currentExerciseIndex';
   bool get _isLastSet => _currentSetIndex >= currentTotalSets - 1;
 
-  // 🆕 檢查所有動作是否都有完成至少一組
-  bool get _allExercisesHaveProgress {
+  // 檢查所有「有開始的動作」是否都完成了
+  bool get _allStartedExercisesCompleted {
+    bool hasAnyStarted = false;
     for (int i = 0; i < _exercises.length; i++) {
       final sets = _exerciseSets[i] ?? [];
-      if (sets.isEmpty || !sets.any((s) => s.status == 'completed')) {
-        return false;
+      if (sets.isNotEmpty) {
+        hasAnyStarted = true;
+        if (!sets.every((s) => s.status == 'completed' || s.status == 'skipped')) {
+          return false;
+        }
       }
     }
-    return true;
+    return hasAnyStarted;
   }
 
-  // 🆕 取得下一個未完成的動作索引
+  // 取得下一個可以做的動作索引
   int? get _nextIncompleteExerciseIndex {
-    // 先從當前動作之後找
+    // 1. 先找「有開始但還沒做完」的動作
     for (int i = _currentExerciseIndex + 1; i < _exercises.length; i++) {
       final sets = _exerciseSets[i] ?? [];
-      if (sets.isEmpty || !sets.any((s) => s.status == 'completed')) {
+      if (sets.isNotEmpty && sets.any((s) => 
+          s.status == 'pending' || s.status == 'active' || s.status == 'paused')) {
         return i;
       }
     }
-    // 再從頭找
     for (int i = 0; i < _currentExerciseIndex; i++) {
       final sets = _exerciseSets[i] ?? [];
-      if (sets.isEmpty || !sets.any((s) => s.status == 'completed')) {
+      if (sets.isNotEmpty && sets.any((s) => 
+          s.status == 'pending' || s.status == 'active' || s.status == 'paused')) {
         return i;
       }
     }
+    
+    // 2. 再找「還沒開始」的動作
+    for (int i = _currentExerciseIndex + 1; i < _exercises.length; i++) {
+      final sets = _exerciseSets[i] ?? [];
+      if (sets.isEmpty) {
+        return i;
+      }
+    }
+    for (int i = 0; i < _currentExerciseIndex; i++) {
+      final sets = _exerciseSets[i] ?? [];
+      if (sets.isEmpty) {
+        return i;
+      }
+    }
+    
     return null;
   }
 
@@ -375,35 +382,51 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   void _onPageChanged(int index) {
     if (index == _currentExerciseIndex) return;
 
-    // 取消 Toast
-    if (_showToast) {
-      _toastTimer?.cancel();
-      setState(() => _showToast = false);
-    }
+    // 清除提示訊息
+    _messageTimer?.cancel();
+    setState(() => _completionMessage = null);
 
     // 處理當前狀態
-    if (currentSet?.status == 'resting') {
-      _restTimer?.cancel();
-      setState(() => currentSet!.status = 'completed');
+    final currentSetData = currentSet;
+    if (currentSetData != null) {
+      if (currentSetData.status == 'resting') {
+        // 組間休息中切換：標記為完成，回來直接下一組
+        _restTimer?.cancel();
+        setState(() => currentSetData.status = 'completed');
+      } else if (currentSetData.status == 'active') {
+        // 訓練中切換：暫停，保留計時
+        _stopSetTimer();
+        setState(() => currentSetData.status = 'paused');
+      }
     }
-    if (currentSet?.status == 'active') {
-      _stopSetTimer();
-      setState(() => currentSet!.status = 'pending');
+    
+    // 如果是手動休息中切換，取消休息
+    if (_isManualResting) {
+      _restTimer?.cancel();
+      setState(() => _isManualResting = false);
+    }
+
+    // 切換到新動作
+    final newSets = _exerciseSets[index] ?? [];
+    int newSetIndex = 0;
+    
+    if (newSets.isNotEmpty) {
+      // 找到第一個未完成的組（pending, active, paused）
+      final firstIncompleteIndex = newSets.indexWhere((s) => 
+          s.status == 'pending' || s.status == 'active' || s.status == 'paused');
+      
+      if (firstIncompleteIndex >= 0) {
+        // 有未完成的組，跳到那一組
+        newSetIndex = firstIncompleteIndex;
+      } else {
+        // 全部完成或跳過，顯示最後一組
+        newSetIndex = newSets.length - 1;
+      }
     }
 
     setState(() {
       _currentExerciseIndex = index;
-      _currentSetIndex = 0;
-      
-      final sets = _exerciseSets[index] ?? [];
-      if (sets.isNotEmpty) {
-        final lastCompletedIndex = sets.lastIndexWhere((s) => s.status == 'completed');
-        if (lastCompletedIndex >= 0 && lastCompletedIndex < sets.length - 1) {
-          _currentSetIndex = lastCompletedIndex + 1;
-        } else if (lastCompletedIndex == sets.length - 1) {
-          _currentSetIndex = sets.length - 1;
-        }
-      }
+      _currentSetIndex = newSetIndex;
     });
 
     HapticFeedback.selectionClick();
@@ -489,7 +512,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                 _service.adHocAddExercise(
                   sessionId: _sessionId!,
                   exercise: newExercise,
-                ).catchError((e) => debugPrint('❌ 新增動作同步失敗: $e'));
+                ).catchError((e) => debugPrint('[錯誤] 新增動作同步失敗: $e'));
 
                 Navigator.pop(context);
                 
@@ -534,7 +557,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
 
     setState(() {
       sets.add(newSet);
-      _currentSetIndex = sets.length - 1;
+      if (sets.length == 1) {
+        _currentSetIndex = 0;
+      }
     });
 
     try {
@@ -544,8 +569,10 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         targetReps: defaultReps,
       );
     } catch (e) {
-      debugPrint('❌ 新增組數失敗: $e');
+      debugPrint('[錯誤] 新增組數失敗: $e');
     }
+    
+    HapticFeedback.lightImpact();
   }
 
   void _startCurrentSet() {
@@ -565,11 +592,23 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     HapticFeedback.mediumImpact();
   }
 
+  // 繼續已暫停的組
+  void _resumeCurrentSet() {
+    if (currentSet == null || currentSet!.status != 'paused') return;
+
+    setState(() {
+      currentSet!.status = 'active';
+    });
+    
+    _startSetTimer();
+    HapticFeedback.mediumImpact();
+  }
+
   Future<void> _completeCurrentSet() async {
     if (currentSet == null) return;
 
     _stopSetTimer();
-    final setDuration = _setElapsedSeconds;
+    final setDuration = currentSet!.elapsedSeconds;
     currentSet!.durationSec = setDuration;
 
     try {
@@ -582,12 +621,10 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         durationSec: setDuration,
       );
     } catch (e) {
-      debugPrint('❌ 完成組數同步失敗: $e');
+      debugPrint('[錯誤] 完成組數同步失敗: $e');
     }
 
-    // 🆕 新流程：判斷是否最後一組
     if (_isLastSet) {
-      // 最後一組，標記為完成
       try {
         await _service.adHocEndRest(
           sessionId: _sessionId!,
@@ -596,7 +633,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
           restTakenSec: 0,
         );
       } catch (e) {
-        debugPrint('❌ 更新狀態失敗: $e');
+        debugPrint('[錯誤] 更新狀態失敗: $e');
       }
 
       setState(() {
@@ -604,10 +641,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
       });
 
       HapticFeedback.heavyImpact();
-
-      // 🆕 顯示 Toast，3秒後自動跳轉
-      final nextIndex = _nextIncompleteExerciseIndex;
-      _showExerciseCompletedToast(nextIndex);
+      _onExerciseCompleted();
       
     } else {
       // 不是最後一組，進入組間休息
@@ -623,9 +657,13 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   Future<void> _skipRest() async {
     _restTimer?.cancel();
     
-    // 🆕 如果是手動休息，直接取消
     if (_isManualResting) {
       setState(() => _isManualResting = false);
+      // 如果之前是暫停狀態，恢復為 active
+      if (currentSet?.status == 'paused') {
+        currentSet!.status = 'active';
+        _startSetTimer();
+      }
       return;
     }
     
@@ -639,7 +677,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         restTakenSec: restTakenSec,
       );
     } catch (e) {
-      debugPrint('❌ 跳過休息同步失敗: $e');
+      debugPrint('[錯誤] 跳過休息同步失敗: $e');
     }
     
     _moveToNextSet();
@@ -648,6 +686,8 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   Future<void> _skipCurrentSet() async {
     if (currentSet == null) return;
 
+    _stopSetTimer();
+    
     setState(() {
       currentSet!.status = 'skipped';
     });
@@ -659,12 +699,11 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         setIndex: _currentSetIndex,
       );
     } catch (e) {
-      debugPrint('❌ 略過同步失敗: $e');
+      debugPrint('[錯誤] 略過同步失敗: $e');
     }
 
     if (_isLastSet) {
-      final nextIndex = _nextIncompleteExerciseIndex;
-      _showExerciseCompletedToast(nextIndex);
+      _onExerciseCompleted();
     } else {
       _moveToNextSet();
     }
@@ -681,10 +720,23 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   }
 
   void _onSetTapped(int index) {
-    final set = _exerciseSets[_currentExerciseIndex]![index];
-    if (set.status == 'pending' || set.status == 'completed') {
-      setState(() => _currentSetIndex = index);
+    final sets = _exerciseSets[_currentExerciseIndex]!;
+    if (index >= sets.length) return;
+    
+    final currentSetData = currentSet;
+    
+    // 如果點擊的是當前組，不做任何事
+    if (index == _currentSetIndex) return;
+    
+    // 如果當前組正在訓練中，暫停它（保留計時）
+    if (currentSetData?.status == 'active') {
+      _stopSetTimer();
+      setState(() => currentSetData!.status = 'paused');
     }
+    
+    // 切換到目標組
+    setState(() => _currentSetIndex = index);
+    HapticFeedback.selectionClick();
   }
 
   // ============================================================
@@ -709,7 +761,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
           category: category,
           reps: set.reps,
           weight: set.weight,
-          durationSeconds: set.durationSec ?? 30,
+          durationSeconds: set.durationSec ?? set.elapsedSeconds,
           bodyWeight: _userBodyWeight,
         );
       }
@@ -733,7 +785,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   void _finishWorkout() async {
     _totalTimer?.cancel();
     _restTimer?.cancel();
-    _toastTimer?.cancel();
+    _messageTimer?.cancel();
 
     final sessionId = _sessionId!;
 
@@ -742,9 +794,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         sessionId: sessionId,
         userBodyWeight: _userBodyWeight,
       );
-      debugPrint('✅ Firebase session 已完成');
+      debugPrint('[完成] Firebase session 已完成');
     } catch (e) {
-      debugPrint('❌ Firebase session 完成失敗: $e');
+      debugPrint('[錯誤] Firebase session 完成失敗: $e');
     }
 
     if (!mounted) return;
@@ -774,6 +826,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
       switch (set.status) {
         case 'completed': return SetStatus.completed;
         case 'active': return SetStatus.active;
+        case 'paused': return SetStatus.active; // paused 顯示為 active 狀態
         case 'resting': return SetStatus.resting;
         case 'skipped': return SetStatus.skipped;
         default: return SetStatus.pending;
@@ -793,11 +846,13 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
       );
     }
 
-    // 🆕 判斷顯示哪個畫面
     final isResting = currentSet?.status == 'resting' || _isManualResting;
+    
+    // 更白的背景色
+    const softBackground = Color(0xFFFAFBFC);
 
     return Scaffold(
-      backgroundColor: isResting ? WorkoutColors.rest : WorkoutColors.background,
+      backgroundColor: isResting ? WorkoutColors.rest : softBackground,
       body: Stack(
         children: [
           // 主要內容
@@ -805,10 +860,15 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
             child: isResting ? _buildRestingView() : _buildTrainingView(),
           ),
 
-          // 🆕 Toast 通知覆蓋層
-          if (_showToast) _buildToastOverlay(),
+          // 懸浮休息按鈕（只在訓練中顯示）
+          if (!isResting && !_showCelebration && currentTotalSets > 0)
+            _buildFloatingRestButton(),
 
-          // 🆕 慶祝畫面覆蓋層
+          // 輕量完成提示（底部）
+          if (_completionMessage != null && !isResting && !_showCelebration)
+            _buildCompletionMessage(),
+
+          // 慶祝畫面覆蓋層
           if (_showCelebration) _buildCelebrationOverlay(),
         ],
       ),
@@ -816,114 +876,42 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   }
 
   // ============================================================
-  // 🆕 Toast 通知 UI
+  // 輕量完成提示 UI
   // ============================================================
 
-  Widget _buildToastOverlay() {
-    return Positioned.fill(
-      child: Container(
-        color: Colors.black54,
-        child: Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 32),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+  Widget _buildCompletionMessage() {
+    return Positioned(
+      bottom: 100,
+      left: 24,
+      right: 24,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: WorkoutColors.success,
+            borderRadius: BorderRadius.circular(25),
+            boxShadow: [
+              BoxShadow(
+                color: WorkoutColors.success.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                _completionMessage!,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 標題
-                Text(
-                  _toastTitle,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                
-                // 副標題 + 倒數
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _toastSubtitle,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: WorkoutColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '$_toastCountdown',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: WorkoutColors.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                
-                // 按鈕
-                Row(
-                  children: [
-                    // 直接開始（跳過倒數）
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _cancelToastAndDoAction(_onToastComplete),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          _nextExerciseIndex != null ? '直接開始' : '查看總結',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    
-                    // 先休息一下
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _cancelToastAndDoAction(_startManualRest),
-                        icon: const Icon(Icons.bedtime, size: 20),
-                        label: const Text('先休息', style: TextStyle(fontSize: 16)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: WorkoutColors.rest,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -931,7 +919,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   }
 
   // ============================================================
-  // 🆕 慶祝畫面 UI
+  // 慶祝畫面 UI
   // ============================================================
 
   Widget _buildCelebrationOverlay() {
@@ -939,11 +927,11 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     
     return Positioned.fill(
       child: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              WorkoutColors.success,
-              WorkoutColors.success.withOpacity(0.8),
+              Color(0xFF4CAF50),
+              Color(0xFF388E3C),
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -953,16 +941,25 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 慶祝 emoji
+              // 慶祝圖示
               AnimatedBuilder(
                 animation: _celebrationController,
                 builder: (context, child) {
                   final scale = 1.0 + (_celebrationController.value * 0.2);
                   return Transform.scale(
                     scale: scale,
-                    child: const Text(
-                      '🎉',
-                      style: TextStyle(fontSize: 80),
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.emoji_events,
+                        size: 56,
+                        color: Colors.white,
+                      ),
                     ),
                   );
                 },
@@ -994,7 +991,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(24),
                 ),
                 child: Column(
                   children: [
@@ -1038,7 +1035,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                           side: const BorderSide(color: Colors.white54, width: 2),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
                       ),
@@ -1056,7 +1053,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                           foregroundColor: WorkoutColors.success,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
                       ),
@@ -1104,17 +1101,19 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
         _buildAppBar(),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 _buildSwipeableExerciseCard(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 _buildSetsProgressCard(),
-                const SizedBox(height: 16),
-                if (currentTotalSets > 0) _buildCurrentSetCard(),
-                // 🆕 手動休息按鈕
-                if (currentTotalSets > 0 && currentSet?.status != 'active')
-                  _buildManualRestButton(),
+                const SizedBox(height: 12),
+                if (currentTotalSets > 0) 
+                  _buildCurrentSetCard()
+                else
+                  _buildEmptySetPrompt(),
               ],
             ),
           ),
@@ -1123,34 +1122,76 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     );
   }
 
-  // 🆕 手動休息按鈕
-  Widget _buildManualRestButton() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: InkWell(
-        onTap: _startManualRest,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-          decoration: BoxDecoration(
-            color: WorkoutColors.rest.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: WorkoutColors.rest.withOpacity(0.3)),
+  Widget _buildEmptySetPrompt() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.touch_app, size: 48, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text(
+            '點擊上方 + 新增組數',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[500],
+            ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.bedtime_outlined, color: WorkoutColors.rest.withOpacity(0.8), size: 22),
-              const SizedBox(width: 8),
-              Text(
-                '需要休息一下？',
-                style: TextStyle(
-                  color: WorkoutColors.rest.withOpacity(0.8),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingRestButton() {
+    final screenSize = MediaQuery.of(context).size;
+    
+    _floatingButtonPosition ??= Offset(
+      screenSize.width - 76,
+      screenSize.height - 180,
+    );
+    
+    return Positioned(
+      left: _floatingButtonPosition!.dx,
+      top: _floatingButtonPosition!.dy,
+      child: GestureDetector(
+        onPanStart: (_) => setState(() => _isDragging = true),
+        onPanUpdate: (details) {
+          setState(() {
+            final newX = (_floatingButtonPosition!.dx + details.delta.dx)
+                .clamp(0.0, screenSize.width - 60);
+            final newY = (_floatingButtonPosition!.dy + details.delta.dy)
+                .clamp(100.0, screenSize.height - 120);
+            _floatingButtonPosition = Offset(newX, newY);
+          });
+        },
+        onPanEnd: (_) => setState(() => _isDragging = false),
+        onTap: _startManualRest,
+        child: Transform.scale(
+          scale: _isDragging ? 1.15 : 1.0,
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF81C784), Color(0xFF66BB6A)],  // 薄荷綠
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ],
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF66BB6A).withOpacity(_isDragging ? 0.5 : 0.3),
+                  blurRadius: _isDragging ? 16 : 12,
+                  offset: const Offset(0, 4),
+                  spreadRadius: _isDragging ? 2 : 0,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.bedtime_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
           ),
         ),
       ),
@@ -1234,11 +1275,11 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: (isFullyCompleted ? WorkoutColors.success : WorkoutColors.primary).withOpacity(0.3),
-              blurRadius: 12,
+              color: (isFullyCompleted ? WorkoutColors.success : WorkoutColors.primary).withOpacity(0.25),
+              blurRadius: 16,
               offset: const Offset(0, 6),
             ),
           ],
@@ -1305,7 +1346,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                       const SizedBox(height: 4),
                       Text(
                         totalSets > 0 
-                            ? (isFullyCompleted ? '✓ 已完成 $completedSets 組' : '已完成 $completedSets / $totalSets 組')
+                            ? (isFullyCompleted ? '已完成 $completedSets 組' : '已完成 $completedSets / $totalSets 組')
                             : '尚未開始',
                         style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
                       ),
@@ -1380,7 +1421,6 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
-                // 🆕 手動休息時顯示「取消」按鈕
                 IconButton(
                   onPressed: _isManualResting ? _cancelManualRest : () => _skipRest(),
                   icon: const Icon(Icons.close, color: Colors.white70),
@@ -1401,7 +1441,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                _isManualResting ? '休息中 💤' : '組間休息',
+                _isManualResting ? '休息中' : '組間休息',
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 18,
@@ -1444,14 +1484,13 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
               ),
               const SizedBox(height: 48),
 
-              // 🆕 顯示不同的提示
               if (!_isManualResting)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 32),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Column(
                     children: [
@@ -1502,7 +1541,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.white54),
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
                   ),
                 ),
@@ -1521,7 +1560,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                       backgroundColor: Colors.white,
                       foregroundColor: WorkoutColors.rest,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
                   ),
                 ),
@@ -1538,6 +1577,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   // ============================================================
 
   Widget _buildAppBar() {
+    final hasAnyProgress = _exerciseSets.values.any((sets) => 
+      sets.any((s) => s.status == 'completed'));
+    
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -1570,6 +1612,34 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
             ),
           ),
 
+          if (hasAnyProgress)
+            GestureDetector(
+              onTap: _finishWorkout,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                margin: const EdgeInsets.only(right: 4),
+                decoration: BoxDecoration(
+                  color: WorkoutColors.success,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.flag, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      '結束',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           IconButton(
             onPressed: () => _showOptionsMenu(),
             icon: Container(
@@ -1592,6 +1662,10 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   // ============================================================
 
   Widget _buildSetsProgressCard() {
+    final completedCount = _exerciseSets[_currentExerciseIndex]?.where((s) => s.status == 'completed').length ?? 0;
+    final allSetsCompleted = currentTotalSets > 0 && 
+        (_exerciseSets[_currentExerciseIndex]?.every((s) => s.status == 'completed' || s.status == 'skipped') ?? false);
+    
     return SoftCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1604,9 +1678,9 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               Text(
-                '${_exerciseSets[_currentExerciseIndex]?.where((s) => s.status == 'completed').length ?? 0} / $currentTotalSets 組',
-                style: const TextStyle(
-                  color: WorkoutColors.primary,
+                '$completedCount / $currentTotalSets 組',
+                style: TextStyle(
+                  color: allSetsCompleted ? WorkoutColors.success : WorkoutColors.primary,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1705,184 +1779,245 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     if (set == null) return const SizedBox();
 
     final isActive = set.status == 'active';
+    final isPaused = set.status == 'paused';
     final isPending = set.status == 'pending';
     final isCompleted = set.status == 'completed';
+    final isSkipped = set.status == 'skipped';
+
+    // 檢查是否整個動作都完成了
+    final allSetsCompleted = _exerciseSets[_currentExerciseIndex]?.every(
+      (s) => s.status == 'completed' || s.status == 'skipped'
+    ) ?? false;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: isActive ? WorkoutColors.success : WorkoutColors.primary.withOpacity(0.3),
-          width: isActive ? 2 : 1,
+          color: allSetsCompleted ? WorkoutColors.success :
+                 isActive ? WorkoutColors.success : 
+                 isPaused ? WorkoutColors.active :
+                 WorkoutColors.primary.withOpacity(0.2),
+          width: (isActive || isPaused || allSetsCompleted) ? 2 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: (isActive ? WorkoutColors.success : WorkoutColors.primary).withOpacity(0.1),
-            blurRadius: 12,
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '第 ${_currentSetIndex + 1} 組',
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          // 如果整個動作都完成了，顯示完成訊息
+          if (allSetsCompleted) ...[
+            const Icon(Icons.check_circle, color: WorkoutColors.success, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              '此動作已完成',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: WorkoutColors.success,
               ),
-              if (isActive) ...[
-                const SizedBox(width: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: WorkoutColors.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.timer, size: 16, color: WorkoutColors.success),
-                      const SizedBox(width: 4),
-                      Text(
-                        _formatDuration(_setElapsedSeconds),
-                        style: const TextStyle(
-                          color: WorkoutColors.success,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-
-          const SizedBox(height: 4),
-          Text(
-            isActive ? '訓練中' : (isCompleted ? '已完成' : '準備開始'),
-            style: TextStyle(
-              color: isActive ? WorkoutColors.success : Colors.grey,
-              fontSize: 14,
             ),
-          ),
-
-          const SizedBox(height: 20),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildNumberInput(
-                  label: '次數',
-                  value: set.reps,
-                  unit: '下',
-                  icon: Icons.repeat,
-                  color: WorkoutColors.primary,
-                  onChanged: (val) => setState(() => set.reps = val),
-                  step: 1,
-                  enabled: !isCompleted,
-                ),
+            const SizedBox(height: 8),
+            Text(
+              '共完成 ${_exerciseSets[_currentExerciseIndex]?.where((s) => s.status == 'completed').length ?? 0} 組',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
               ),
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: _buildNumberInput(
-                  label: '重量',
-                  value: set.weight.toInt(),
-                  unit: 'kg',
-                  icon: Icons.fitness_center,
-                  color: WorkoutColors.active,
-                  onChanged: (val) => setState(() => set.weight = val.toDouble()),
-                  step: 5,
-                  enabled: !isCompleted,
-                ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _addSet,
+              icon: const Icon(Icons.add),
+              label: const Text('加練一組'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: WorkoutColors.primary,
+                side: const BorderSide(color: WorkoutColors.primary),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          if (isPending)
-            _buildPrimaryButton(
-              label: '開始這組',
-              icon: Icons.play_arrow,
-              color: WorkoutColors.primary,
-              onPressed: _startCurrentSet,
-            )
-          else if (isActive)
-            _buildPrimaryButton(
-              label: '✓ 完成這組',
-              icon: Icons.check,
-              color: WorkoutColors.success,
-              onPressed: _completeCurrentSet,
-            )
-          else if (isCompleted)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle, color: WorkoutColors.success),
-                  SizedBox(width: 8),
-                  Text(
-                    '已完成',
-                    style: TextStyle(
-                      color: WorkoutColors.success,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+            ),
+          ] else ...[
+            // 標題行
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '第 ${_currentSetIndex + 1} 組',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                if (isActive || isPaused) ...[
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (isPaused ? WorkoutColors.active : WorkoutColors.success).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isPaused ? Icons.pause : Icons.timer, 
+                          size: 14, 
+                          color: isPaused ? WorkoutColors.active : WorkoutColors.success,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatDuration(set.elapsedSeconds),
+                          style: TextStyle(
+                            color: isPaused ? WorkoutColors.active : WorkoutColors.success,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
+              ],
+            ),
+
+            const SizedBox(height: 2),
+            Text(
+              isActive ? '訓練中' : 
+              isPaused ? '已暫停' :
+              isCompleted ? '已完成' : 
+              isSkipped ? '已略過' : '準備開始',
+              style: TextStyle(
+                color: isActive ? WorkoutColors.success : 
+                       isPaused ? WorkoutColors.active :
+                       isCompleted ? WorkoutColors.success :
+                       Colors.grey,
+                fontSize: 13,
               ),
             ),
 
-          if (!isCompleted) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _skipCurrentSet,
-              icon: const Icon(Icons.skip_next, size: 18),
-              label: const Text('略過本組'),
-              style: TextButton.styleFrom(foregroundColor: Colors.grey),
+            const SizedBox(height: 12),
+
+            // 次數和重量
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCompactNumberInput(
+                    label: '次數',
+                    value: set.reps,
+                    unit: '下',
+                    color: WorkoutColors.primary,
+                    onChanged: (val) => setState(() => set.reps = val),
+                    step: 1,
+                    enabled: !isCompleted && !isSkipped,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildCompactNumberInput(
+                    label: '重量',
+                    value: set.weight.toInt(),
+                    unit: 'kg',
+                    color: WorkoutColors.active,
+                    onChanged: (val) => setState(() => set.weight = val.toDouble()),
+                    step: 5,
+                    enabled: !isCompleted && !isSkipped,
+                  ),
+                ),
+              ],
             ),
+
+            const SizedBox(height: 12),
+
+            // 按鈕
+            if (isPending)
+              _buildCompactButton(
+                label: '開始這組',
+                icon: Icons.play_arrow,
+                color: WorkoutColors.primary,
+                onPressed: _startCurrentSet,
+              )
+            else if (isPaused)
+              _buildCompactButton(
+                label: '繼續這組',
+                icon: Icons.play_arrow,
+                color: WorkoutColors.active,
+                onPressed: _resumeCurrentSet,
+              )
+            else if (isActive)
+              _buildCompactButton(
+                label: '完成這組',
+                icon: Icons.check,
+                color: WorkoutColors.success,
+                onPressed: _completeCurrentSet,
+              )
+            else if (isCompleted || isSkipped)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isCompleted ? Icons.check_circle : Icons.skip_next,
+                      color: isCompleted ? WorkoutColors.success : Colors.grey,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isCompleted ? '已完成' : '已略過',
+                      style: TextStyle(
+                        color: isCompleted ? WorkoutColors.success : Colors.grey,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (!isCompleted && !isSkipped)
+              TextButton(
+                onPressed: _skipCurrentSet,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  minimumSize: const Size(0, 32),
+                ),
+                child: Text(
+                  '略過本組',
+                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                ),
+              ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildNumberInput({
+  Widget _buildCompactNumberInput({
     required String label,
     required int value,
     required String unit,
-    required IconData icon,
     required Color color,
     required Function(int) onChanged,
     required int step,
     required bool enabled,
   }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
         color: color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 4),
-              Text(label, style: TextStyle(color: color, fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 8),
-
+          Text(label, style: TextStyle(color: color, fontSize: 11)),
+          const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1895,33 +2030,30 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                     }
                   },
                   child: Container(
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                       boxShadow: WorkoutColors.softShadowSmall,
                     ),
-                    child: Icon(Icons.remove, size: 18, color: color),
+                    child: Icon(Icons.remove, size: 16, color: color),
                   ),
                 ),
-
               Expanded(
                 child: GestureDetector(
                   onTap: enabled ? () => _showNumberPicker(label, value, onChanged) : null,
-                  child: Center(
-                    child: Text(
-                      '$value',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: enabled ? color : Colors.grey,
-                      ),
+                  child: Text(
+                    '$value',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: enabled ? color : Colors.grey,
                     ),
                   ),
                 ),
               ),
-
               if (enabled)
                 GestureDetector(
                   onTap: () {
@@ -1929,22 +2061,44 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                     HapticFeedback.selectionClick();
                   },
                   child: Container(
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                       boxShadow: WorkoutColors.softShadowSmall,
                     ),
-                    child: Icon(Icons.add, size: 18, color: color),
+                    child: Icon(Icons.add, size: 16, color: color),
                   ),
                 ),
             ],
           ),
-
-          const SizedBox(height: 4),
-          Text(unit, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+          const SizedBox(height: 2),
+          Text(unit, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompactButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          elevation: 0,
+        ),
       ),
     );
   }
@@ -1984,29 +2138,6 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     );
   }
 
-  Widget _buildPrimaryButton({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon),
-        label: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
-        ),
-      ),
-    );
-  }
-
   // ============================================================
   // 對話框
   // ============================================================
@@ -2038,7 +2169,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => SafeArea(
         child: Column(
@@ -2107,7 +2238,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => SafeArea(
         child: Column(
@@ -2142,7 +2273,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.6,
@@ -2213,7 +2344,7 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
                     ),
                     subtitle: Text(
                       totalSets > 0 
-                          ? (isCompleted ? '✓ 已完成' : '$completedSets / $totalSets 組')
+                          ? (isCompleted ? '已完成' : '$completedSets / $totalSets 組')
                           : '尚未開始',
                       style: TextStyle(
                         color: isCompleted ? WorkoutColors.success : (hasProgress ? WorkoutColors.active : Colors.grey),
@@ -2235,17 +2366,19 @@ class _FreeWorkoutExecutionPageState extends State<FreeWorkoutExecutionPage>
   }
 }
 
-/// 組數資料模型
+/// 組數資料模型 - 新增 elapsedSeconds 保留計時進度
 class SetData {
   int reps;
   double weight;
-  String status;
+  String status; // pending, active, paused, resting, completed, skipped
   int? durationSec;
+  int elapsedSeconds; // 已累積的秒數（支援暫停繼續）
 
   SetData({
     required this.reps,
     required this.weight,
     required this.status,
     this.durationSec,
+    this.elapsedSeconds = 0,
   });
 }

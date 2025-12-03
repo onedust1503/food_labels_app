@@ -1,11 +1,12 @@
 // lib/services/unified_workout_service.dart
-// 🔧 統一訓練記錄服務 - 完整整合版 v5
+// 🔧 統一訓練記錄服務 - 完整整合版 v6
 // ✅ 保留所有原有功能
 // ✅ 新增 Plan Session 方法（教練計畫訓練）
 // ✅ 新增整合讀取方法（同時顯示自由訓練和計畫訓練）
 // ✅ 修正 adHocEndRest 狀態更新
 // ✅ 🔥 新增：精確卡路里計算（基於 Compendium of Physical Activities 2024 MET 值）
 // ✅ 🔥 v5 新增：訓練命名功能（workoutName 參數）
+// ✅ 🔥 v6 新增動作追蹤（addedExercisesCount + addedDuringSession 標記）
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1259,11 +1260,18 @@ class UnifiedWorkoutService {
     List<Map<String, dynamic>> exerciseDetails = [];
     int totalCompletedSets = 0;
     double totalCalories = 0;
+    int addedExercisesCount = 0;  // 🔥 v6 新增：追蹤新增動作數量
 
     for (final exDoc in exercisesSnap.docs) {
       final exData = exDoc.data();
       final exerciseName = exData['exerciseName'] ?? '未命名動作';
       final category = exData['category'] as String?;
+      final isAddedDuringSession = exData['addedDuringSession'] == true;  // 🔥 v6 新增
+
+       // 🔥 v6 新增：計數新增動作
+      if (isAddedDuringSession) {
+        addedExercisesCount++;
+      }
       
       // 獲取該動作的所有組數
       final setsSnap = await exDoc.reference.collection('sets').get();
@@ -1332,6 +1340,7 @@ class UnifiedWorkoutService {
           'completedSets': completedSets,
           'sets': setsInfo,
           'category': category ?? '未分類',
+          'addedDuringSession': isAddedDuringSession,  // 🔥 v6 新增
         });
       }
     }
@@ -1360,6 +1369,7 @@ class UnifiedWorkoutService {
       'caloriesBurned': finalCalories.roundToDouble(),
       'totalSets': totalCompletedSets,
       'totalExercises': exerciseDetails.length,
+      'addedExercisesCount': addedExercisesCount,  // 🔥 v6 新增
       'intensity': 'medium',
       'notes': '$workoutName - ${exerciseDetails.length} 個動作',  // 🔥 使用名稱
       'sessionId': sessionId,
@@ -1383,6 +1393,7 @@ class UnifiedWorkoutService {
       'caloriesBurned': finalCalories.roundToDouble(),
       'totalSets': totalCompletedSets,
       'totalExercises': exerciseDetails.length,
+      'addedExercisesCount': addedExercisesCount,  // 🔥 v6 新增
       'sessionId': sessionId,
       'source': 'self',
       'exercises': exerciseDetails,
@@ -1401,6 +1412,7 @@ class UnifiedWorkoutService {
       debugPrint('   🔥 精確卡路里: ${finalCalories.toStringAsFixed(1)} (基於 MET 計算)');
       debugPrint('   總組數: $totalCompletedSets');
       debugPrint('   動作數: ${exerciseDetails.length}');
+      debugPrint('   🔥 新增動作數: $addedExercisesCount');  // 🔥 v6 新增
       debugPrint('   ✅ 已同時寫入 workoutLogs 和 workoutSessions');
     }
   }
@@ -1529,11 +1541,18 @@ class UnifiedWorkoutService {
     List<Map<String, dynamic>> exerciseDetails = [];
     int totalCompletedSets = 0;
     double totalCalories = 0;
+    int addedExercisesCount = 0;  // 🔥 v6 新增
 
     for (final exDoc in exercisesSnap.docs) {
       final exData = exDoc.data();
       final exerciseName = exData['exerciseName'] ?? '未命名動作';
       final category = exData['category'] ?? '未分類';
+      final isAddedDuringSession = exData['addedDuringSession'] == true;  // 🔥 v6 新增
+
+      // 🔥 v6 新增：計數新增動作
+      if (isAddedDuringSession) {
+        addedExercisesCount++;
+      }
       
       // 獲取該動作的所有組數
       final setsSnap = await exDoc.reference.collection('sets').get();
@@ -1600,6 +1619,7 @@ class UnifiedWorkoutService {
           'completedSets': completedSets,
           'sets': setsInfo,
           'category': category,
+          'addedDuringSession': isAddedDuringSession,  // 🔥 v6 新增
         });
       }
     }
@@ -1631,6 +1651,7 @@ class UnifiedWorkoutService {
       'caloriesBurned': finalCalories.roundToDouble(),
       'totalSets': totalCompletedSets,
       'totalExercises': exerciseDetails.length,
+      'addedExercisesCount': addedExercisesCount,  // 🔥 v6 新增
       'intensity': 'medium',
       'notes': '$planName - ${exerciseDetails.length} 個動作',
       'sessionId': sessionId,
@@ -1657,6 +1678,7 @@ class UnifiedWorkoutService {
       'caloriesBurned': finalCalories.roundToDouble(),
       'totalSets': totalCompletedSets,
       'totalExercises': exerciseDetails.length,
+      'addedExercisesCount': addedExercisesCount,  // 🔥 v6 新增
       'sessionId': sessionId,
       'source': 'plan',
       'exercises': exerciseDetails,
@@ -1822,6 +1844,7 @@ class UnifiedWorkoutService {
           'planId': data['planId'],
           'planName': data['planName'],
           'source': data['source'] ?? 'self',
+          'addedExercisesCount': data['addedExercisesCount'] ?? 0,  // 🔥 v6 新增
         };
       }
 
@@ -1880,6 +1903,7 @@ class UnifiedWorkoutService {
         'planId': sessionData['planId'],
         'planName': sessionData['planName'],
         'source': sessionData['source'] ?? 'self',
+        'addedExercisesCount': sessionData['addedExercisesCount'] ?? 0,  // 🔥 v6 新增
       };
     } catch (e) {
       if (kDebugMode) {

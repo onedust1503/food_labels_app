@@ -1,9 +1,11 @@
 // lib/pages/improved_workout_log_page.dart
-// ✅ 整合版 v7 - 訓練命名功能
-// ✅ 🔥 新增：編輯訓練名稱功能
-// ✅ 🔥 新增：按日期分組顯示（今天/昨天/具體日期）
+// ✅ 整合版 v8 - 可摺疊日期分組
+// ✅ 🔥 新增：日期分組可摺疊（今天展開，其他摺疊）
+// ✅ 🔥 新增：摺疊時顯示統計摘要（幾筆、總時長、總卡路里）
+// ✅ 🔥 新增：精確時間顯示（分鐘+秒數）
+// ✅ 編輯訓練名稱功能
+// ✅ 按日期分組顯示（今天/昨天/具體日期）
 // ✅ 分頁設計（記錄/分析）
-// ✅ 類似飲食記錄的 7天/30天 切換
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -37,28 +39,30 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // ===== Soft UI 淡綠色配色（統一風格）=====
-  static const Color _primaryColor = Color(0xFF66BB6A);      // 薄荷綠
-  static const Color _primaryDark = Color(0xFF4CAF50);       // 深綠
-  static const Color _primaryLight = Color(0xFFE8F5E9);      // 極淡綠
-  static const Color _backgroundColor = Color(0xFFF0F4F3);   // 淡綠灰背景
-  static const Color _cardColor = Color(0xFFFFFFFF);         // 純白卡片
-  static const Color _textPrimary = Color(0xFF2D3436);       // 深灰文字
-  static const Color _textSecondary = Color(0xFF636E72);     // 中灰文字
+  static const Color _primaryColor = Color(0xFF66BB6A);
+  static const Color _primaryDark = Color(0xFF4CAF50);
+  static const Color _primaryLight = Color(0xFFE8F5E9);
+  static const Color _backgroundColor = Color(0xFFF0F4F3);
+  static const Color _cardColor = Color(0xFFFFFFFF);
+  static const Color _textPrimary = Color(0xFF2D3436);
+  static const Color _textSecondary = Color(0xFF636E72);
   
-  // 來源顏色
-  static const Color _planColor = Color(0xFFFFB74D);         // 計畫訓練 - 柔和橘
-  static const Color _freeColor = Color(0xFF81C784);         // 自由訓練 - 淡綠
-  static const Color _manualColor = Color(0xFF90A4AE);       // 手動記錄 - 柔和灰
+  static const Color _planColor = Color(0xFFFFB74D);
+  static const Color _freeColor = Color(0xFF81C784);
+  static const Color _manualColor = Color(0xFF90A4AE);
 
-  // 圖表顏色（綠色系）
-  static const Color _chartColor = Color(0xFF66BB6A);        // 薄荷綠
-  static const Color _chartColorLight = Color(0xFFA5D6A7);   // 淡綠
+  static const Color _chartColor = Color(0xFF66BB6A);
+  static const Color _chartColorLight = Color(0xFFA5D6A7);
 
   late TabController _tabController;
   bool _isLoading = true;
   
-  // 🔥 記錄頁數據 - 改為按日期分組
+  // 🔥 記錄頁數據 - 按日期分組
   Map<String, List<Map<String, dynamic>>> _workoutsByDate = {};
+  
+  // 🔥 v8 新增：追蹤展開的日期
+  Set<String> _expandedDates = {};
+  
   Map<String, dynamic> _todayStats = {
     'totalDuration': 0,
     'totalCalories': 0.0,
@@ -97,7 +101,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     return widget.traineeId ?? _auth.currentUser?.uid ?? '';
   }
 
-  // 🔥 獲取日期標籤（今天/昨天/具體日期）
   String _getDateLabel(DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -109,7 +112,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     } else if (targetDate == yesterday) {
       return '昨天';
     } else {
-      // 判斷是否是今年
       if (date.year == now.year) {
         return DateFormat('M月d日 (E)', 'zh_TW').format(date);
       } else {
@@ -118,12 +120,11 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     }
   }
 
-  // 🔥 獲取日期鍵值（用於分組）
   String _getDateKey(DateTime date) {
     return DateFormat('yyyy-MM-dd').format(date);
   }
 
-  // ===== 載入記錄頁數據（改為獲取最近7天）=====
+  // ===== 載入記錄頁數據 =====
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
@@ -135,7 +136,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
       }
 
       final now = DateTime.now();
-      // 🔥 改為獲取最近7天的數據
       final startDate = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
       final endDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
 
@@ -168,6 +168,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
           'id': doc.id,
           'name': data['name'] ?? '未知運動',
           'duration': data['duration'] ?? 0,
+          'totalDurationSeconds': data['totalDurationSeconds'],
           'caloriesBurned': (data['caloriesBurned'] ?? 0.0).toDouble(),
           'sessionId': data['sessionId'],
           'totalSets': data['totalSets'] ?? data['sets'],
@@ -194,6 +195,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
           'id': doc.id,
           'name': data['name'] ?? '未知運動',
           'duration': data['duration'] ?? 0,
+          'totalDurationSeconds': data['totalDurationSeconds'],
           'caloriesBurned': (data['caloriesBurned'] ?? 0.0).toDouble(),
           'sessionId': data['sessionId'],
           'totalSets': data['totalSets'] ?? data['sets'],
@@ -209,7 +211,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
       final workouts = mergedMap.values.toList();
       workouts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
 
-      // 🔥 按日期分組
       final Map<String, List<Map<String, dynamic>>> groupedWorkouts = {};
       
       int planCount = 0;
@@ -236,7 +237,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
           freeCount++;
         }
 
-        // 只計算今天的統計
         if (dateKey == todayKey) {
           todayDuration += (workout['duration'] ?? 0) as int;
           todayCalories += (workout['caloriesBurned'] ?? 0.0) as double;
@@ -255,6 +255,9 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
             'workoutCount': todayCount,
           };
           _isLoading = false;
+          
+          // 🔥 v8：預設展開今天
+          _expandedDates = {todayKey};
         });
       }
     } catch (e) {
@@ -285,7 +288,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
 
       final Map<String, Map<String, dynamic>> dailyMap = {};
 
-      // 初始化每日數據
       for (int i = 0; i < _analysisDays; i++) {
         final date = startDate.add(Duration(days: i));
         final key = DateFormat('yyyy-MM-dd').format(date);
@@ -356,7 +358,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     final TextEditingController controller = TextEditingController(text: currentName);
     String? selectedQuickName;
 
-    // 快速選擇標籤
     final List<String> quickNames = [
       '胸部訓練', '背部訓練', '腿部訓練', '肩部訓練',
       '手臂訓練', '核心訓練', '全身訓練', '有氧運動',
@@ -387,7 +388,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 輸入框
                 TextField(
                   controller: controller,
                   autofocus: true,
@@ -426,7 +426,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
                 ),
                 const SizedBox(height: 16),
                 
-                // 快速選擇標籤
                 Text(
                   '快速選擇',
                   style: TextStyle(
@@ -504,16 +503,13 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     }
   }
 
-  // 🔥 更新訓練名稱到 Firebase
   Future<void> _updateWorkoutName(String workoutId, String? sessionId, String newName) async {
     try {
       final batch = _firestore.batch();
 
-      // 更新 workoutLogs
       final logRef = _firestore.collection('workoutLogs').doc(workoutId);
       batch.update(logRef, {'name': newName});
 
-      // 更新 users/{uid}/workouts
       final userId = _currentUserId;
       if (userId.isNotEmpty) {
         final userWorkoutRef = _firestore
@@ -524,12 +520,10 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
         batch.update(userWorkoutRef, {'name': newName});
       }
 
-      // 如果有 sessionId，也更新 workoutSessions
       if (sessionId != null && sessionId.isNotEmpty) {
         final sessionRef = _firestore.collection('workoutSessions').doc(sessionId);
         batch.update(sessionRef, {'name': newName});
 
-        // 也更新 users/{uid}/workoutSessions
         if (userId.isNotEmpty) {
           final userSessionRef = _firestore
               .collection('users')
@@ -686,7 +680,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== TabBar（綠色風格）=====
   Widget _buildTabBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -740,7 +733,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== 記錄分頁 =====
   Widget _buildRecordTab() {
     return RefreshIndicator(
       onRefresh: _loadData,
@@ -753,7 +745,7 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
             if (widget.planId != null) _buildPlanModeInfoCard(),
             _buildTodayStatsCard(),
             const SizedBox(height: 16),
-            _buildWorkoutsListByDate(),  // 🔥 改為按日期分組的列表
+            _buildWorkoutsListByDate(),
             const SizedBox(height: 80),
           ],
         ),
@@ -761,7 +753,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== 分析分頁 =====
   Widget _buildAnalysisTab() {
     return RefreshIndicator(
       onRefresh: _loadAnalysisData,
@@ -785,7 +776,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== 7天/30天 選擇器（綠色風格）=====
   Widget _buildDaySelector() {
     return Container(
       padding: const EdgeInsets.all(6),
@@ -838,7 +828,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== 訓練時長趨勢圖（綠色風格）=====
   Widget _buildDurationTrendCard() {
     final avgDuration = _analysisStats['avgDuration'] ?? 0;
 
@@ -1032,7 +1021,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== 分析統計卡片 =====
   Widget _buildAnalysisStatsCard() {
     final workoutDays = _analysisStats['workoutDays'] ?? 0;
     final totalDuration = _analysisStats['totalDuration'] ?? 0;
@@ -1130,7 +1118,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // ===== 歷史訓練列表 =====
   Widget _buildHistoryList() {
     final uid = _currentUserId;
     if (uid.isEmpty) return const SizedBox.shrink();
@@ -1544,25 +1531,35 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
     );
   }
 
-  // 🔥 按日期分組的訓練列表
+  // 🔥 v8：可摺疊的日期分組訓練列表
   Widget _buildWorkoutsListByDate() {
     if (_workoutsByDate.isEmpty) {
       return _buildEmptyWorkoutsCard();
     }
 
-    // 按日期排序（最新的在前）
     final sortedDates = _workoutsByDate.keys.toList()
       ..sort((a, b) => b.compareTo(a));
+
+    final todayKey = _getDateKey(DateTime.now());
 
     return Column(
       children: sortedDates.map((dateKey) {
         final workouts = _workoutsByDate[dateKey]!;
         final date = workouts.first['createdAt'] as DateTime;
         final dateLabel = _getDateLabel(date);
-        final isToday = dateKey == _getDateKey(DateTime.now());
+        final isToday = dateKey == todayKey;
+        final isExpanded = _expandedDates.contains(dateKey);
+
+        // 🔥 計算該日統計
+        int totalDuration = 0;
+        double totalCalories = 0;
+        for (var w in workouts) {
+          totalDuration += (w['duration'] ?? 0) as int;
+          totalCalories += (w['caloriesBurned'] ?? 0.0) as double;
+        }
 
         return Container(
-          margin: const EdgeInsets.only(bottom: 16),
+          margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
             color: _cardColor,
             borderRadius: BorderRadius.circular(20),
@@ -1575,63 +1572,128 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
             ],
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 日期標題
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isToday ? _primaryColor : _primaryLight,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        isToday ? Icons.today_rounded : Icons.calendar_today_rounded,
-                        color: isToday ? Colors.white : _primaryColor,
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      dateLabel,
-                      style: TextStyle(
-                        color: _textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _primaryLight,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${workouts.length} 筆',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _primaryColor,
-                          fontWeight: FontWeight.w600,
+              // 🔥 可點擊的日期標題
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedDates.remove(dateKey);
+                    } else {
+                      _expandedDates.add(dateKey);
+                    }
+                  });
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                  child: Row(
+                    children: [
+                      // 日期圖標
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isToday ? _primaryColor : _primaryLight,
+                          borderRadius: BorderRadius.circular(10),
                         ),
+                        child: Icon(
+                          isToday ? Icons.today_rounded : Icons.calendar_today_rounded,
+                          color: isToday ? Colors.white : _primaryColor,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      
+                      // 日期標籤
+                      Text(
+                        dateLabel,
+                        style: TextStyle(
+                          color: _textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      
+                      // 筆數徽章
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _primaryLight,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${workouts.length} 筆',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _primaryColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      
+                      const Spacer(),
+                      
+                      // 🔥 摺疊時顯示統計摘要
+                      if (!isExpanded) ...[
+                        Text(
+                          '$totalDuration分',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.local_fire_department_rounded,
+                          size: 14,
+                          color: const Color(0xFFEF5350),
+                        ),
+                        Text(
+                          '${totalCalories.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFEF5350),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      
+                      // 展開/摺疊圖標
+                      AnimatedRotation(
+                        turns: isExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: _textSecondary,
+                          size: 24,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // 🔥 可展開的訓練列表
+              AnimatedCrossFade(
+                firstChild: const SizedBox(height: 0),
+                secondChild: Column(
+                  children: [
+                    Divider(height: 1, color: _primaryLight),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        children: workouts.map((w) => _buildWorkoutItem(w)).toList(),
                       ),
                     ),
                   ],
                 ),
-              ),
-              
-              // 分隔線
-              Divider(height: 1, color: _primaryLight),
-              
-              // 訓練列表
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: workouts.map((w) => _buildWorkoutItem(w)).toList(),
-                ),
+                crossFadeState: isExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 200),
               ),
             ],
           ),
@@ -1687,7 +1749,10 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
 
   Widget _buildWorkoutItem(Map<String, dynamic> workout) {
     final name = workout['name'] ?? '未知運動';
-    final duration = workout['duration'] ?? 0;
+    final totalSeconds = workout['totalDurationSeconds'] as int? ?? 
+        ((workout['duration'] ?? 0) as int) * 60;
+    final durationMin = totalSeconds ~/ 60;
+    final durationSec = totalSeconds % 60;
     final calories = (workout['caloriesBurned'] ?? 0.0).toDouble();
     final workoutId = workout['id'] ?? '';
     final source = workout['source'] as String? ?? 'self';
@@ -1774,7 +1839,10 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
                         children: [
                           Icon(Icons.timer_outlined, size: 12, color: _textSecondary),
                           const SizedBox(width: 2),
-                          Text('$duration分', style: TextStyle(fontSize: 11, color: _textSecondary)),
+                          Text(
+                            durationSec > 0 ? '$durationMin分$durationSec秒' : '$durationMin分',
+                            style: TextStyle(fontSize: 11, color: _textSecondary),
+                          ),
                         ],
                       ),
                       if (calories > 0)
@@ -1798,7 +1866,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
                 ],
               ),
             ),
-            // 🔥 編輯按鈕
             IconButton(
               icon: Icon(Icons.edit_rounded, color: _primaryColor.withAlpha(179), size: 18),
               onPressed: () => _showEditNameDialog(workout),
@@ -1806,7 +1873,6 @@ class _ImprovedWorkoutLogPageState extends State<ImprovedWorkoutLogPage>
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               tooltip: '編輯名稱',
             ),
-            // 刪除按鈕
             IconButton(
               icon: Icon(Icons.delete_outline_rounded, color: const Color(0xFFEF5350).withAlpha(179), size: 18),
               onPressed: () => _confirmDelete(workoutId, name),

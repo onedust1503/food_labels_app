@@ -3,6 +3,8 @@
 // ✅ 支援計畫訓練 (source: 'plan') 和自由訓練 (source: 'self')
 // ✅ 添加 share_plus 分享功能
 // 🔥 v2 新增：顯示訓練名稱（而非固定文字）
+// 🔥 v3 新增：時長顯示「X 分 Y 秒」格式
+// 🔥 v3 新增：動作數量顯示「+N 新增」標註
 // ⚠️ 需要在 pubspec.yaml 添加: share_plus: ^7.2.1
 
 import 'package:flutter/material.dart';
@@ -93,9 +95,11 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
           debugPrint('   planName: ${_sessionData['planName']}');
           debugPrint('   name: ${_sessionData['name']}');
           debugPrint('   duration: ${_sessionData['duration']}');
+          debugPrint('   totalDurationSeconds: ${_sessionData['totalDurationSeconds']}');
           debugPrint('   totalCalories: ${_sessionData['totalCalories']}');
           debugPrint('   totalSets: ${_sessionData['totalSets']}');
           debugPrint('   totalExercises: ${_sessionData['totalExercises']}');
+          debugPrint('   addedExercisesCount: ${_sessionData['addedExercisesCount']}');
         }
         
         // 提取 exercises
@@ -121,10 +125,10 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         debugPrint('═══════════════════════════════════════════');
         debugPrint('✅ 載入完成:');
         debugPrint('   訓練類型: ${_isPlanWorkout ? "計畫訓練" : "自由訓練"}');
-        debugPrint('   🔥 訓練名稱: $_workoutName');  // 🔥 新增
+        debugPrint('   🔥 訓練名稱: $_workoutName');
         debugPrint('   計畫名稱: $_planName');
-        debugPrint('   訓練時長: $_duration 分鐘');
-        debugPrint('   動作數量: $_totalExercises');
+        debugPrint('   訓練時長: $_durationDisplay');
+        debugPrint('   動作數量: $_totalExercises (新增: $_addedExercisesCount)');
         debugPrint('   總組數: $_totalSets');
         debugPrint('   完成組數: $_completedSets');
         debugPrint('   消耗卡路里: $_calories');
@@ -166,7 +170,8 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         final name = ex['name'] ?? ex['exerciseName'] ?? '未命名';
         final completedSets = ex['completedSets'] ?? 0;
         final sets = ex['sets'] as List? ?? [];
-        debugPrint('   ${i + 1}. $name - completedSets: $completedSets, sets.length: ${sets.length}');
+        final isAdded = ex['addedDuringSession'] == true;
+        debugPrint('   ${i + 1}. $name - completedSets: $completedSets, sets.length: ${sets.length}${isAdded ? ' [新增]' : ''}');
         
         // 檢查 sets 結構
         if (sets.isNotEmpty) {
@@ -193,7 +198,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         debugPrint('✅ 從 workoutSessions 讀取成功');
         debugPrint('   source: ${_sessionData['source']}');
         debugPrint('   planName: ${_sessionData['planName']}');
-        debugPrint('   🔥 name: ${_sessionData['name']}');  // 🔥 新增
+        debugPrint('   🔥 name: ${_sessionData['name']}');
       }
       _extractExercises();
       return;
@@ -342,23 +347,43 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
   /// 星期幾（僅計畫訓練有）
   String? get _dayOfWeek => _sessionData['dayOfWeek'] as String?;
 
-  /// 訓練時長（分鐘）
-  int get _duration {
-    // UnifiedWorkoutService 寫入的是 'duration' (分鐘)
-    if (_sessionData['duration'] != null) {
-      return (_sessionData['duration'] as num).toInt();
-    }
-    // 備用：從 totalDurationSeconds 計算
+  /// 🔥 訓練時長（總秒數）
+  int get _totalDurationSeconds {
+    // 優先使用 totalDurationSeconds
     if (_sessionData['totalDurationSeconds'] != null) {
-      return ((_sessionData['totalDurationSeconds'] as num) / 60).ceil();
+      return (_sessionData['totalDurationSeconds'] as num).toInt();
     }
-    // 備用：從時間戳計算
+    // 從時間戳計算
     final start = _parseTimestamp(_sessionData['startedAt']);
     final end = _parseTimestamp(_sessionData['endedAt'] ?? _sessionData['completedAt']);
     if (start != null && end != null) {
-      return end.difference(start).inMinutes.clamp(1, 999);
+      return end.difference(start).inSeconds.clamp(1, 99999);
+    }
+    // 備用：從 duration (分鐘) 轉換
+    if (_sessionData['duration'] != null) {
+      return ((_sessionData['duration'] as num).toInt() * 60);
     }
     return 0;
+  }
+
+  /// 訓練時長（分鐘）- 保留向後相容
+  int get _duration {
+    return (_totalDurationSeconds / 60).ceil().clamp(1, 999);
+  }
+
+  /// 🔥 時長顯示字串（X 分 Y 秒）
+  String get _durationDisplay {
+    final totalSec = _totalDurationSeconds;
+    final minutes = totalSec ~/ 60;
+    final seconds = totalSec % 60;
+    
+    if (minutes > 0 && seconds > 0) {
+      return '$minutes 分 $seconds 秒';
+    } else if (minutes > 0) {
+      return '$minutes 分鐘';
+    } else {
+      return '$seconds 秒';
+    }
   }
 
   /// 動作數量
@@ -367,6 +392,22 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     if (_exercises.isNotEmpty) return _exercises.length;
     // 備用：從 sessionData 讀取
     return (_sessionData['totalExercises'] ?? 0) as int;
+  }
+
+  /// 🔥 新增動作數量
+  int get _addedExercisesCount {
+    // 優先從 sessionData 讀取（UnifiedWorkoutService 計算好的值）
+    if (_sessionData['addedExercisesCount'] != null) {
+      return (_sessionData['addedExercisesCount'] as num).toInt();
+    }
+    // 備用：從 exercises 計算
+    int count = 0;
+    for (var ex in _exercises) {
+      if (ex['addedDuringSession'] == true) {
+        count++;
+      }
+    }
+    return count;
   }
   
   /// 總組數
@@ -467,9 +508,9 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     }
     
     buffer.writeln('📅 $_dateString');
-    buffer.writeln('⏱️ 時長：$_duration 分鐘');
+    buffer.writeln('⏱️ 時長：$_durationDisplay');
     buffer.writeln('🔥 消耗：${_calories.toInt()} 大卡');
-    buffer.writeln('💪 動作：$_totalExercises 個');
+    buffer.writeln('💪 動作：$_totalExercises 個${_addedExercisesCount > 0 ? '（+$_addedExercisesCount 新增）' : ''}');
     buffer.writeln('✅ 組數：$_completedSets/$_totalSets');
     buffer.writeln();
     
@@ -480,7 +521,8 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         final ex = _exercises[i];
         final name = ex['name'] ?? ex['exerciseName'] ?? '動作${i + 1}';
         final completedSets = ex['completedSets'] ?? 0;
-        buffer.writeln('  • $name ($completedSets 組)');
+        final isAdded = ex['addedDuringSession'] == true;
+        buffer.writeln('  • $name ($completedSets 組)${isAdded ? ' [新增]' : ''}');
       }
       if (_exercises.length > 5) {
         buffer.writeln('  ... 還有 ${_exercises.length - 5} 個動作');
@@ -718,6 +760,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     );
   }
 
+  // 🔥 修改：時長顯示「X 分 Y 秒」格式，動作數量顯示「+N 新增」
   Widget _buildStatsCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -749,9 +792,23 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
           const SizedBox(height: 24),
           Row(
             children: [
-              Expanded(child: _buildStatBox(icon: Icons.timer_rounded, value: '$_duration', unit: '分鐘', label: '訓練時長', color: _accentBlue)),
+              // 🔥 時長：顯示「X 分 Y 秒」格式
+              Expanded(child: _buildStatBoxWithString(
+                icon: Icons.timer_rounded, 
+                value: _durationDisplay, 
+                label: '訓練時長', 
+                color: _accentBlue,
+              )),
               const SizedBox(width: 12),
-              Expanded(child: _buildStatBox(icon: Icons.fitness_center_rounded, value: '$_totalExercises', unit: '個', label: '動作數量', color: _accentPurple)),
+              // 🔥 動作數量：顯示「+N 新增」
+              Expanded(child: _buildStatBoxWithSubtext(
+                icon: Icons.fitness_center_rounded, 
+                value: '$_totalExercises', 
+                subtext: _addedExercisesCount > 0 ? '+$_addedExercisesCount 新增' : null,
+                unit: '個', 
+                label: '動作數量', 
+                color: _accentPurple,
+              )),
             ],
           ),
           const SizedBox(height: 12),
@@ -786,6 +843,73 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
               ],
             ],
           ),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(color: _textSecondary, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  /// 🔥 新增：顯示字串格式的統計框（用於時長）
+  Widget _buildStatBoxWithString({required IconData icon, required String value, required String label, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: color.withAlpha(20), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 12),
+          Text(value, style: TextStyle(color: _textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(color: _textSecondary, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  /// 🔥 新增：帶有副標題的統計框（用於動作數量 +N 新增）
+  Widget _buildStatBoxWithSubtext({
+    required IconData icon, 
+    required String value, 
+    String? subtext,
+    required String unit, 
+    required String label, 
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: color.withAlpha(20), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(value, style: TextStyle(color: _textPrimary, fontSize: 24, fontWeight: FontWeight.bold)),
+              if (unit.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(unit, style: TextStyle(color: _textSecondary, fontSize: 12))),
+              ],
+            ],
+          ),
+          // 🔥 新增動作標註
+          if (subtext != null) ...[
+            const SizedBox(height: 2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: _accentOrange.withAlpha(38),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                subtext, 
+                style: TextStyle(color: _accentOrange, fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
           Text(label, style: TextStyle(color: _textSecondary, fontSize: 12)),
         ],
@@ -881,10 +1005,30 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
               const SizedBox(width: 12),
               Text('動作詳情', style: TextStyle(color: _textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
               const Spacer(),
+              // 🔥 修改：顯示新增動作數量
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(color: _primaryLight, borderRadius: BorderRadius.circular(20)),
-                child: Text('${_exercises.length} 個動作', style: TextStyle(fontSize: 12, color: _primaryColor, fontWeight: FontWeight.w500)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('${_exercises.length} 個動作', style: TextStyle(fontSize: 12, color: _primaryColor, fontWeight: FontWeight.w500)),
+                    if (_addedExercisesCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _accentOrange,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '+$_addedExercisesCount',
+                          style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -900,6 +1044,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     final name = exercise['name'] ?? exercise['exerciseName'] ?? '未知動作';
     final category = exercise['category'] as String?;
     final allSets = exercise['sets'] as List? ?? [];
+    final isAddedDuringSession = exercise['addedDuringSession'] == true;
     
     // UnifiedWorkoutService 已經過濾，所以 sets 都是有效的
     final completedSetsCount = (exercise['completedSets'] as num?)?.toInt() ?? allSets.length;
@@ -927,7 +1072,28 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name, style: TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(name, style: TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+                            ),
+                            // 🔥 新增：新增動作標籤
+                            if (isAddedDuringSession) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _accentOrange,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  '新增',
+                                  style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                         const SizedBox(height: 2),
                         Row(
                           children: [

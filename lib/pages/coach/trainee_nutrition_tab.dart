@@ -1,8 +1,11 @@
 // lib/pages/coach/trainee_nutrition_tab.dart
-// 學員飲食日誌分頁 - 修正型別錯誤版本
+// 🎯 學員飲食日誌分頁 v2.1
+// ✅ 修復：Overflow 問題（改用 Wrap）
+// ✅ 莫蘭迪設計風格
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_theme.dart';
 
 class TraineeNutritionTab extends StatelessWidget {
   final String traineeId;
@@ -26,7 +29,7 @@ class TraineeNutritionTab extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.coach),
             ),
           );
         }
@@ -40,24 +43,25 @@ class TraineeNutritionTab extends StatelessWidget {
                 const Icon(
                   Icons.error_outline,
                   size: 60,
-                  color: Colors.red,
+                  color: AppColors.error,
                 ),
                 const SizedBox(height: 16),
                 Text(
                   '載入失敗',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey[600],
+                  style: AppTextStyles.h4.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  snapshot.error.toString(),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    snapshot.error.toString(),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -70,25 +74,30 @@ class TraineeNutritionTab extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.restaurant_menu,
-                  size: 80,
-                  color: Colors.grey[300],
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.restaurant_menu,
+                    size: 64,
+                    color: AppColors.warning.withOpacity(0.5),
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 Text(
                   '尚無飲食紀錄',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey[600],
+                  style: AppTextStyles.h4.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   '學員開始記錄後會顯示在這裡',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textTertiary,
                   ),
                 ),
               ],
@@ -119,7 +128,7 @@ class TraineeNutritionTab extends StatelessWidget {
               date = DateTime.now();
             }
             
-            // ✅ 修正：明確處理數值型別轉換
+            // ✅ 型別轉換
             final calories = _toInt(log['calories']);
             final protein = _toDouble(log['protein']);
             final carbs = _toDouble(log['carbs']);
@@ -127,118 +136,16 @@ class TraineeNutritionTab extends StatelessWidget {
             final foodName = log['foodName']?.toString() ?? '未命名食物';
             final mealType = log['mealType']?.toString() ?? '';
             
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _showNutritionDetail(context, log, date),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      // 左側：日期圓圈
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: _getCalorieColor(calories).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              '${date.day}',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: _getCalorieColor(calories),
-                              ),
-                            ),
-                            Text(
-                              '${date.month}月',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _getCalorieColor(calories),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-
-                      // 中間：營養資訊
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 食物名稱
-                            Text(
-                              foodName,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            // 餐別（如果有）
-                            if (mealType.isNotEmpty) ...[
-                              Text(
-                                _getMealTypeText(mealType),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.local_fire_department,
-                                  size: 18,
-                                  color: Colors.orange,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '$calories kcal',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                _buildNutrientChip('蛋白質', protein, Colors.red),
-                                const SizedBox(width: 8),
-                                _buildNutrientChip('碳水', carbs, Colors.blue),
-                                const SizedBox(width: 8),
-                                _buildNutrientChip('脂肪', fat, Colors.orange),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // 右側：箭頭
-                      Icon(
-                        Icons.chevron_right,
-                        color: Colors.grey[400],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            return _buildNutritionCard(
+              context: context,
+              log: log,
+              date: date,
+              calories: calories,
+              protein: protein,
+              carbs: carbs,
+              fat: fat,
+              foodName: foodName,
+              mealType: mealType,
             );
           },
         );
@@ -246,78 +153,219 @@ class TraineeNutritionTab extends StatelessWidget {
     );
   }
 
-  // ✅ 修正：型別轉換輔助方法
-  static int _toInt(dynamic value) {
-    if (value == null) return 0;
-    if (value is int) return value;
-    if (value is double) return value.round();
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
+  // 🎨 飲食記錄卡片（修復版）
+  Widget _buildNutritionCard({
+    required BuildContext context,
+    required Map<String, dynamic> log,
+    required DateTime date,
+    required int calories,
+    required double protein,
+    required double carbs,
+    required double fat,
+    required String foodName,
+    required String mealType,
+  }) {
+    final calorieColor = _getCalorieColor(calories);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppShadows.small,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _showNutritionDetail(context, log, date),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 左側：日期圓圈
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: calorieColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '${date.day}',
+                        style: AppTextStyles.h3.copyWith(
+                          color: calorieColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '${date.month}月',
+                        style: AppTextStyles.caption.copyWith(
+                          color: calorieColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                // 中間：營養資訊（使用 Expanded + Flexible）
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 食物名稱
+                      Text(
+                        foodName,
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      // 餐別（如果有）
+                      if (mealType.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getMealColor(mealType).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _getMealTypeText(mealType),
+                            style: AppTextStyles.caption.copyWith(
+                              color: _getMealColor(mealType),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      // 熱量
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.local_fire_department,
+                            size: 18,
+                            color: AppColors.warning,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$calories kcal',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // 🔥 修復：使用 Wrap 避免 Overflow
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          _buildNutrientChip('蛋白質', protein, AppColors.error),
+                          _buildNutrientChip('碳水', carbs, AppColors.info),
+                          _buildNutrientChip('脂肪', fat, AppColors.warning),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 右側：箭頭
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: AppColors.textTertiary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  static double _toDouble(dynamic value) {
-    if (value == null) return 0.0;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
-    if (value is String) return double.tryParse(value) ?? 0.0;
-    return 0.0;
-  }
-
-  // 建立營養素標籤
+  // 🎨 營養素標籤（縮小版）
   Widget _buildNutrientChip(String label, double value, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         '$label ${value.toStringAsFixed(1)}g',
-        style: TextStyle(
-          fontSize: 11,
+        style: AppTextStyles.caption.copyWith(
           fontWeight: FontWeight.w600,
           color: color,
+          fontSize: 11, // 稍微縮小字體
         ),
       ),
     );
   }
 
-  // 根據熱量取得顏色
+  // 🎨 根據熱量取得顏色
   Color _getCalorieColor(int calories) {
     if (calories < 100) {
-      return Colors.green;
+      return AppColors.success;
     } else if (calories < 300) {
-      return Colors.blue;
+      return AppColors.info;
     } else if (calories < 500) {
-      return Colors.orange;
+      return AppColors.warning;
     } else {
-      return Colors.red;
+      return AppColors.error;
+    }
+  }
+
+  // 🎨 根據餐別取得顏色
+  Color _getMealColor(String mealType) {
+    switch (mealType.toLowerCase()) {
+      case 'breakfast':
+        return AppColors.warning;
+      case 'lunch':
+        return AppColors.success;
+      case 'dinner':
+        return AppColors.accent3;
+      case 'snack':
+        return AppColors.accent4;
+      default:
+        return AppColors.primary;
     }
   }
 
   // 取得餐別文字
   String _getMealTypeText(String mealType) {
-    switch (mealType) {
+    switch (mealType.toLowerCase()) {
       case 'breakfast':
-        return '早餐';
+        return '🌅 早餐';
       case 'lunch':
-        return '午餐';
+        return '☀️ 午餐';
       case 'dinner':
-        return '晚餐';
+        return '🌙 晚餐';
       case 'snack':
-        return '點心';
+        return '🍪 點心';
       default:
         return mealType;
     }
   }
 
-  // 顯示飲食詳情
+  // 🔥 顯示飲食詳情
   void _showNutritionDetail(
     BuildContext context,
     Map<String, dynamic> log,
     DateTime date,
   ) {
-    // ✅ 修正：型別轉換
     final calories = _toInt(log['calories']);
     final protein = _toDouble(log['protein']);
     final carbs = _toDouble(log['carbs']);
@@ -336,10 +384,10 @@ class TraineeNutritionTab extends StatelessWidget {
         maxChildSize: 0.95,
         minChildSize: 0.5,
         builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(24),
             ),
           ),
           child: Column(
@@ -350,7 +398,7 @@ class TraineeNutritionTab extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
+                  color: AppColors.divider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -366,28 +414,34 @@ class TraineeNutritionTab extends StatelessWidget {
                       // 標題
                       Row(
                         children: [
-                          const Icon(
-                            Icons.restaurant,
-                            color: Colors.green,
-                            size: 28,
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: AppColors.warmGradient,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.restaurant,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   foodName,
-                                  style: const TextStyle(
-                                    fontSize: 22,
+                                  style: AppTextStyles.h3.copyWith(
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
+                                const SizedBox(height: 4),
                                 Text(
                                   '${date.year}/${date.month}/${date.day}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey[600],
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
                                   ),
                                 ),
                               ],
@@ -405,15 +459,14 @@ class TraineeNutritionTab extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.green[50],
+                            color: _getMealColor(mealType).withOpacity(0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             _getMealTypeText(mealType),
-                            style: const TextStyle(
-                              fontSize: 14,
+                            style: AppTextStyles.label.copyWith(
                               fontWeight: FontWeight.w600,
-                              color: Colors.green,
+                              color: _getMealColor(mealType),
                             ),
                           ),
                         ),
@@ -431,10 +484,9 @@ class TraineeNutritionTab extends StatelessWidget {
 
                       // 份量資訊
                       if (servingSize.isNotEmpty || servings > 0) ...[
-                        const Text(
+                        Text(
                           '份量資訊',
-                          style: TextStyle(
-                            fontSize: 18,
+                          style: AppTextStyles.h4.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -443,23 +495,45 @@ class TraineeNutritionTab extends StatelessWidget {
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade200),
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.divider),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (servingSize.isNotEmpty)
-                                Text(
-                                  '份量：$servingSize',
-                                  style: const TextStyle(fontSize: 14),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.straighten,
+                                      size: 18,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '份量：$servingSize',
+                                      style: AppTextStyles.bodyMedium,
+                                    ),
+                                  ],
                                 ),
-                              if (servings > 0)
-                                Text(
-                                  '數量：$servings 份',
-                                  style: const TextStyle(fontSize: 14),
+                              if (servings > 0) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.numbers,
+                                      size: 18,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '數量：$servings 份',
+                                      style: AppTextStyles.bodyMedium,
+                                    ),
+                                  ],
                                 ),
+                              ],
                             ],
                           ),
                         ),
@@ -475,7 +549,7 @@ class TraineeNutritionTab extends StatelessWidget {
     );
   }
 
-  // 營養總覽卡片
+  // 🎨 營養總覽卡片
   Widget _buildNutritionSummary(
     int calories,
     double protein,
@@ -483,23 +557,48 @@ class TraineeNutritionTab extends StatelessWidget {
     double fat,
   ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.green[400]!, Colors.green[600]!],
-        ),
-        borderRadius: BorderRadius.circular(16),
+        gradient: AppColors.warmGradient,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppShadows.coloredShadow(AppColors.warning),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _buildNutritionItem('熱量', '$calories', 'kcal'),
-          _buildDivider(),
-          _buildNutritionItem('蛋白質', '${protein.toStringAsFixed(1)}', 'g'),
-          _buildDivider(),
-          _buildNutritionItem('碳水', '${carbs.toStringAsFixed(1)}', 'g'),
-          _buildDivider(),
-          _buildNutritionItem('脂肪', '${fat.toStringAsFixed(1)}', 'g'),
+          // 第一行：熱量
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.local_fire_department, color: Colors.white, size: 28),
+              const SizedBox(width: 8),
+              Text(
+                '$calories',
+                style: AppTextStyles.h1.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'kcal',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: Colors.white.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 第二行：三大營養素
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNutritionItem('蛋白質', protein.toStringAsFixed(1), 'g'),
+              _buildDivider(),
+              _buildNutritionItem('碳水', carbs.toStringAsFixed(1), 'g'),
+              _buildDivider(),
+              _buildNutritionItem('脂肪', fat.toStringAsFixed(1), 'g'),
+            ],
+          ),
         ],
       ),
     );
@@ -510,26 +609,30 @@ class TraineeNutritionTab extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 12,
+          style: AppTextStyles.caption.copyWith(
+            color: Colors.white.withOpacity(0.8),
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          unit,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 10,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              value,
+              style: AppTextStyles.h4.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Text(
+              unit,
+              style: AppTextStyles.caption.copyWith(
+                color: Colors.white.withOpacity(0.7),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -539,7 +642,24 @@ class TraineeNutritionTab extends StatelessWidget {
     return Container(
       width: 1,
       height: 40,
-      color: Colors.white30,
+      color: Colors.white.withOpacity(0.3),
     );
+  }
+
+  // 🔧 型別轉換輔助方法
+  static int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 }

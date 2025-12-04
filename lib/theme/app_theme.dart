@@ -35,6 +35,9 @@ class AppColors {
   static const Color textTertiary = Color(0xFF95A5A6);   // 淺灰
   static const Color textOnPrimary = Color(0xFFFFFFFF);  // 純白
   
+  // ===== 分隔線 =====
+  static const Color divider = Color(0xFFE2E8F0);        // 柔和分隔線
+  
   // ===== 狀態色（明亮版本） =====
   static const Color success = Color(0xFF81C784);        // 清新綠
   static const Color warning = Color(0xFFFFB74D);        // 溫暖橘
@@ -458,7 +461,7 @@ class AppTheme {
       
       // Divider 樣式
       dividerTheme: DividerThemeData(
-        color: AppColors.textTertiary.withValues(alpha: 0.2),
+        color: AppColors.divider,  // ✅ 使用新增的 divider 顏色
         thickness: 1,
         space: 1,
       ),

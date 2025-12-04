@@ -1,8 +1,10 @@
 // lib/pages/coach/trainee_basic_info_tab.dart
-// 學員基本資料分頁
+// 🎯 學員基本資料分頁 v2.0
+// ✅ 莫蘭迪設計風格
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_theme.dart';
 
 class TraineeBasicInfoTab extends StatelessWidget {
   final String traineeId;
@@ -24,7 +26,7 @@ class TraineeBasicInfoTab extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.coach),
             ),
           );
         }
@@ -38,24 +40,25 @@ class TraineeBasicInfoTab extends StatelessWidget {
                 const Icon(
                   Icons.error_outline,
                   size: 60,
-                  color: Colors.red,
+                  color: AppColors.error,
                 ),
                 const SizedBox(height: 16),
                 Text(
                   '載入失敗',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey[600],
+                  style: AppTextStyles.h4.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  snapshot.error.toString(),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    snapshot.error.toString(),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -68,17 +71,23 @@ class TraineeBasicInfoTab extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.person_off,
-                  size: 60,
-                  color: Colors.grey[300],
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.textTertiary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.person_off,
+                    size: 60,
+                    color: AppColors.textTertiary,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   '找不到學員資料',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey[600],
+                  style: AppTextStyles.h4.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -103,71 +112,29 @@ class TraineeBasicInfoTab extends StatelessWidget {
           child: Column(
             children: [
               // 頭像與基本資訊
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Colors.green[100],
-                      child: Text(
-                        name.substring(0, 1).toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 40,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      email,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildProfileCard(name, email),
               const SizedBox(height: 16),
 
               // 身體數據卡片
               _buildInfoCard(
-                context: context,
                 title: '身體數據',
-                icon: Icons.monitor_weight,
+                icon: Icons.monitor_weight_outlined,
+                color: AppColors.primary,
                 items: [
                   _InfoItem(
                     label: '身高',
                     value: height != null ? '$height cm' : '未設定',
+                    icon: Icons.height,
                   ),
                   _InfoItem(
                     label: '體重',
                     value: weight != null ? '$weight kg' : '未設定',
+                    icon: Icons.fitness_center,
                   ),
                   _InfoItem(
                     label: 'BMI',
                     value: _calculateBMI(height, weight),
+                    icon: Icons.analytics_outlined,
                   ),
                 ],
               ),
@@ -175,21 +142,24 @@ class TraineeBasicInfoTab extends StatelessWidget {
 
               // 目標設定卡片
               _buildInfoCard(
-                context: context,
                 title: '目標設定',
-                icon: Icons.flag,
+                icon: Icons.flag_outlined,
+                color: AppColors.warning,
                 items: [
                   _InfoItem(
                     label: '目標體重',
                     value: targetWeight != null ? '$targetWeight kg' : '未設定',
+                    icon: Icons.track_changes,
                   ),
                   _InfoItem(
                     label: '每日熱量目標',
                     value: dailyCalories != null ? '$dailyCalories kcal' : '未設定',
+                    icon: Icons.local_fire_department,
                   ),
                   _InfoItem(
                     label: '健身目標',
                     value: goal,
+                    icon: Icons.emoji_events_outlined,
                   ),
                 ],
               ),
@@ -197,20 +167,23 @@ class TraineeBasicInfoTab extends StatelessWidget {
 
               // 聯絡資訊卡片
               _buildInfoCard(
-                context: context,
                 title: '聯絡資訊',
-                icon: Icons.contact_phone,
+                icon: Icons.contact_phone_outlined,
+                color: AppColors.info,
                 items: [
                   _InfoItem(
                     label: '電話',
                     value: phone ?? '未提供',
+                    icon: Icons.phone_outlined,
                   ),
                   _InfoItem(
                     label: '加入日期',
                     value: _formatDate(joinedAt),
+                    icon: Icons.calendar_today_outlined,
                   ),
                 ],
               ),
+              const SizedBox(height: 32),
             ],
           ),
         );
@@ -218,25 +191,68 @@ class TraineeBasicInfoTab extends StatelessWidget {
     );
   }
 
-  // 建立資訊卡片
+  // 🎨 個人資料卡片
+  Widget _buildProfileCard(String name, String email) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppColors.secondaryGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: AppShadows.medium,
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: AppShadows.small,
+            ),
+            child: Center(
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : 'S',
+                style: AppTextStyles.h1.copyWith(
+                  color: AppColors.coach,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            name,
+            style: AppTextStyles.h2.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            email,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: Colors.white.withOpacity(0.9),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🎨 資訊卡片
   Widget _buildInfoCard({
-    required BuildContext context,
     required String title,
     required IconData icon,
+    required Color color,
     required List<_InfoItem> items,
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppShadows.small,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -244,52 +260,60 @@ class TraineeBasicInfoTab extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(8),
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   icon,
-                  color: Colors.green,
+                  color: color,
                   size: 24,
                 ),
               ),
               const SizedBox(width: 12),
               Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 18,
+                style: AppTextStyles.h4.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-          const Divider(height: 24),
-          ...items.map((item) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    item.label,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  Text(
-                    item.value,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
+          const SizedBox(height: 16),
+          Divider(color: AppColors.divider, height: 1),
+          const SizedBox(height: 8),
+          ...items.map((item) => _buildInfoRow(item)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(_InfoItem item) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Icon(
+            item.icon,
+            size: 18,
+            color: AppColors.textTertiary,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            item.label,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            item.value,
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
         ],
       ),
     );
@@ -304,7 +328,21 @@ class TraineeBasicInfoTab extends StatelessWidget {
       final w = weight is int ? weight.toDouble() : weight as double;
       
       final bmi = w / ((h / 100) * (h / 100));
-      return bmi.toStringAsFixed(1);
+      final bmiValue = bmi.toStringAsFixed(1);
+      
+      // BMI 分類
+      String category;
+      if (bmi < 18.5) {
+        category = '過輕';
+      } else if (bmi < 24) {
+        category = '正常';
+      } else if (bmi < 27) {
+        category = '過重';
+      } else {
+        category = '肥胖';
+      }
+      
+      return '$bmiValue ($category)';
     } catch (e) {
       return '計算錯誤';
     }
@@ -330,9 +368,11 @@ class TraineeBasicInfoTab extends StatelessWidget {
 class _InfoItem {
   final String label;
   final String value;
+  final IconData icon;
 
   _InfoItem({
     required this.label,
     required this.value,
+    this.icon = Icons.circle,
   });
 }

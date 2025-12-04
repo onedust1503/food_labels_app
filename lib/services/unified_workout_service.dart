@@ -1,5 +1,5 @@
 // lib/services/unified_workout_service.dart
-// 🔧 統一訓練記錄服務 - 完整整合版 v6
+// 🔧 統一訓練記錄服務 - 完整整合版 v6.1
 // ✅ 保留所有原有功能
 // ✅ 新增 Plan Session 方法（教練計畫訓練）
 // ✅ 新增整合讀取方法（同時顯示自由訓練和計畫訓練）
@@ -7,11 +7,13 @@
 // ✅ 🔥 新增：精確卡路里計算（基於 Compendium of Physical Activities 2024 MET 值）
 // ✅ 🔥 v5 新增：訓練命名功能（workoutName 參數）
 // ✅ 🔥 v6 新增動作追蹤（addedExercisesCount + addedDuringSession 標記）
+// ✅ 🔥 v6.1 startPlanSession 支援自訂訓練名稱
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import '../models/workout_model.dart'; // 🆕 添加 WorkoutPlanModel
 
 class UnifiedWorkoutService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -82,6 +84,38 @@ class UnifiedWorkoutService {
     '有氧': 7.0, 'cardio': 7.0,
     '全身': 6.0, 'full body': 6.0,
   };
+
+  // ============================================================
+  // 🔥 日期輔助函數（v7 新增 - 混合模式支援）
+  // ============================================================
+
+  /// 🔥 獲取中文星期幾
+  static String _getDayOfWeekChinese(int weekday) {
+    const days = ['', '週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+    return days[weekday.clamp(1, 7)];
+  }
+
+  /// 🔥 獲取 ISO 週數
+  static int _getWeekNumber(DateTime date) {
+    final firstDayOfYear = DateTime(date.year, 1, 1);
+    final daysOffset = firstDayOfYear.weekday - 1;
+    final firstMonday = firstDayOfYear.subtract(Duration(days: daysOffset));
+    final difference = date.difference(firstMonday).inDays;
+    return (difference / 7).ceil();
+  }
+
+  /// 🔥 獲取本週的開始日期（週一）
+  static DateTime getWeekStartDate([DateTime? date]) {
+    final d = date ?? DateTime.now();
+    final weekday = d.weekday;
+    return DateTime(d.year, d.month, d.day).subtract(Duration(days: weekday - 1));
+  }
+
+  /// 🔥 獲取本週的結束日期（週日）
+  static DateTime getWeekEndDate([DateTime? date]) {
+    final weekStart = getWeekStartDate(date);
+    return weekStart.add(const Duration(days: 6));
+  }
 
   /// 🔥 獲取動作的 MET 值
   double _getMetForExercise(String exerciseName, String? category) {
@@ -831,6 +865,134 @@ class UnifiedWorkoutService {
     }
   }
 
+  // ============================================================
+  // 🔥 v7 新增：混合模式進度追蹤
+  // ============================================================
+
+  /// 🔥 獲取本週計畫完成情況（混合模式）
+  /// 返回 Map<計畫日, 完成詳情>
+  Future<Map<String, Map<String, dynamic>>> getWeeklyPlanCompletions(String planId) async {
+    if (_currentUserId == null) return {};
+
+    try {
+      final weekStart = getWeekStartDate();
+      final weekEnd = getWeekEndDate();
+
+      // 查詢本週的完成記錄
+      final snapshot = await _firestore
+          .collection('workoutCompletions')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
+          .where('actualDate', isLessThanOrEqualTo: Timestamp.fromDate(weekEnd.add(const Duration(days: 1))))
+          .get();
+
+      Map<String, Map<String, dynamic>> completions = {};
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final planDayOfWeek = data['planDayOfWeek'] as String? ?? data['dayOfWeek'] as String?;
+        
+        if (planDayOfWeek != null) {
+          completions[planDayOfWeek] = {
+            'completed': true,
+            'actualDate': (data['actualDate'] as Timestamp?)?.toDate(),
+            'actualDayOfWeek': data['actualDayOfWeek'] ?? planDayOfWeek,
+            'isOnSchedule': data['isOnSchedule'] ?? true,
+            'duration': data['totalDuration'] ?? 0,
+            'calories': data['caloriesBurned'] ?? 0.0,
+            'sessionId': data['sessionId'],
+          };
+        }
+      }
+
+      if (kDebugMode) {
+        debugPrint('✅ 本週計畫完成情況: $completions');
+      }
+
+      return completions;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取本週計畫完成情況失敗: $e');
+      }
+      return {};
+    }
+  }
+
+  /// 🔥 獲取計畫的統計數據（用於教練端和分析頁面）
+  Future<Map<String, dynamic>> getPlanStatistics(String planId) async {
+    if (_currentUserId == null) return {};
+
+    try {
+      // 獲取所有完成記錄
+      final snapshot = await _firestore
+          .collection('workoutCompletions')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .orderBy('actualDate', descending: true)
+          .limit(100)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return {
+          'totalCompletions': 0,
+          'onScheduleCount': 0,
+          'onScheduleRate': 0.0,
+          'totalDuration': 0,
+          'totalCalories': 0.0,
+          'recentCompletions': [],
+        };
+      }
+
+      int totalCompletions = snapshot.docs.length;
+      int onScheduleCount = 0;
+      int totalDuration = 0;
+      double totalCalories = 0.0;
+      List<Map<String, dynamic>> recentCompletions = [];
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        
+        if (data['isOnSchedule'] == true) {
+          onScheduleCount++;
+        }
+        totalDuration += (data['totalDuration'] ?? 0) as int;
+        totalCalories += ((data['caloriesBurned'] ?? 0) as num).toDouble();
+        
+        // 最近 10 筆記錄
+        if (recentCompletions.length < 10) {
+          recentCompletions.add({
+            'planDayOfWeek': data['planDayOfWeek'] ?? data['dayOfWeek'],
+            'actualDate': (data['actualDate'] as Timestamp?)?.toDate(),
+            'actualDayOfWeek': data['actualDayOfWeek'],
+            'isOnSchedule': data['isOnSchedule'] ?? true,
+            'duration': data['totalDuration'] ?? 0,
+            'sessionId': data['sessionId'],
+          });
+        }
+      }
+
+      return {
+        'totalCompletions': totalCompletions,
+        'onScheduleCount': onScheduleCount,
+        'onScheduleRate': totalCompletions > 0 
+            ? (onScheduleCount / totalCompletions * 100).round() 
+            : 0,
+        'totalDuration': totalDuration,
+        'totalCalories': totalCalories.round(),
+        'avgDuration': totalCompletions > 0 
+            ? (totalDuration / totalCompletions).round() 
+            : 0,
+        'recentCompletions': recentCompletions,
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 獲取計畫統計數據失敗: $e');
+      }
+      return {};
+    }
+  }
+
   /// 🔥 創建訓練計畫（教練端）
   Future<String> createWorkoutPlan({
     required String traineeId,
@@ -873,7 +1035,9 @@ class UnifiedWorkoutService {
   }
 
   /// 🔥 獲取學員的訓練計畫（學員端）
-  Future<List<Map<String, dynamic>>> getMyWorkoutPlans() async {
+  /// 🔥 獲取學員的訓練計畫列表（學員端）
+  /// 返回 List<WorkoutPlanModel> 以便與 UI 直接對接
+  Future<List<WorkoutPlanModel>> getMyWorkoutPlans() async {
     if (_currentUserId == null) return [];
 
     try {
@@ -888,12 +1052,11 @@ class UnifiedWorkoutService {
         debugPrint('✅ 找到 ${snapshot.docs.length} 個訓練計畫');
       }
 
-      return snapshot.docs
-          .map((doc) => {
-                'id': doc.id,
-                ...doc.data() as Map<String, dynamic>,
-              })
-          .toList();
+      // 🔥 轉換為 WorkoutPlanModel
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return WorkoutPlanModel.fromFirestore(data, doc.id);
+      }).toList();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 獲取訓練計畫失敗: $e');
@@ -1419,12 +1582,13 @@ class UnifiedWorkoutService {
 
   // ========== 🎯 教練計畫訓練（Plan Session）相關 ==========
 
-  /// 🔥 開始教練計畫訓練會話
+  /// 🔥 開始教練計畫訓練會話 - v6.1 支援自訂訓練名稱
   Future<String> startPlanSession({
     required String planId,
     required String planName,
     required String dayOfWeek,
     required List<Map<String, dynamic>> exercises,
+    String? workoutName,  // 🔥 v6.1 新增：可選的自訂訓練名稱
   }) async {
     final uid = _currentUserId!;
     final sessionRef = _firestore
@@ -1433,12 +1597,15 @@ class UnifiedWorkoutService {
         .collection('workoutSessions')
         .doc();
 
+    // 🔥 v6.1：使用自訂名稱或預設為「計畫名稱 - 星期幾」
+    final effectiveName = workoutName ?? '$planName - $dayOfWeek';
+
     await sessionRef.set({
       'userId': uid,
       'source': 'plan',
       'planId': planId,
       'planName': planName,
-      'name': planName,  // 🔥 確保 name 欄位也存在
+      'name': effectiveName,  // 🔥 v6.1：使用有效名稱
       'dayOfWeek': dayOfWeek,
       'startedAt': FieldValue.serverTimestamp(),
       'totalActiveSec': 0,
@@ -1478,6 +1645,7 @@ class UnifiedWorkoutService {
     if (kDebugMode) {
       debugPrint('✅ 開始計畫訓練: ${sessionRef.id}');
       debugPrint('   計畫: $planName');
+      debugPrint('   訓練名稱: $effectiveName');  // 🔥 v6.1 調試輸出
       debugPrint('   動作數: ${exercises.length}');
     }
 
@@ -1518,6 +1686,9 @@ class UnifiedWorkoutService {
       }
       return;
     }
+
+    // 🔥 v6.1：讀取存儲的訓練名稱
+    final workoutName = sessionData['name'] as String? ?? planName;
 
     final startedAt = (sessionData['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
     final endedAt = (sessionData['endedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
@@ -1637,13 +1808,13 @@ class UnifiedWorkoutService {
     // ===== 🔥 使用 WriteBatch 同時寫入多個集合 =====
     final batch = _firestore.batch();
 
-    // 4a. ✅ 寫入 workoutLogs (供列表頁面讀取)
+    // 4a. ✅ 寫入 workoutLogs (供列表頁面讀取) - 🔥 v6.1 使用存儲的名稱
     final workoutLogRef = _firestore.collection('workoutLogs').doc();
     batch.set(workoutLogRef, {
       'userId': uid,
       'date': dateStr,
       'type': 'weight_training',
-      'name': planName,  // 🔥 使用計畫名稱
+      'name': workoutName,  // 🔥 v6.1 使用存儲的訓練名稱
       'planId': planId,
       'planName': planName,
       'dayOfWeek': dayOfWeek,
@@ -1653,18 +1824,18 @@ class UnifiedWorkoutService {
       'totalExercises': exerciseDetails.length,
       'addedExercisesCount': addedExercisesCount,  // 🔥 v6 新增
       'intensity': 'medium',
-      'notes': '$planName - ${exerciseDetails.length} 個動作',
+      'notes': '$workoutName - ${exerciseDetails.length} 個動作',  // 🔥 v6.1 使用名稱
       'sessionId': sessionId,
       'createdAt': FieldValue.serverTimestamp(),
       'timestamp': startedAt.millisecondsSinceEpoch,
     });
 
-    // 4b. ✅ 寫入 workoutSessions (供詳細頁面讀取)
+    // 4b. ✅ 寫入 workoutSessions (供詳細頁面讀取) - 🔥 v6.1 使用存儲的名稱
     final workoutSessionRef = _firestore.collection('workoutSessions').doc(sessionId);
     batch.set(workoutSessionRef, {
       'userId': uid,
       'date': dateStr,
-      'name': planName,
+      'name': workoutName,  // 🔥 v6.1 使用存儲的訓練名稱
       'planId': planId,
       'planName': planName,
       'dayOfWeek': dayOfWeek,
@@ -1684,17 +1855,42 @@ class UnifiedWorkoutService {
       'exercises': exerciseDetails,
     });
 
-    // 4c. ✅ 記錄計畫完成進度（用於追蹤）
+    // 4c. ✅ 記錄計畫完成進度（用於追蹤）- 🔥 v7 增強版：記錄計畫日+實際日
+    final now = DateTime.now();
+    final actualDayOfWeek = _getDayOfWeekChinese(now.weekday);
+    final weekNumber = _getWeekNumber(now);
+    final isOnSchedule = dayOfWeek == actualDayOfWeek;  // 是否按計畫日執行
+    
     final completionRef = _firestore.collection('workoutCompletions').doc();
     batch.set(completionRef, {
       'planId': planId,
       'userId': uid,
-      'completionDate': Timestamp.fromDate(DateTime(startedAt.year, startedAt.month, startedAt.day)),
-      'dayOfWeek': dayOfWeek,
+      'sessionId': sessionId,
+      
+      // 計畫資訊
+      'planName': planName,
+      'planDayOfWeek': dayOfWeek,  // 計畫日：週一
+      'plannedExercises': exercisesSnap.docs.length,
+      
+      // 實際執行
+      'actualDate': Timestamp.fromDate(now),
+      'actualDateString': dateStr,
+      'actualDayOfWeek': actualDayOfWeek,  // 實際星期：週四
+      'weekNumber': weekNumber,
+      'year': now.year,
+      'isOnSchedule': isOnSchedule,  // ✅ 是否按時執行
+      
+      // 執行統計
       'exercisesCompleted': exerciseDetails.length,
       'totalExercises': exercisesSnap.docs.length,
       'totalDuration': totalDurationMin,
-      'sessionId': sessionId,
+      'totalDurationSeconds': totalDurationSec,
+      'caloriesBurned': finalCalories.roundToDouble(),
+      'setsCompleted': totalCompletedSets,
+      'addedExercisesCount': addedExercisesCount,
+      
+      // 時間戳
+      'completionDate': Timestamp.fromDate(DateTime(startedAt.year, startedAt.month, startedAt.day)),
       'createdAt': FieldValue.serverTimestamp(),
     });
 
@@ -1708,6 +1904,7 @@ class UnifiedWorkoutService {
       debugPrint('✅ 計畫訓練已完成並保存:');
       debugPrint('   sessionId: $sessionId');
       debugPrint('   planId: $planId');
+      debugPrint('   🔥 訓練名稱: $workoutName');  // 🔥 v6.1 調試輸出
       debugPrint('   日期: $dateStr');
       debugPrint('   時長: $totalDurationMin 分鐘');
       debugPrint('   動作: ${exerciseDetails.length} 個');
@@ -1937,7 +2134,7 @@ class UnifiedWorkoutService {
         .snapshots();
   }
 
-  /// 🔥 監聽組數狀態
+  /// 🔥 監聯組數狀態
   Stream<QuerySnapshot> watchSets(String sessionId, String exerciseDocId) {
     final uid = _currentUserId!;
     return _firestore

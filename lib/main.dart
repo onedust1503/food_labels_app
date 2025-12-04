@@ -24,6 +24,8 @@ import 'theme/app_theme.dart';
 
 import 'pages/nutrition/ocr_test_page.dart';
 
+import 'utils/init_exercises_collection.dart';
+
 // 全域導航鍵
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -100,6 +102,9 @@ void main() async {
     debugPrint('[init] ========================================');
   }
   */
+
+  //  初始化動作庫
+  await ExercisesInitializer.initializeIfNeeded();
   
   if (kDebugMode) {
     debugPrint('[init] done');

@@ -86,6 +86,9 @@ dependencies:
   # 分享功能
   share_plus: ^7.2.1
 
+  # 語音功能
+  flutter_tts: ^3.8.5
+
 
 
 dev_dependencies:

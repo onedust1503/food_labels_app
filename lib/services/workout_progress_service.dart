@@ -1,6 +1,7 @@
 // lib/services/workout_progress_service.dart
-// ✅ 修正版 - 從 workoutLogs 讀取 planId 計算完成天數
+// ✅ v2.0 修正版 - 從 workoutLogs 讀取 planId 計算完成天數
 // 🔧 關鍵修正：getCompletedDays 改為查詢 workoutLogs 而非 workoutCompletions
+// 🔥 v2.0 修正：getWeeklyCompletion 正確讀取 planDayOfWeek 字段
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -145,14 +146,51 @@ class WorkoutProgressService {
 
   /// 📊 獲取每週完成狀態
   /// 返回 Map<星期幾, 完成次數>
-  /// 🔥 修正：同時從 workoutLogs 和 workoutCompletions 讀取
+  /// 🔥 v2.0 修正：正確讀取 planDayOfWeek 字段，支援中文轉英文映射
   Future<Map<String, int>> getWeeklyCompletion(String planId) async {
     if (_currentUserId == null) return {};
 
     final Map<String, int> weeklyCompletion = {};
 
+    // 🔥 v2.0：中文轉英文映射（支援多種格式）
+    final chineseDayToEnglish = {
+      '星期一': 'monday', '星期二': 'tuesday', '星期三': 'wednesday',
+      '星期四': 'thursday', '星期五': 'friday', '星期六': 'saturday', '星期日': 'sunday',
+      '週一': 'monday', '週二': 'tuesday', '週三': 'wednesday',
+      '週四': 'thursday', '週五': 'friday', '週六': 'saturday', '週日': 'sunday',
+    };
+
     try {
-      // ✅ 從 workoutLogs 讀取（主要來源）
+      // ✅ 優先從 workoutCompletions 讀取（UnifiedWorkoutService 寫入位置）
+      final completionsSnapshot = await _firestore
+          .collection('workoutCompletions')
+          .where('planId', isEqualTo: planId)
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
+
+      if (completionsSnapshot.docs.isNotEmpty) {
+        for (var doc in completionsSnapshot.docs) {
+          final data = doc.data();
+          // 🔥 v2.0 修正：優先使用 planDayOfWeek，備用 dayOfWeek
+          final dayOfWeek = data['planDayOfWeek']?.toString() ?? 
+                            data['dayOfWeek']?.toString() ?? '';
+          
+          // 轉換為英文 key（workout_plan_detail_page 使用英文 key）
+          final englishKey = chineseDayToEnglish[dayOfWeek] ?? dayOfWeek.toLowerCase();
+          
+          if (englishKey.isNotEmpty) {
+            weeklyCompletion[englishKey] = (weeklyCompletion[englishKey] ?? 0) + 1;
+          }
+        }
+        
+        if (kDebugMode) {
+          debugPrint('📊 從 workoutCompletions 讀取完成狀態: $weeklyCompletion');
+        }
+        
+        return weeklyCompletion;
+      }
+
+      // 🔄 備用：從 workoutLogs 讀取（舊資料相容）
       final logsSnapshot = await _firestore
           .collection('workoutLogs')
           .where('planId', isEqualTo: planId)
@@ -165,24 +203,15 @@ class WorkoutProgressService {
         final name = data['name'] as String? ?? '';
         final parts = name.split(' - ');
         if (parts.length >= 2) {
-          final dayOfWeek = parts.last.trim().toLowerCase();
-          weeklyCompletion[dayOfWeek] = (weeklyCompletion[dayOfWeek] ?? 0) + 1;
+          final dayPart = parts.last.trim();
+          // 轉換為英文 key
+          final englishKey = chineseDayToEnglish[dayPart] ?? dayPart.toLowerCase();
+          weeklyCompletion[englishKey] = (weeklyCompletion[englishKey] ?? 0) + 1;
         }
       }
-
-      // 🔄 備用：從 workoutCompletions 讀取（舊資料）
-      if (weeklyCompletion.isEmpty) {
-        final completionsSnapshot = await _firestore
-            .collection('workoutCompletions')
-            .where('planId', isEqualTo: planId)
-            .where('userId', isEqualTo: _currentUserId)
-            .get();
-
-        for (var doc in completionsSnapshot.docs) {
-          final data = doc.data();
-          final dayOfWeek = data['dayOfWeek'] as String;
-          weeklyCompletion[dayOfWeek] = (weeklyCompletion[dayOfWeek] ?? 0) + 1;
-        }
+      
+      if (kDebugMode) {
+        debugPrint('📊 從 workoutLogs 讀取完成狀態: $weeklyCompletion');
       }
     } catch (e) {
       if (kDebugMode) {

@@ -1,8 +1,9 @@
 // lib/pages/coach/trainee_plans_tab.dart
-// 🎯 學員計畫進度分頁 v2.1
+// 🎯 學員計畫進度分頁 v2.2
 // ✅ 修復：移除 orderBy 避免索引問題
 // ✅ 修復：支援 days 陣列格式
 // ✅ 修復：workoutCompletions 頂層集合查詢
+// 🔥 v2.2 修復：字段名匹配 - planDayOfWeek / actualDate
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -472,7 +473,7 @@ class TraineePlansTab extends StatelessWidget {
     }
   }
 
-  // 🔥 取得本週進度
+  // 🔥 v2.2 修正：取得本週進度 - 使用正確的字段名
   Future<Map<String, Map<String, dynamic>>> _getWeeklyProgress(String planId) async {
     try {
       final now = DateTime.now();
@@ -487,29 +488,39 @@ class TraineePlansTab extends StatelessWidget {
 
       final result = <String, Map<String, dynamic>>{};
 
+      // 🔥 v2.2：支援多種中文格式映射
       final chineseDayMap = {
         '星期一': 'monday', '星期二': 'tuesday', '星期三': 'wednesday',
         '星期四': 'thursday', '星期五': 'friday', '星期六': 'saturday', '星期日': 'sunday',
+        '週一': 'monday', '週二': 'tuesday', '週三': 'wednesday',
+        '週四': 'thursday', '週五': 'friday', '週六': 'saturday', '週日': 'sunday',
       };
 
       for (final doc in completions.docs) {
         final data = doc.data();
         
+        // 🔥 v2.2 修正：優先使用 actualDate，備用 completionDate 和 createdAt
         DateTime? completionDate;
-        if (data['completionDate'] is Timestamp) {
+        if (data['actualDate'] is Timestamp) {
+          completionDate = (data['actualDate'] as Timestamp).toDate();
+        } else if (data['completionDate'] is Timestamp) {
           completionDate = (data['completionDate'] as Timestamp).toDate();
         } else if (data['createdAt'] is Timestamp) {
           completionDate = (data['createdAt'] as Timestamp).toDate();
         }
         
-        if (completionDate != null && completionDate.isAfter(startDate)) {
-          final dayOfWeek = data['dayOfWeek']?.toString() ?? '';
+        // 只處理本週的記錄
+        if (completionDate != null && completionDate.isAfter(startDate.subtract(const Duration(hours: 1)))) {
+          // 🔥 v2.2 修正：優先使用 planDayOfWeek，備用 dayOfWeek
+          final dayOfWeek = data['planDayOfWeek']?.toString() ?? 
+                            data['dayOfWeek']?.toString() ?? '';
           final normalizedDay = chineseDayMap[dayOfWeek] ?? dayOfWeek.toLowerCase();
           
           if (normalizedDay.isNotEmpty) {
             result[normalizedDay] = {
               'isOnSchedule': data['isOnSchedule'] ?? false,
               'completionDate': completionDate,
+              'actualDayOfWeek': data['actualDayOfWeek'],
             };
           }
         }

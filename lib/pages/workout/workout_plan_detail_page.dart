@@ -1,9 +1,10 @@
 // lib/pages/workout/workout_plan_detail_page.dart
-// ✅ v3.0 - 混合模式進度追蹤 + 防呆提示
+// ✅ v3.1 - 混合模式進度追蹤 + 防呆提示
 // 🔥 v3 新增：記錄計畫日 + 實際日
 // 🔥 v3 新增：防呆提示（非計畫日執行時）
 // 🔥 v3 新增：今日建議訓練提示
 // 🔥 v3 新增：按時執行標記（⚡ 標示）
+// 🔥 v3.1 修正：字段名匹配 - 支援多種 key 格式（星期一/週一/monday）
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -125,19 +126,47 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     return null;
   }
   
-  // 🔥 v3 新增：檢查某天是否已完成
+  // 🔥 v3.1 修正：檢查某天是否已完成 - 支援多種 key 格式
   bool _isDayCompleted(String dayKey) {
-    // 先檢查混合模式資料
-    if (_weeklyCompletions.containsKey(_dayNames[dayKey])) {
-      return _weeklyCompletions[_dayNames[dayKey]]?['completed'] == true;
+    // UnifiedWorkoutService.getWeeklyPlanCompletions 返回的 key 是 planDayOfWeek (如 "星期一")
+    final fullName = _dayFullNames[dayKey];  // "星期一"
+    final shortName = _dayNames[dayKey];     // "週一"
+    
+    // 🔥 v3.1：按優先級嘗試不同 key 格式
+    // 1. 先檢查完整名稱 "星期一"
+    if (fullName != null && _weeklyCompletions.containsKey(fullName)) {
+      return _weeklyCompletions[fullName]?['completed'] == true;
     }
-    // 兼容舊資料
+    // 2. 再檢查簡短名稱 "週一"
+    if (shortName != null && _weeklyCompletions.containsKey(shortName)) {
+      return _weeklyCompletions[shortName]?['completed'] == true;
+    }
+    // 3. 最後檢查英文 key "monday"
+    if (_weeklyCompletions.containsKey(dayKey)) {
+      return _weeklyCompletions[dayKey]?['completed'] == true;
+    }
+    
+    // 兼容舊資料（從 WorkoutProgressService 讀取）
     return (_completions[dayKey] ?? 0) > 0;
   }
   
-  // 🔥 v3 新增：獲取完成詳情
+  // 🔥 v3.1 修正：獲取完成詳情 - 支援多種 key 格式
   Map<String, dynamic>? _getCompletionDetail(String dayKey) {
-    return _weeklyCompletions[_dayNames[dayKey]];
+    final fullName = _dayFullNames[dayKey];  // "星期一"
+    final shortName = _dayNames[dayKey];     // "週一"
+    
+    // 🔥 v3.1：按優先級嘗試不同 key 格式
+    if (fullName != null && _weeklyCompletions.containsKey(fullName)) {
+      return _weeklyCompletions[fullName];
+    }
+    if (shortName != null && _weeklyCompletions.containsKey(shortName)) {
+      return _weeklyCompletions[shortName];
+    }
+    if (_weeklyCompletions.containsKey(dayKey)) {
+      return _weeklyCompletions[dayKey];
+    }
+    
+    return null;
   }
 
   @override

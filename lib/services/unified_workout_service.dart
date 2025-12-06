@@ -1,5 +1,5 @@
 // lib/services/unified_workout_service.dart
-// 🔧 統一訓練記錄服務 - 完整整合版 v6.1
+// 🔧 統一訓練記錄服務 - 完整整合版 v6.3
 // ✅ 保留所有原有功能
 // ✅ 新增 Plan Session 方法（教練計畫訓練）
 // ✅ 新增整合讀取方法（同時顯示自由訓練和計畫訓練）
@@ -8,6 +8,8 @@
 // ✅ 🔥 v5 新增：訓練命名功能（workoutName 參數）
 // ✅ 🔥 v6 新增動作追蹤（addedExercisesCount + addedDuringSession 標記）
 // ✅ 🔥 v6.1 startPlanSession 支援自訂訓練名稱
+// ✅ 🔥 v6.2 修正 isOnSchedule 判斷 - 支援「星期一」和「週一」格式比較
+// ✅ 🔥 v6.3 核心修復 - 完整支援英文格式（monday/tuesday）日期比較
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -86,13 +88,86 @@ class UnifiedWorkoutService {
   };
 
   // ============================================================
-  // 🔥 日期輔助函數（v7 新增 - 混合模式支援）
+  // 🔥 日期輔助函數（v6.3 - 完整格式支援：英文 + 中文）
   // ============================================================
 
-  /// 🔥 獲取中文星期幾
+  /// 🔥 獲取中文星期幾（短格式：週一）
   static String _getDayOfWeekChinese(int weekday) {
     const days = ['', '週一', '週二', '週三', '週四', '週五', '週六', '週日'];
     return days[weekday.clamp(1, 7)];
+  }
+
+  /// 🔥 v6.2 新增：獲取中文星期幾（完整格式：星期一）
+  static String _getDayOfWeekChineseFull(int weekday) {
+    const days = ['', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+    return days[weekday.clamp(1, 7)];
+  }
+
+  /// 🔥 v6.3 新增：英文到中文完整格式映射
+  static const Map<String, String> _englishToFullDay = {
+    'monday': '星期一', 'tuesday': '星期二', 'wednesday': '星期三',
+    'thursday': '星期四', 'friday': '星期五', 'saturday': '星期六', 'sunday': '星期日',
+    'mon': '星期一', 'tue': '星期二', 'wed': '星期三',
+    'thu': '星期四', 'fri': '星期五', 'sat': '星期六', 'sun': '星期日',
+  };
+
+  /// 🔥 v6.3 新增：中文到英文映射
+  static const Map<String, String> _chineseToEnglish = {
+    '星期一': 'monday', '星期二': 'tuesday', '星期三': 'wednesday',
+    '星期四': 'thursday', '星期五': 'friday', '星期六': 'saturday', '星期日': 'sunday',
+    '週一': 'monday', '週二': 'tuesday', '週三': 'wednesday',
+    '週四': 'thursday', '週五': 'friday', '週六': 'saturday', '週日': 'sunday',
+  };
+
+  /// 🔥 v6.2 新增：星期格式轉換映射表
+  static const Map<String, String> _shortToFullDay = {
+    '週一': '星期一', '週二': '星期二', '週三': '星期三',
+    '週四': '星期四', '週五': '星期五', '週六': '星期六', '週日': '星期日',
+  };
+
+  static const Map<String, String> _fullToShortDay = {
+    '星期一': '週一', '星期二': '週二', '星期三': '週三',
+    '星期四': '週四', '星期五': '週五', '星期六': '週六', '星期日': '週日',
+  };
+
+  /// 🔥 v6.3 核心修復：正規化任何格式的星期為統一格式（中文完整）
+  static String _normalizeDayOfWeek(String day) {
+    final lower = day.toLowerCase().trim();
+    
+    // 1. 英文格式 -> 中文完整
+    if (_englishToFullDay.containsKey(lower)) {
+      return _englishToFullDay[lower]!;
+    }
+    
+    // 2. 中文短格式 -> 中文完整
+    if (_shortToFullDay.containsKey(day)) {
+      return _shortToFullDay[day]!;
+    }
+    
+    // 3. 已經是中文完整格式
+    if (_fullToShortDay.containsKey(day)) {
+      return day;
+    }
+    
+    // 4. 無法識別，返回原值
+    return day;
+  }
+
+  /// 🔥 v6.3 核心修復：判斷兩個星期字串是否相同（支援所有格式）
+  static bool _isSameDayOfWeek(String day1, String day2) {
+    if (day1 == day2) return true;
+    
+    // 正規化為統一格式後比較
+    final normalized1 = _normalizeDayOfWeek(day1);
+    final normalized2 = _normalizeDayOfWeek(day2);
+    
+    if (kDebugMode) {
+      debugPrint('🔍 _isSameDayOfWeek: "$day1" vs "$day2"');
+      debugPrint('   正規化: "$normalized1" vs "$normalized2"');
+      debugPrint('   結果: ${normalized1 == normalized2}');
+    }
+    
+    return normalized1 == normalized2;
   }
 
   /// 🔥 獲取 ISO 週數
@@ -894,10 +969,14 @@ class UnifiedWorkoutService {
         final planDayOfWeek = data['planDayOfWeek'] as String? ?? data['dayOfWeek'] as String?;
         
         if (planDayOfWeek != null) {
-          completions[planDayOfWeek] = {
+          // 🔥 v6.3：正規化 key 為中文完整格式
+          final normalizedKey = _normalizeDayOfWeek(planDayOfWeek);
+          
+          completions[normalizedKey] = {
             'completed': true,
             'actualDate': (data['actualDate'] as Timestamp?)?.toDate(),
-            'actualDayOfWeek': data['actualDayOfWeek'] ?? planDayOfWeek,
+            'actualDayOfWeek': data['actualDayOfWeek'] ?? normalizedKey,
+            'planDayOfWeek': normalizedKey,  // 🔥 v6.3 新增
             'isOnSchedule': data['isOnSchedule'] ?? true,
             'duration': data['totalDuration'] ?? 0,
             'calories': data['caloriesBurned'] ?? 0.0,
@@ -907,7 +986,7 @@ class UnifiedWorkoutService {
       }
 
       if (kDebugMode) {
-        debugPrint('✅ 本週計畫完成情況: $completions');
+        debugPrint('✅ 本週計畫完成情況 (v6.3): $completions');
       }
 
       return completions;
@@ -1652,7 +1731,7 @@ class UnifiedWorkoutService {
     return sessionRef.id;
   }
 
-  /// 🔥 完成教練計畫訓練會話 - 使用精確卡路里計算
+  /// 🔥 完成教練計畫訓練會話 - v6.2 修正 isOnSchedule 判斷
   Future<void> finishPlanSession({
     required String sessionId,
     required String planId,
@@ -1855,11 +1934,25 @@ class UnifiedWorkoutService {
       'exercises': exerciseDetails,
     });
 
-    // 4c. ✅ 記錄計畫完成進度（用於追蹤）- 🔥 v7 增強版：記錄計畫日+實際日
+    // 4c. ✅ 記錄計畫完成進度（用於追蹤）
+    // 🔥 v6.3 核心修正：正確判斷 isOnSchedule（支援英文格式）
     final now = DateTime.now();
-    final actualDayOfWeek = _getDayOfWeekChinese(now.weekday);
+    final actualDayOfWeekShort = _getDayOfWeekChinese(now.weekday);  // "週一"
+    final actualDayOfWeekFull = _getDayOfWeekChineseFull(now.weekday);  // "星期一"
     final weekNumber = _getWeekNumber(now);
-    final isOnSchedule = dayOfWeek == actualDayOfWeek;  // 是否按計畫日執行
+    
+    // 🔥 v6.3 修正：使用正規化方法比較（支援 monday/星期一/週一）
+    final normalizedPlanDayOfWeek = _normalizeDayOfWeek(dayOfWeek);
+    final isOnSchedule = _isSameDayOfWeek(dayOfWeek, actualDayOfWeekFull);
+    
+    if (kDebugMode) {
+      debugPrint('🔍 isOnSchedule 判斷 (v6.3):');
+      debugPrint('   原始計畫日 (dayOfWeek): $dayOfWeek');
+      debugPrint('   正規化計畫日: $normalizedPlanDayOfWeek');
+      debugPrint('   實際日 (short): $actualDayOfWeekShort');
+      debugPrint('   實際日 (full): $actualDayOfWeekFull');
+      debugPrint('   結果: $isOnSchedule');
+    }
     
     final completionRef = _firestore.collection('workoutCompletions').doc();
     batch.set(completionRef, {
@@ -1869,16 +1962,17 @@ class UnifiedWorkoutService {
       
       // 計畫資訊
       'planName': planName,
-      'planDayOfWeek': dayOfWeek,  // 計畫日：週一
+      'planDayOfWeek': normalizedPlanDayOfWeek,  // 🔥 v6.3：正規化後的格式（星期一）
+      'planDayOfWeekOriginal': dayOfWeek,  // 保留原始格式供調試
       'plannedExercises': exercisesSnap.docs.length,
       
       // 實際執行
       'actualDate': Timestamp.fromDate(now),
       'actualDateString': dateStr,
-      'actualDayOfWeek': actualDayOfWeek,  // 實際星期：週四
+      'actualDayOfWeek': actualDayOfWeekFull,  // 🔥 v6.2：統一使用完整格式
       'weekNumber': weekNumber,
       'year': now.year,
-      'isOnSchedule': isOnSchedule,  // ✅ 是否按時執行
+      'isOnSchedule': isOnSchedule,  // ✅ v6.3 修正後的判斷
       
       // 執行統計
       'exercisesCompleted': exerciseDetails.length,
@@ -1904,12 +1998,13 @@ class UnifiedWorkoutService {
       debugPrint('✅ 計畫訓練已完成並保存:');
       debugPrint('   sessionId: $sessionId');
       debugPrint('   planId: $planId');
-      debugPrint('   🔥 訓練名稱: $workoutName');  // 🔥 v6.1 調試輸出
+      debugPrint('   🔥 訓練名稱: $workoutName');
       debugPrint('   日期: $dateStr');
       debugPrint('   時長: $totalDurationMin 分鐘');
       debugPrint('   動作: ${exerciseDetails.length} 個');
       debugPrint('   完成組數: $totalCompletedSets');
       debugPrint('   🔥 精確卡路里: ${finalCalories.toStringAsFixed(1)}');
+      debugPrint('   🔥 v6.2 isOnSchedule: $isOnSchedule');  // 新增調試輸出
     }
   }
 

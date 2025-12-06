@@ -1,12 +1,15 @@
 // lib/pages/coach/trainee_workout_tab.dart
-// 🎯 學員訓練日誌分頁 v2.2
-// ✅ 修復：從 workoutSessions 讀取詳細動作資料
-// ✅ 修復：移除 orderBy 避免索引問題
-// ✅ 莫蘭迪設計風格
+// 🎯 學員訓練日誌分頁 v3.0
+// ✅ 整合新的 CompletionStatus 狀態系統
+// ✅ 支援 6 種完成狀態：準時、提前、補做、今日待做、逾期、待完成
+// ✅ 修復狀態判斷邏輯
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/app_theme.dart';
+import '../../models/completion_status.dart';
+import '../../services/workout_completion_service.dart';
+import '../../components/completion_status_badge.dart';
 
 class TraineeWorkoutTab extends StatefulWidget {
   final String traineeId;
@@ -21,8 +24,8 @@ class TraineeWorkoutTab extends StatefulWidget {
 }
 
 class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
-  // 切換數據來源
   bool _showCompletionsOnly = true;
+  final WorkoutCompletionService _completionService = WorkoutCompletionService();
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +41,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🎨 篩選切換按鈕
   Widget _buildFilterToggle() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -115,10 +117,9 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 計畫訓練完成列表（移除 orderBy 避免索引問題）
+  // 🔥 v3.0 計畫訓練完成列表
   Widget _buildCompletionsList() {
     return StreamBuilder<QuerySnapshot>(
-      // 🔥 修復：只用 where，不用 orderBy，避免需要複合索引
       stream: FirebaseFirestore.instance
           .collection('workoutCompletions')
           .where('userId', isEqualTo: widget.traineeId)
@@ -137,14 +138,13 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
           return _buildEmptyState('尚無計畫訓練紀錄', '學員完成訓練計畫後會顯示在這裡');
         }
 
-        // 🔥 手動排序（避免需要複合索引）
         final completions = snapshot.data!.docs.toList();
         completions.sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
-          final aDate = _getDateTime(aData['createdAt'] ?? aData['completionDate']);
-          final bDate = _getDateTime(bData['createdAt'] ?? bData['completionDate']);
-          return bDate.compareTo(aDate); // 降序
+          final aDate = _getDateTime(aData['actualDate'] ?? aData['createdAt'] ?? aData['completionDate']);
+          final bDate = _getDateTime(bData['actualDate'] ?? bData['createdAt'] ?? bData['completionDate']);
+          return bDate.compareTo(aDate);
         });
 
         return ListView.builder(
@@ -152,19 +152,20 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
           itemCount: completions.length,
           itemBuilder: (context, index) {
             final data = completions[index].data() as Map<String, dynamic>;
-            return _buildCompletionCard(data);
+            return _buildCompletionCardV3(data);
           },
         );
       },
     );
   }
 
-  // 🔥 計畫訓練卡片
-  Widget _buildCompletionCard(Map<String, dynamic> data) {
+  // 🔥 v3.0 計畫訓練卡片 - 使用新的狀態系統
+  Widget _buildCompletionCardV3(Map<String, dynamic> data) {
     final planName = data['planName']?.toString() ?? '未命名計畫';
     final dayName = data['dayName']?.toString() ?? '';
-    final dayOfWeek = data['dayOfWeek']?.toString() ?? '';
-    final isOnSchedule = data['isOnSchedule'] as bool? ?? false;
+    final planDayOfWeek = data['planDayOfWeek']?.toString() ?? 
+                          data['dayOfWeek']?.toString() ?? '';
+    final actualDayOfWeek = data['actualDayOfWeek']?.toString() ?? '';
     final totalDuration = _toInt(data['totalDuration']);
     final totalSets = _toInt(data['totalSets']);
     final totalExercises = _toInt(data['totalExercises']);
@@ -173,11 +174,18 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     
     final exerciseCount = totalExercises > 0 ? totalExercises : exercisesCompleted;
     
-    DateTime actualDate = _getDateTime(data['completionDate'] ?? data['createdAt']);
+    // 獲取實際完成日期
+    DateTime actualDate = _getDateTime(
+      data['actualDate'] ?? data['completionDate'] ?? data['createdAt']
+    );
 
-    final statusColor = isOnSchedule ? AppColors.success : AppColors.warning;
-    final statusText = isOnSchedule ? '按時完成' : '補做完成';
-    final statusIcon = isOnSchedule ? Icons.check_circle : Icons.schedule;
+    // 🔥 v3.0：使用新的狀態計算邏輯
+    final statusType = _completionService.calculateStatus(
+      planDayOfWeek: planDayOfWeek,
+      actualDate: actualDate,
+      referenceDate: actualDate, // 使用完成日期作為參考週
+    );
+    final status = CompletionStatus.fromType(statusType);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -186,7 +194,7 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: AppShadows.small,
         border: Border.all(
-          color: statusColor.withOpacity(0.3),
+          color: status.color.withOpacity(0.3),
           width: 1.5,
         ),
       ),
@@ -194,7 +202,7 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () => _showCompletionDetail(context, data, actualDate, sessionId),
+          onTap: () => _showCompletionDetail(context, data, actualDate, sessionId, status),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -202,16 +210,17 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
               children: [
                 Row(
                   children: [
-                    // 日期圓圈
+                    // 🔥 日期圓圈 - 使用狀態顏色
                     Container(
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        gradient: isOnSchedule 
-                            ? AppColors.successGradient 
-                            : AppColors.warningGradient,
+                        color: status.backgroundColor,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: AppShadows.small,
+                        border: Border.all(
+                          color: status.color.withOpacity(0.5),
+                          width: 2,
+                        ),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -219,14 +228,14 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                           Text(
                             '${actualDate.day}',
                             style: AppTextStyles.h3.copyWith(
-                              color: Colors.white,
+                              color: status.color,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
                             '${actualDate.month}月',
                             style: AppTextStyles.caption.copyWith(
-                              color: Colors.white.withOpacity(0.9),
+                              color: status.color.withOpacity(0.8),
                             ),
                           ),
                         ],
@@ -247,48 +256,48 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
-                          if (dayOfWeek.isNotEmpty || dayName.isNotEmpty)
-                            Text(
-                              dayName.isNotEmpty ? dayName : dayOfWeek,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.textSecondary,
+                          
+                          // 🔥 v3.0：顯示計畫日 vs 實際完成日
+                          Row(
+                            children: [
+                              Text(
+                                '計畫：$planDayOfWeek',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
-                            ),
+                              if (actualDayOfWeek.isNotEmpty && 
+                                  actualDayOfWeek != planDayOfWeek) ...[
+                                Text(
+                                  ' → ',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                                Text(
+                                  '實際：$actualDayOfWeek',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: status.color,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ],
                       ),
                     ),
                     
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: statusColor.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(statusIcon, size: 14, color: statusColor),
-                          const SizedBox(width: 4),
-                          Text(
-                            statusText,
-                            style: AppTextStyles.caption.copyWith(
-                              color: statusColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
+                    // 🔥 v3.0：使用新的狀態標籤元件
+                    CompletionStatusBadge(
+                      statusType: statusType,
+                      compact: true,
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 
+                // 統計資訊
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -319,10 +328,9 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 全部訓練記錄（移除 orderBy 避免索引問題）
+  // 全部訓練記錄
   Widget _buildAllLogsList() {
     return StreamBuilder<QuerySnapshot>(
-      // 🔥 修復：只用 where，不用 orderBy
       stream: FirebaseFirestore.instance
           .collection('workoutLogs')
           .where('userId', isEqualTo: widget.traineeId)
@@ -341,7 +349,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
           return _buildEmptyState('尚無訓練紀錄', '學員開始訓練後會顯示在這裡');
         }
 
-        // 🔥 手動排序
         final logs = snapshot.data!.docs.toList();
         logs.sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
@@ -364,16 +371,15 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 修復：從 sessionId 讀取詳細資料
   Widget _buildLogCard(Map<String, dynamic> log, String logId) {
     DateTime date = _getDateTime(log['date'] ?? log['createdAt']);
     
-    final planName = log['planName']?.toString() ?? '自由訓練';
+    final planName = log['planName']?.toString() ?? log['name']?.toString() ?? '自由訓練';
     final duration = _toInt(log['duration'] ?? log['totalDuration']);
     final sessionId = log['sessionId']?.toString() ?? '';
     final notes = log['notes']?.toString() ?? '';
+    final isPlanWorkout = log['planId'] != null;
     
-    // 嘗試從多個可能的欄位讀取動作數量
     int exerciseCount = 0;
     if (log['exercises'] is List) {
       exerciseCount = (log['exercises'] as List).length;
@@ -389,6 +395,11 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: AppShadows.small,
+        border: Border.all(
+          color: isPlanWorkout 
+              ? AppColors.coach.withOpacity(0.3)
+              : AppColors.divider,
+        ),
       ),
       child: Material(
         color: Colors.transparent,
@@ -403,7 +414,9 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: AppColors.coach.withOpacity(0.12),
+                    color: isPlanWorkout 
+                        ? AppColors.coach.withOpacity(0.12)
+                        : Colors.orange.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -412,14 +425,14 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                       Text(
                         '${date.day}',
                         style: AppTextStyles.h3.copyWith(
-                          color: AppColors.coach,
+                          color: isPlanWorkout ? AppColors.coach : Colors.orange,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       Text(
                         '${date.month}月',
                         style: AppTextStyles.caption.copyWith(
-                          color: AppColors.coach,
+                          color: isPlanWorkout ? AppColors.coach : Colors.orange,
                         ),
                       ),
                     ],
@@ -431,13 +444,39 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        planName,
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              planName,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // 訓練類型標籤
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isPlanWorkout 
+                                  ? AppColors.coach.withOpacity(0.12)
+                                  : Colors.orange.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              isPlanWorkout ? '計畫' : '自由',
+                              style: AppTextStyles.caption.copyWith(
+                                color: isPlanWorkout ? AppColors.coach : Colors.orange,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -456,7 +495,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                           ),
                         ],
                       ),
-                      // 顯示備註提示
                       if (notes.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
@@ -508,20 +546,22 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 顯示計畫完成詳情（從 workoutSessions 讀取動作）
+  // 🔥 v3.0：顯示計畫完成詳情
   void _showCompletionDetail(
     BuildContext context,
     Map<String, dynamic> data,
     DateTime date,
     String sessionId,
+    CompletionStatus status,
   ) {
     final planName = data['planName']?.toString() ?? '未命名計畫';
-    final isOnSchedule = data['isOnSchedule'] as bool? ?? false;
+    final planDayOfWeek = data['planDayOfWeek']?.toString() ?? 
+                          data['dayOfWeek']?.toString() ?? '';
+    final actualDayOfWeek = data['actualDayOfWeek']?.toString() ?? '';
     final totalDuration = _toInt(data['totalDuration']);
     final totalSets = _toInt(data['totalSets']);
+    final caloriesBurned = _toDouble(data['caloriesBurned']);
     final notes = data['notes']?.toString() ?? '';
-
-    final statusColor = isOnSchedule ? AppColors.success : AppColors.warning;
 
     showModalBottomSheet(
       context: context,
@@ -556,20 +596,22 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 標題
+                      // 標題區
                       Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              gradient: isOnSchedule 
-                                  ? AppColors.successGradient 
-                                  : AppColors.warningGradient,
+                              color: status.backgroundColor,
                               borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: status.color.withOpacity(0.5),
+                                width: 2,
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.fitness_center,
-                              color: Colors.white,
+                            child: Icon(
+                              status.icon,
+                              color: status.color,
                               size: 28,
                             ),
                           ),
@@ -586,40 +628,54 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${date.year}/${date.month}/${date.day}',
+                                  status.description,
                                   style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.textSecondary,
+                                    color: status.color,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              isOnSchedule ? '按時' : '補做',
-                              style: AppTextStyles.label.copyWith(
-                                color: statusColor,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
+                          CompletionStatusBadge(statusType: status.type),
                         ],
                       ),
                       const SizedBox(height: 24),
+
+                      // 🔥 日期資訊區
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          children: [
+                            _buildInfoRow(
+                              Icons.calendar_today,
+                              '計畫日',
+                              planDayOfWeek,
+                            ),
+                            const Divider(height: 16),
+                            _buildInfoRow(
+                              Icons.event_available,
+                              '實際完成',
+                              '${date.month}/${date.day} ${actualDayOfWeek.isNotEmpty ? actualDayOfWeek : ''}',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // 統計卡片
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          gradient: AppColors.secondaryGradient,
+                          gradient: LinearGradient(
+                            colors: [
+                              status.color.withOpacity(0.8),
+                              status.color,
+                            ],
+                          ),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -628,12 +684,16 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                             _buildDetailStat('時長', _formatDuration(totalDuration)),
                             _buildDetailDivider(),
                             _buildDetailStat('總組數', '$totalSets'),
+                            if (caloriesBurned > 0) ...[
+                              _buildDetailDivider(),
+                              _buildDetailStat('卡路里', '${caloriesBurned.round()}'),
+                            ],
                           ],
                         ),
                       ),
                       const SizedBox(height: 24),
 
-                      // 🔥 從 workoutSessions 讀取動作列表
+                      // 動作列表
                       Text(
                         '訓練動作',
                         style: AppTextStyles.h4.copyWith(
@@ -657,7 +717,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                           ),
                         ),
 
-                      // 備註
                       if (notes.isNotEmpty) ...[
                         const SizedBox(height: 24),
                         Text(
@@ -696,7 +755,28 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 從 workoutSessions 子集合讀取動作
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppColors.textSecondary),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: AppTextStyles.bodyMedium.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildExercisesFromSession(String sessionId) {
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
@@ -717,7 +797,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
         }
 
         if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          // 嘗試從用戶子集合讀取
           return _buildExercisesFromUserSession(sessionId);
         }
 
@@ -734,7 +813,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 備用：從 users/{userId}/workoutSessions 讀取
   Widget _buildExercisesFromUserSession(String sessionId) {
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
@@ -845,14 +923,13 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔥 顯示舊版日誌詳情（也嘗試讀取 session）
   void _showLogDetailWithSession(
     BuildContext context,
     Map<String, dynamic> log,
     DateTime date,
     String sessionId,
   ) {
-    final planName = log['planName']?.toString() ?? '自由訓練';
+    final planName = log['planName']?.toString() ?? log['name']?.toString() ?? '自由訓練';
     final duration = _toInt(log['duration'] ?? log['totalDuration']);
     final notes = log['notes']?.toString() ?? '';
 
@@ -966,7 +1043,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
                       ),
                       const SizedBox(height: 12),
                       
-                      // 嘗試從 session 讀取動作
                       if (sessionId.isNotEmpty)
                         _buildExercisesFromSession(sessionId)
                       else if (log['exercises'] is List && (log['exercises'] as List).isNotEmpty)
@@ -1058,7 +1134,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🎨 狀態 UI
   Widget _buildLoadingState() {
     return const Center(
       child: CircularProgressIndicator(
@@ -1130,7 +1205,6 @@ class _TraineeWorkoutTabState extends State<TraineeWorkoutTab> {
     );
   }
 
-  // 🔧 輔助方法
   static int _toInt(dynamic value) {
     if (value == null) return 0;
     if (value is int) return value;

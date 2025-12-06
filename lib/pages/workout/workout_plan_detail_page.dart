@@ -1,16 +1,18 @@
 // lib/pages/workout/workout_plan_detail_page.dart
-// ✅ v3.1 - 混合模式進度追蹤 + 防呆提示
-// 🔥 v3 新增：記錄計畫日 + 實際日
-// 🔥 v3 新增：防呆提示（非計畫日執行時）
-// 🔥 v3 新增：今日建議訓練提示
-// 🔥 v3 新增：按時執行標記（⚡ 標示）
-// 🔥 v3.1 修正：字段名匹配 - 支援多種 key 格式（星期一/週一/monday）
+// ✅ v4.0 - 整合 6 種完成狀態系統
+// 🔥 v4 新增：使用 CompletionStatus 模型
+// 🔥 v4 新增：使用 CompletionStatusBadge 元件
+// 🔥 v4 新增：支援準時、提前、補做、今日待做、逾期、待完成
+// 🔥 v3.1 保留：混合模式進度追蹤 + 防呆提示
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/workout_model.dart';
+import '../../models/completion_status.dart';
 import '../../services/unified_workout_service.dart';
 import '../../services/workout_progress_service.dart';
+import '../../services/workout_completion_service.dart';
+import '../../components/completion_status_badge.dart';
 import 'workout_plan_execution_page.dart';
 
 class WorkoutPlanDetailPage extends StatefulWidget {
@@ -26,14 +28,15 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     with SingleTickerProviderStateMixin {
   final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
   final WorkoutProgressService _progressService = WorkoutProgressService();
+  final WorkoutCompletionService _completionService = WorkoutCompletionService();
 
-  // 🔥 v3 新增：混合模式完成資料
+  // 🔥 v4：混合模式完成資料（含狀態類型）
   Map<String, Map<String, dynamic>> _weeklyCompletions = {};
   Map<String, int> _completions = {};
   bool _isLoadingProgress = true;
   late AnimationController _animController;
   
-  // 🔥 v3 新增：今日星期
+  // 今日星期
   late String _todayKey;
   late String _todayDisplayName;
 
@@ -45,8 +48,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   static const Color _cardColor = Color(0xFFFFFFFF);
   static const Color _textPrimary = Color(0xFF2D3748);
   static const Color _textSecondary = Color(0xFF718096);
-  static const Color _successGreen = Color(0xFF48BB78);
-  static const Color _warningYellow = Color(0xFFECC94B);  // 🔥 v3 新增
 
   final Map<String, String> _dayNames = {
     'monday': '週一',
@@ -68,7 +69,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     'sunday': '星期日',
   };
   
-  // 🔥 v3 新增：weekday 到 key 的映射
   final List<String> _weekdayKeys = [
     '', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
   ];
@@ -81,7 +81,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       duration: const Duration(milliseconds: 800),
     );
     
-    // 🔥 v3 新增：計算今日星期
     final now = DateTime.now();
     _todayKey = _weekdayKeys[now.weekday];
     _todayDisplayName = _dayNames[_todayKey] ?? '';
@@ -99,12 +98,32 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   Future<void> _loadProgress() async {
     if (widget.plan.id != null) {
       try {
-        // 🔥 v3：使用混合模式獲取本週完成情況
         final weeklyData = await _workoutService.getWeeklyPlanCompletions(widget.plan.id!);
         final progress = await _progressService.getWeeklyCompletion(widget.plan.id!);
         
+        // 🔥 v4：為每個完成記錄計算狀態類型
+        final enrichedWeeklyData = <String, Map<String, dynamic>>{};
+        weeklyData.forEach((key, value) {
+          final planDayOfWeek = value['planDayOfWeek'] ?? key;
+          final actualDate = value['actualDate'] as DateTime?;
+          
+          CompletionStatusType? statusType;
+          if (value['completed'] == true && actualDate != null) {
+            statusType = _completionService.calculateStatus(
+              planDayOfWeek: planDayOfWeek,
+              actualDate: actualDate,
+              referenceDate: actualDate,
+            );
+          }
+          
+          enrichedWeeklyData[key] = {
+            ...value,
+            'statusType': statusType,
+          };
+        });
+        
         setState(() {
-          _weeklyCompletions = weeklyData;
+          _weeklyCompletions = enrichedWeeklyData;
           _completions = progress;
           _isLoadingProgress = false;
         });
@@ -116,7 +135,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     }
   }
   
-  // 🔥 v3 新增：獲取今日建議訓練
   WorkoutPlanDay? _getTodayRecommendedWorkout() {
     for (var day in widget.plan.days) {
       if (day.dayOfWeek == _todayKey) {
@@ -126,36 +144,29 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     return null;
   }
   
-  // 🔥 v3.1 修正：檢查某天是否已完成 - 支援多種 key 格式
+  // 🔥 v4：檢查某天是否已完成
   bool _isDayCompleted(String dayKey) {
-    // UnifiedWorkoutService.getWeeklyPlanCompletions 返回的 key 是 planDayOfWeek (如 "星期一")
-    final fullName = _dayFullNames[dayKey];  // "星期一"
-    final shortName = _dayNames[dayKey];     // "週一"
+    final fullName = _dayFullNames[dayKey];
+    final shortName = _dayNames[dayKey];
     
-    // 🔥 v3.1：按優先級嘗試不同 key 格式
-    // 1. 先檢查完整名稱 "星期一"
     if (fullName != null && _weeklyCompletions.containsKey(fullName)) {
       return _weeklyCompletions[fullName]?['completed'] == true;
     }
-    // 2. 再檢查簡短名稱 "週一"
     if (shortName != null && _weeklyCompletions.containsKey(shortName)) {
       return _weeklyCompletions[shortName]?['completed'] == true;
     }
-    // 3. 最後檢查英文 key "monday"
     if (_weeklyCompletions.containsKey(dayKey)) {
       return _weeklyCompletions[dayKey]?['completed'] == true;
     }
     
-    // 兼容舊資料（從 WorkoutProgressService 讀取）
     return (_completions[dayKey] ?? 0) > 0;
   }
   
-  // 🔥 v3.1 修正：獲取完成詳情 - 支援多種 key 格式
+  // 🔥 v4：獲取完成詳情（含狀態類型）
   Map<String, dynamic>? _getCompletionDetail(String dayKey) {
-    final fullName = _dayFullNames[dayKey];  // "星期一"
-    final shortName = _dayNames[dayKey];     // "週一"
+    final fullName = _dayFullNames[dayKey];
+    final shortName = _dayNames[dayKey];
     
-    // 🔥 v3.1：按優先級嘗試不同 key 格式
     if (fullName != null && _weeklyCompletions.containsKey(fullName)) {
       return _weeklyCompletions[fullName];
     }
@@ -167,6 +178,40 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     }
     
     return null;
+  }
+  
+  // 🔥 v4 新增：獲取某天的狀態類型
+  CompletionStatusType _getDayStatusType(String dayKey, bool isPlanned) {
+    final completionDetail = _getCompletionDetail(dayKey);
+    final isCompleted = _isDayCompleted(dayKey);
+    final isToday = dayKey == _todayKey;
+    final today = DateTime.now().weekday;
+    final dayIndex = _weekdayKeys.indexOf(dayKey);
+    final isPast = dayIndex > 0 && dayIndex < today;
+    
+    if (isCompleted && completionDetail != null) {
+      // 已完成：使用計算的狀態類型
+      final statusType = completionDetail['statusType'] as CompletionStatusType?;
+      if (statusType != null) {
+        return statusType;
+      }
+      // 向後相容：使用 isOnSchedule
+      final isOnSchedule = completionDetail['isOnSchedule'] ?? true;
+      return isOnSchedule ? CompletionStatusType.onTime : CompletionStatusType.makeup;
+    }
+    
+    if (!isPlanned) {
+      return CompletionStatusType.pending; // 非訓練日
+    }
+    
+    // 未完成的訓練日
+    if (isToday) {
+      return CompletionStatusType.dueToday;
+    } else if (isPast) {
+      return CompletionStatusType.overdue;
+    } else {
+      return CompletionStatusType.pending;
+    }
   }
 
   @override
@@ -186,7 +231,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                 _buildPlanInfoCard(),
                 const SizedBox(height: 8),
                 
-                // 🔥 v3 新增：今日建議訓練卡片
                 if (todayWorkout != null && !isTodayCompleted)
                   _buildTodayRecommendationCard(todayWorkout),
                 
@@ -213,7 +257,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
   
-  // 🔥 v3 新增：今日建議訓練卡片
   Widget _buildTodayRecommendationCard(WorkoutPlanDay todayWorkout) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -298,7 +341,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // ========== 🎨 SliverAppBar ==========
   Widget _buildSliverAppBar() {
     return SliverAppBar(
       expandedHeight: 160,
@@ -326,7 +368,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           ),
           child: Stack(
             children: [
-              // 裝飾圖案
               Positioned(
                 right: -30,
                 top: -30,
@@ -351,7 +392,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                   ),
                 ),
               ),
-              // 圖標
               Positioned(
                 right: 24,
                 bottom: 60,
@@ -369,14 +409,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         if (widget.plan.status == 'active')
           PopupMenuButton(
             icon: const Icon(Icons.more_vert),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'complete',
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: _successGreen),
+                    Icon(Icons.check_circle, color: CompletionStatus.fromType(CompletionStatusType.onTime).color),
                     const SizedBox(width: 12),
                     const Text('標記為完成'),
                   ],
@@ -391,10 +430,8 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // ========== 📋 計畫資訊卡片 ==========
   Widget _buildPlanInfoCard() {
-    int totalCompletions =
-        _completions.values.fold(0, (sum, count) => sum + count);
+    int totalCompletions = _completions.values.fold(0, (sum, count) => sum + count);
     int totalDays = widget.plan.days.length;
 
     return Padding(
@@ -415,7 +452,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 描述
             if (widget.plan.description != null &&
                 widget.plan.description!.isNotEmpty) ...[
               Text(
@@ -429,7 +465,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               const SizedBox(height: 16),
             ],
 
-            // 日期和天數
             Row(
               children: [
                 _buildInfoChip(
@@ -448,7 +483,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
             const SizedBox(height: 20),
 
-            // 統計數據
             Row(
               children: [
                 Expanded(
@@ -456,7 +490,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     icon: Icons.check_circle_outline,
                     value: '$totalCompletions',
                     label: '累計完成',
-                    color: _successGreen,
+                    color: CompletionStatus.fromType(CompletionStatusType.onTime).color,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -551,7 +585,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // ========== 📊 週進度條 ==========
+  // 🔥 v4：更新週進度條 - 使用 6 種狀態顏色
   Widget _buildWeeklyProgressBar() {
     final days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     final planDays = widget.plan.days.map((d) => d.dayOfWeek).toSet();
@@ -587,32 +621,8 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                   ),
                 ),
                 const Spacer(),
-                // 🔥 v3 新增：圖例說明
-                Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _successGreen,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text('按時', style: TextStyle(fontSize: 10, color: _textSecondary)),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _warningYellow,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text('補做', style: TextStyle(fontSize: 10, color: _textSecondary)),
-                  ],
-                ),
+                // 🔥 v4：使用 StatusLegend 或簡化圖例
+                _buildCompactLegend(),
               ],
             ),
             const SizedBox(height: 16),
@@ -620,14 +630,16 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: days.map((day) {
                 final isTrainingDay = planDays.contains(day);
-                final isCompleted = _isDayCompleted(day);
                 final isToday = day == _todayKey;
-                final completionDetail = _getCompletionDetail(day);
-                final isOnSchedule = completionDetail?['isOnSchedule'] ?? true;
+                final statusType = _getDayStatusType(day, isTrainingDay);
+                final status = CompletionStatus.fromType(statusType);
+                final isCompleted = statusType == CompletionStatusType.onTime ||
+                                    statusType == CompletionStatusType.early ||
+                                    statusType == CompletionStatusType.makeup;
 
                 return Column(
                   children: [
-                    // 🔥 v3 新增：今日指示器
+                    // 今日指示器
                     if (isToday)
                       Container(
                         margin: const EdgeInsets.only(bottom: 4),
@@ -648,41 +660,53 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     else
                       const SizedBox(height: 18),
                     
-                    // 日期圓圈
+                    // 🔥 v4：日期圓圈 - 使用狀態顏色
                     Container(
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        // 🔥 v3：根據是否按時執行顯示不同顏色
-                        color: isCompleted
-                            ? (isOnSchedule ? _successGreen : _warningYellow)
+                        color: isCompleted 
+                            ? status.color 
                             : isTrainingDay
-                                ? _primaryOrange.withOpacity(0.15)
+                                ? status.backgroundColor
                                 : Colors.grey.withOpacity(0.1),
                         shape: BoxShape.circle,
-                        border: isToday && !isCompleted
-                            ? Border.all(color: _primaryOrange, width: 3)
-                            : isTrainingDay && !isCompleted
-                                ? Border.all(color: _primaryOrange, width: 2)
-                                : null,
+                        border: !isCompleted && isTrainingDay
+                            ? Border.all(
+                                color: status.color,
+                                width: isToday ? 3 : 2,
+                              )
+                            : null,
                         boxShadow: isToday && !isCompleted
                             ? [
                                 BoxShadow(
-                                  color: _primaryOrange.withOpacity(0.3),
+                                  color: status.color.withOpacity(0.3),
                                   blurRadius: 8,
                                   spreadRadius: 1,
                                 ),
                               ]
-                            : null,
+                            : isCompleted
+                                ? [
+                                    BoxShadow(
+                                      color: status.color.withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
                       ),
                       child: Center(
                         child: isCompleted
-                            ? const Icon(Icons.check, size: 18, color: Colors.white)
+                            ? Icon(status.icon, size: 18, color: Colors.white)
                             : isTrainingDay
                                 ? Icon(
-                                    isToday ? Icons.play_arrow : Icons.fitness_center,
+                                    statusType == CompletionStatusType.dueToday 
+                                        ? Icons.play_arrow 
+                                        : statusType == CompletionStatusType.overdue
+                                            ? Icons.warning_amber
+                                            : Icons.fitness_center,
                                     size: 16,
-                                    color: _primaryOrange,
+                                    color: status.color,
                                   )
                                 : null,
                       ),
@@ -701,15 +725,16 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                       ),
                     ),
                     
-                    // 🔥 v3 新增：非按時執行提示
-                    if (isCompleted && !isOnSchedule)
+                    // 🔥 v4：顯示狀態標籤（補做時顯示實際日期）
+                    if (isCompleted && statusType == CompletionStatusType.makeup)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          completionDetail?['actualDayOfWeek'] ?? '',
+                          _getCompletionDetail(day)?['actualDayOfWeek'] ?? '補做',
                           style: TextStyle(
                             fontSize: 8,
-                            color: _warningYellow,
+                            color: status.color,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
@@ -722,8 +747,43 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ),
     );
   }
+  
+  // 🔥 v4：簡化圖例
+  Widget _buildCompactLegend() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildLegendDot(CompletionStatusType.onTime, '準時'),
+        const SizedBox(width: 8),
+        _buildLegendDot(CompletionStatusType.early, '提前'),
+        const SizedBox(width: 8),
+        _buildLegendDot(CompletionStatusType.makeup, '補做'),
+      ],
+    );
+  }
+  
+  Widget _buildLegendDot(CompletionStatusType type, String label) {
+    final status = CompletionStatus.fromType(type);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: status.color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(fontSize: 9, color: _textSecondary),
+        ),
+      ],
+    );
+  }
 
-  // ========== 📝 Section Title ==========
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -751,7 +811,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // ========== 📅 訓練日列表 ==========
   Widget _buildDaysList() {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
@@ -779,12 +838,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
+  // 🔥 v4：更新日卡片 - 使用新的狀態系統
   Widget _buildDayCard(WorkoutPlanDay day, int index) {
-    // 🔥 v3：使用混合模式資料
     final isCompleted = _isDayCompleted(day.dayOfWeek);
-    final completionDetail = _getCompletionDetail(day.dayOfWeek);
-    final isOnSchedule = completionDetail?['isOnSchedule'] ?? true;
     final isToday = day.dayOfWeek == _todayKey;
+    final statusType = _getDayStatusType(day.dayOfWeek, true);
+    final status = CompletionStatus.fromType(statusType);
     int completionCount = _completions[day.dayOfWeek] ?? 0;
 
     return Padding(
@@ -793,14 +852,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         decoration: BoxDecoration(
           color: _cardColor,
           borderRadius: BorderRadius.circular(20),
-          // 🔥 v3：今日訓練高亮邊框
           border: isToday && !isCompleted
-              ? Border.all(color: _primaryOrange, width: 2)
+              ? Border.all(color: status.color, width: 2)
               : null,
           boxShadow: [
             BoxShadow(
               color: isToday && !isCompleted
-                  ? _primaryOrange.withOpacity(0.15)
+                  ? status.color.withOpacity(0.15)
                   : Colors.black.withOpacity(0.04),
               blurRadius: 15,
               offset: const Offset(0, 4),
@@ -816,8 +874,8 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                 gradient: LinearGradient(
                   colors: isCompleted
                       ? [
-                          (isOnSchedule ? _successGreen : _warningYellow).withOpacity(0.08),
-                          (isOnSchedule ? _successGreen : _warningYellow).withOpacity(0.03),
+                          status.color.withOpacity(0.08),
+                          status.color.withOpacity(0.03),
                         ]
                       : [
                           _primaryOrange.withOpacity(0.08),
@@ -837,18 +895,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: isCompleted
-                            ? [
-                                isOnSchedule ? _successGreen : _warningYellow,
-                                isOnSchedule ? _successGreen.withOpacity(0.8) : _warningYellow.withOpacity(0.8),
-                              ]
+                            ? [status.color, status.color.withOpacity(0.8)]
                             : [_primaryOrange, _darkOrange],
                       ),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: (isCompleted
-                                  ? (isOnSchedule ? _successGreen : _warningYellow)
-                                  : _primaryOrange)
+                          color: (isCompleted ? status.color : _primaryOrange)
                               .withOpacity(0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
@@ -859,9 +912,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (isCompleted)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 4),
-                            child: Icon(Icons.check, size: 14, color: Colors.white),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(status.icon, size: 14, color: Colors.white),
                           ),
                         Text(
                           _dayFullNames[day.dayOfWeek] ?? day.dayOfWeek,
@@ -895,13 +948,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     ),
                   ),
                   
-                  // 🔥 v3 新增：今日標記
+                  // 今日標記
                   if (isToday && !isCompleted) ...[
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: _primaryOrange,
+                        color: status.color,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text(
@@ -917,46 +970,16 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
                   const Spacer(),
 
-                  // 🔥 v3：更新完成徽章（顯示是否按時）
+                  // 🔥 v4：使用 CompletionStatusBadge
                   if (isCompleted)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: (isOnSchedule ? _successGreen : _warningYellow).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: (isOnSchedule ? _successGreen : _warningYellow).withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isOnSchedule ? Icons.verified : Icons.schedule,
-                            size: 14,
-                            color: isOnSchedule ? _successGreen : _warningYellow,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            isOnSchedule ? '已完成' : '補做',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isOnSchedule ? _successGreen : _warningYellow,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (completionCount > 1) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '×$completionCount',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isOnSchedule ? _successGreen : _warningYellow,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                    CompletionStatusBadge(
+                      statusType: statusType,
+                      compact: true,
+                    )
+                  else if (statusType == CompletionStatusType.overdue)
+                    CompletionStatusBadge(
+                      statusType: statusType,
+                      compact: true,
                     ),
                 ],
               ),
@@ -973,7 +996,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
                   const SizedBox(height: 16),
 
-                  // 🔥 開始訓練按鈕（v3：已完成顯示「再次訓練」）
+                  // 開始訓練按鈕
                   SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -981,7 +1004,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                       onPressed: () => _startWorkout(day),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isCompleted 
-                            ? (isOnSchedule ? _successGreen : _warningYellow).withOpacity(0.9)
+                            ? status.color.withOpacity(0.9)
                             : _primaryOrange,
                         foregroundColor: Colors.white,
                         elevation: 0,
@@ -1006,13 +1029,29 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            isCompleted ? '再次訓練' : (isToday ? '開始今日訓練' : '開始訓練'),
+                            isCompleted 
+                                ? '再次訓練' 
+                                : (isToday ? '開始今日訓練' : '開始訓練'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
                             ),
                           ),
+                          if (completionCount > 1) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '×$completionCount',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1039,7 +1078,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ),
       child: Row(
         children: [
-          // 序號
           Container(
             width: 28,
             height: 28,
@@ -1062,7 +1100,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           ),
           const SizedBox(width: 12),
 
-          // 類型圖標
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -1077,7 +1114,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           ),
           const SizedBox(width: 14),
 
-          // 動作資訊
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1178,7 +1214,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     return widget.plan.days.fold(0, (sum, day) => sum + day.exercises.length);
   }
 
-  // ========== 🚀 開始訓練 - v3.0 含防呆提示 ==========
   Future<void> _startWorkout(WorkoutPlanDay day) async {
     if (widget.plan.id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1198,21 +1233,17 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       return;
     }
 
-    // 🔥 v3 新增：檢查是否為今日計畫訓練
     final isScheduledToday = day.dayOfWeek == _todayKey;
     
     if (!isScheduledToday) {
-      // 🔥 v3 新增：顯示防呆提示對話框
       final confirmed = await _showScheduleWarningDialog(day);
       if (confirmed != true) {
-        return;  // 用戶取消
+        return;
       }
     }
 
-    // 🔥 觸覺回饋
     HapticFeedback.mediumImpact();
 
-    // 🔥 轉換 exercises 格式 - 適配新版 WorkoutPlanExecutionPage v5.0
     final List<Map<String, dynamic>> exercisesData = day.exercises.map((e) {
       return {
         'name': e.name,
@@ -1225,7 +1256,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       };
     }).toList();
 
-    // 🔥 導航到新版執行頁面
     final result = await Navigator.push(
       context,
       PageRouteBuilder(
@@ -1252,15 +1282,14 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ),
     );
 
-    // ✅ 重新載入進度
     if (result == true || result == null) {
       _loadProgress();
     }
   }
   
-  // 🔥 v3 新增：訓練日提醒對話框
   Future<bool?> _showScheduleWarningDialog(WorkoutPlanDay day) {
     final scheduledDay = _dayNames[day.dayOfWeek] ?? day.dayOfWeek;
+    final makeupStatus = CompletionStatus.fromType(CompletionStatusType.makeup);
     
     return showDialog<bool>(
       context: context,
@@ -1271,10 +1300,10 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _warningYellow.withOpacity(0.15),
+                color: makeupStatus.backgroundColor,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.schedule, color: _warningYellow, size: 24),
+              child: Icon(Icons.schedule, color: makeupStatus.color, size: 24),
             ),
             const SizedBox(width: 12),
             const Text('訓練日提醒', style: TextStyle(fontSize: 18)),
@@ -1306,7 +1335,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     text: scheduledDay,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: _warningYellow,
+                      color: makeupStatus.color,
                     ),
                   ),
                   const TextSpan(text: ' 的訓練'),
@@ -1317,12 +1346,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _lightOrange.withOpacity(0.5),
+                color: makeupStatus.backgroundColor,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: _primaryOrange, size: 18),
+                  Icon(Icons.info_outline, color: makeupStatus.color, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1370,8 +1399,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // ========== ✅ 標記完成 ==========
   Future<void> _markAsCompleted() async {
+    final successStatus = CompletionStatus.fromType(CompletionStatusType.onTime);
+    
     try {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -1382,10 +1412,10 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: _successGreen.withOpacity(0.1),
+                  color: successStatus.backgroundColor,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.check_circle, color: _successGreen),
+                child: Icon(Icons.check_circle, color: successStatus.color),
               ),
               const SizedBox(width: 12),
               const Text('確認完成'),
@@ -1403,7 +1433,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _successGreen,
+                backgroundColor: successStatus.color,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -1427,7 +1457,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                   Text('🎉 恭喜完成訓練計畫！'),
                 ],
               ),
-              backgroundColor: _successGreen,
+              backgroundColor: successStatus.color,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),

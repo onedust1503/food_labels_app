@@ -1,13 +1,15 @@
 // lib/pages/coach/trainee_plans_tab.dart
-// 🎯 學員計畫進度分頁 v2.2
-// ✅ 修復：移除 orderBy 避免索引問題
-// ✅ 修復：支援 days 陣列格式
-// ✅ 修復：workoutCompletions 頂層集合查詢
-// 🔥 v2.2 修復：字段名匹配 - planDayOfWeek / actualDate
+// 🎯 學員計畫進度分頁 v3.0
+// ✅ 整合新的 CompletionStatus 狀態系統
+// ✅ 支援 6 種完成狀態：準時、提前、補做、今日待做、逾期、待完成
+// ✅ 修復 isOnSchedule 判斷邏輯
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/app_theme.dart';
+import '../../models/completion_status.dart';
+import '../../services/workout_completion_service.dart';
+import '../../components/completion_status_badge.dart';
 
 class TraineePlansTab extends StatelessWidget {
   final String traineeId;
@@ -20,7 +22,6 @@ class TraineePlansTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      // 🔥 修復：移除 orderBy，只用 where
       stream: FirebaseFirestore.instance
           .collection('workoutPlans')
           .where('traineeId', isEqualTo: traineeId)
@@ -42,7 +43,6 @@ class TraineePlansTab extends StatelessWidget {
           return _buildEmptyState();
         }
 
-        // 🔥 手動排序
         final plans = snapshot.data!.docs.toList();
         plans.sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
@@ -68,32 +68,58 @@ class TraineePlansTab extends StatelessWidget {
     );
   }
 
+  // 🔥 v3.0 更新：狀態圖例 - 6 種狀態
   Widget _buildLegend() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.divider),
+        boxShadow: AppShadows.small,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildLegendItem(AppColors.success, '按時'),
-          const SizedBox(width: 16),
-          _buildLegendItem(AppColors.warning, '補做'),
-          const SizedBox(width: 16),
-          _buildLegendItem(Colors.white, '待完成'),
-          const SizedBox(width: 16),
-          _buildLegendItem(AppColors.background, '休息'),
+          Text(
+            '狀態說明',
+            style: AppTextStyles.label.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _buildLegendItem(
+                CompletionStatus.fromType(CompletionStatusType.onTime),
+              ),
+              _buildLegendItem(
+                CompletionStatus.fromType(CompletionStatusType.early),
+              ),
+              _buildLegendItem(
+                CompletionStatus.fromType(CompletionStatusType.makeup),
+              ),
+              _buildLegendItem(
+                CompletionStatus.fromType(CompletionStatusType.dueToday),
+              ),
+              _buildLegendItem(
+                CompletionStatus.fromType(CompletionStatusType.overdue),
+              ),
+              _buildLegendItem(
+                CompletionStatus.fromType(CompletionStatusType.pending),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildLegendItem(Color color, String label) {
-    final isWhite = color == Colors.white;
+  Widget _buildLegendItem(CompletionStatus status) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -101,19 +127,18 @@ class TraineePlansTab extends StatelessWidget {
           width: 16,
           height: 16,
           decoration: BoxDecoration(
-            color: color,
+            color: status.backgroundColor,
             shape: BoxShape.circle,
-            border: Border.all(
-              color: isWhite ? AppColors.textTertiary : color,
-              width: 1.5,
-            ),
+            border: Border.all(color: status.color, width: 2),
           ),
+          child: Icon(status.icon, size: 10, color: status.color),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 4),
         Text(
-          label,
+          status.shortLabel,
           style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
+            color: status.color,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -129,7 +154,6 @@ class TraineePlansTab extends StatelessWidget {
     final status = data['status']?.toString() ?? 'active';
     final isActive = status == 'active';
 
-    // 🔥 支援 days 陣列或 Map 格式
     final daysData = data['days'];
     List<Map<String, dynamic>> daysList = [];
     
@@ -150,14 +174,18 @@ class TraineePlansTab extends StatelessWidget {
     }).length;
 
     return FutureBuilder<Map<String, dynamic>>(
-      future: _getPlanProgress(planId),
+      future: _getPlanProgressV3(planId),
       builder: (context, progressSnapshot) {
         final progress = progressSnapshot.data ?? {};
         final totalCompletions = progress['total'] ?? 0;
-        final onScheduleCount = progress['onSchedule'] ?? 0;
+        final onTimeCount = progress['onTime'] ?? 0;
+        final earlyCount = progress['early'] ?? 0;
+        final makeupCount = progress['makeup'] ?? 0;
         final totalDuration = progress['totalDuration'] ?? 0;
-        final onScheduleRate = totalCompletions > 0
-            ? (onScheduleCount / totalCompletions * 100).round()
+        
+        // 準時率 = (準時 + 提前) / 總完成
+        final onTimeRate = totalCompletions > 0
+            ? ((onTimeCount + earlyCount) / totalCompletions * 100).round()
             : 0;
 
         return Container(
@@ -176,6 +204,7 @@ class TraineePlansTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 標題區
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -245,38 +274,65 @@ class TraineePlansTab extends StatelessWidget {
                 ),
               ),
 
+              // 🔥 v3.0：更新統計區 - 顯示各狀態數量
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
+                child: Column(
                   children: [
-                    _buildStatItem(
-                      icon: Icons.check_circle_outline,
-                      label: '完成次數',
-                      value: '$totalCompletions',
-                      color: AppColors.success,
+                    // 主要統計
+                    Row(
+                      children: [
+                        _buildStatItem(
+                          icon: Icons.check_circle_outline,
+                          label: '完成次數',
+                          value: '$totalCompletions',
+                          color: AppColors.success,
+                        ),
+                        const SizedBox(width: 12),
+                        _buildStatItem(
+                          icon: Icons.schedule,
+                          label: '準時率',
+                          value: '$onTimeRate%',
+                          color: onTimeRate >= 80
+                              ? AppColors.success
+                              : onTimeRate >= 50
+                                  ? AppColors.warning
+                                  : AppColors.error,
+                        ),
+                        const SizedBox(width: 12),
+                        _buildStatItem(
+                          icon: Icons.timer_outlined,
+                          label: '總時長',
+                          value: _formatDuration(totalDuration),
+                          color: AppColors.primary,
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                    _buildStatItem(
-                      icon: Icons.schedule,
-                      label: '按時率',
-                      value: '$onScheduleRate%',
-                      color: onScheduleRate >= 80
-                          ? AppColors.success
-                          : onScheduleRate >= 50
-                              ? AppColors.warning
-                              : AppColors.error,
-                    ),
-                    const SizedBox(width: 16),
-                    _buildStatItem(
-                      icon: Icons.timer_outlined,
-                      label: '總時長',
-                      value: _formatDuration(totalDuration),
-                      color: AppColors.primary,
-                    ),
+                    
+                    // 狀態分佈
+                    if (totalCompletions > 0) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildMiniStat('準時', onTimeCount, CompletionStatusType.onTime),
+                            _buildMiniStat('提前', earlyCount, CompletionStatusType.early),
+                            _buildMiniStat('補做', makeupCount, CompletionStatusType.makeup),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
+              // 本週進度
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Column(
@@ -290,10 +346,10 @@ class TraineePlansTab extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     FutureBuilder<Map<String, Map<String, dynamic>>>(
-                      future: _getWeeklyProgress(planId),
+                      future: _getWeeklyProgressV3(planId, daysList),
                       builder: (context, weekSnapshot) {
                         final weekProgress = weekSnapshot.data ?? {};
-                        return _buildWeekProgressBar(daysList, weekProgress);
+                        return _buildWeekProgressBarV3(daysList, weekProgress);
                       },
                     ),
                   ],
@@ -303,6 +359,24 @@ class TraineePlansTab extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMiniStat(String label, int count, CompletionStatusType type) {
+    final status = CompletionStatus.fromType(type);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(status.icon, size: 14, color: status.color),
+        const SizedBox(width: 4),
+        Text(
+          '$label $count',
+          style: AppTextStyles.caption.copyWith(
+            color: status.color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
@@ -342,26 +416,22 @@ class TraineePlansTab extends StatelessWidget {
     );
   }
 
-  Widget _buildWeekProgressBar(
+  // 🔥 v3.0：更新週進度條 - 支援 6 種狀態顏色
+  Widget _buildWeekProgressBarV3(
     List<Map<String, dynamic>> daysList,
     Map<String, Map<String, dynamic>> weekProgress,
   ) {
     final dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     final dayLabels = ['一', '二', '三', '四', '五', '六', '日'];
-    final chineseDayMap = {
-      '星期一': 'monday', '星期二': 'tuesday', '星期三': 'wednesday',
-      '星期四': 'thursday', '星期五': 'friday', '星期六': 'saturday', '星期日': 'sunday',
-      '週一': 'monday', '週二': 'tuesday', '週三': 'wednesday',
-      '週四': 'thursday', '週五': 'friday', '週六': 'saturday', '週日': 'sunday',
-    };
     
     final today = DateTime.now().weekday;
 
+    // 建立計畫日集合
     final plannedDaysSet = <String>{};
     for (final day in daysList) {
-      final dayOfWeek = day['dayOfWeek']?.toString().toLowerCase() ?? '';
+      final dayOfWeek = day['dayOfWeek']?.toString() ?? '';
       if (dayOfWeek.isNotEmpty) {
-        final normalized = chineseDayMap[dayOfWeek] ?? dayOfWeek;
+        final normalized = _normalizeDayOfWeek(dayOfWeek);
         final exercises = day['exercises'];
         if (exercises is List && exercises.isNotEmpty) {
           plannedDaysSet.add(normalized);
@@ -376,73 +446,127 @@ class TraineePlansTab extends StatelessWidget {
         final dayKey = entry.value;
         final dayLabel = dayLabels[index];
         final isToday = today == index + 1;
+        final isPast = today > index + 1;
 
         final isPlanned = plannedDaysSet.contains(dayKey);
+        final progressData = weekProgress[dayKey];
         
-        final progress = weekProgress[dayKey];
-        final isCompleted = progress != null;
-        final isOnSchedule = progress?['isOnSchedule'] ?? false;
-
-        Color bgColor;
-        Color borderColor;
-        IconData? icon;
-
-        if (isCompleted) {
-          bgColor = isOnSchedule ? AppColors.success : AppColors.warning;
-          borderColor = bgColor;
-          icon = isOnSchedule ? Icons.check : Icons.schedule;
+        // 🔥 計算狀態
+        CompletionStatusType? statusType;
+        if (progressData != null) {
+          statusType = progressData['statusType'] as CompletionStatusType?;
         } else if (isPlanned) {
-          bgColor = Colors.white;
-          borderColor = isToday ? AppColors.warning : AppColors.textTertiary;
-        } else {
-          bgColor = AppColors.background;
-          borderColor = AppColors.divider;
+          if (isToday) {
+            statusType = CompletionStatusType.dueToday;
+          } else if (isPast) {
+            statusType = CompletionStatusType.overdue;
+          } else {
+            statusType = CompletionStatusType.pending;
+          }
         }
 
-        return Column(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: bgColor,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: borderColor,
-                  width: isToday ? 2.5 : 1.5,
-                ),
-                boxShadow: isCompleted ? AppShadows.small : null,
-              ),
-              child: icon != null
-                  ? Icon(icon, size: 18, color: Colors.white)
-                  : null,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              dayLabel,
-              style: AppTextStyles.caption.copyWith(
-                color: isToday ? AppColors.warning : AppColors.textSecondary,
-                fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-            if (isToday)
-              Container(
-                margin: const EdgeInsets.only(top: 2),
-                width: 4,
-                height: 4,
-                decoration: const BoxDecoration(
-                  color: AppColors.warning,
-                  shape: BoxShape.circle,
-                ),
-              ),
-          ],
+        return _buildWeekDayItemV3(
+          dayLabel: dayLabel,
+          isToday: isToday,
+          isPlanned: isPlanned,
+          statusType: statusType,
         );
       }).toList(),
     );
   }
 
-  // 🔥 取得計畫進度（移除 orderBy）
-  Future<Map<String, dynamic>> _getPlanProgress(String planId) async {
+  Widget _buildWeekDayItemV3({
+    required String dayLabel,
+    required bool isToday,
+    required bool isPlanned,
+    CompletionStatusType? statusType,
+  }) {
+    Color bgColor;
+    Color borderColor;
+    Widget? centerWidget;
+
+    if (statusType != null) {
+      final status = CompletionStatus.fromType(statusType);
+      
+      // 已完成狀態
+      if (statusType == CompletionStatusType.onTime ||
+          statusType == CompletionStatusType.early ||
+          statusType == CompletionStatusType.makeup) {
+        bgColor = status.color;
+        borderColor = status.color;
+        centerWidget = Icon(status.icon, size: 18, color: Colors.white);
+      } 
+      // 待完成狀態
+      else if (statusType == CompletionStatusType.dueToday) {
+        bgColor = status.backgroundColor;
+        borderColor = status.color;
+        centerWidget = Icon(Icons.today, size: 16, color: status.color);
+      }
+      // 逾期狀態
+      else if (statusType == CompletionStatusType.overdue) {
+        bgColor = status.backgroundColor;
+        borderColor = status.color;
+        centerWidget = Icon(Icons.warning_amber, size: 16, color: status.color);
+      }
+      // 未來待做
+      else {
+        bgColor = Colors.white;
+        borderColor = AppColors.textTertiary;
+      }
+    } else if (!isPlanned) {
+      // 非訓練日
+      bgColor = AppColors.background;
+      borderColor = AppColors.divider;
+    } else {
+      bgColor = Colors.white;
+      borderColor = AppColors.textTertiary;
+    }
+
+    return Column(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: bgColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: borderColor,
+              width: isToday ? 2.5 : 1.5,
+            ),
+            boxShadow: statusType != null && 
+                (statusType == CompletionStatusType.onTime ||
+                 statusType == CompletionStatusType.early ||
+                 statusType == CompletionStatusType.makeup)
+                ? AppShadows.small 
+                : null,
+          ),
+          child: centerWidget,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          dayLabel,
+          style: AppTextStyles.caption.copyWith(
+            color: isToday ? AppColors.warning : AppColors.textSecondary,
+            fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        if (isToday)
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            width: 4,
+            height: 4,
+            decoration: const BoxDecoration(
+              color: AppColors.warning,
+              shape: BoxShape.circle,
+            ),
+          ),
+      ],
+    );
+  }
+
+  // 🔥 v3.0：取得計畫進度（區分三種完成狀態）
+  Future<Map<String, dynamic>> _getPlanProgressV3(String planId) async {
     try {
       final completions = await FirebaseFirestore.instance
           .collection('workoutCompletions')
@@ -451,30 +575,69 @@ class TraineePlansTab extends StatelessWidget {
           .get();
 
       int total = completions.docs.length;
-      int onSchedule = 0;
+      int onTime = 0;
+      int early = 0;
+      int makeup = 0;
       int totalDuration = 0;
 
       for (final doc in completions.docs) {
         final data = doc.data();
-        if (data['isOnSchedule'] == true) {
-          onSchedule++;
-        }
         totalDuration += _toInt(data['totalDuration']);
+        
+        // 使用新的狀態計算邏輯
+        final planDayOfWeek = data['planDayOfWeek'] ?? data['dayOfWeek'] ?? '';
+        final actualDate = data['actualDate'] != null 
+            ? (data['actualDate'] as Timestamp).toDate()
+            : null;
+        
+        if (actualDate != null) {
+          final statusType = WorkoutCompletionService().calculateStatus(
+            planDayOfWeek: planDayOfWeek,
+            actualDate: actualDate,
+            referenceDate: actualDate, // 使用完成日期作為參考
+          );
+          
+          switch (statusType) {
+            case CompletionStatusType.onTime:
+              onTime++;
+              break;
+            case CompletionStatusType.early:
+              early++;
+              break;
+            case CompletionStatusType.makeup:
+              makeup++;
+              break;
+            default:
+              break;
+          }
+        } else {
+          // 向後相容：使用舊的 isOnSchedule 欄位
+          if (data['isOnSchedule'] == true) {
+            onTime++;
+          } else {
+            makeup++;
+          }
+        }
       }
 
       return {
         'total': total,
-        'onSchedule': onSchedule,
+        'onTime': onTime,
+        'early': early,
+        'makeup': makeup,
         'totalDuration': totalDuration,
       };
     } catch (e) {
       debugPrint('取得計畫進度錯誤: $e');
-      return {'total': 0, 'onSchedule': 0, 'totalDuration': 0};
+      return {'total': 0, 'onTime': 0, 'early': 0, 'makeup': 0, 'totalDuration': 0};
     }
   }
 
-  // 🔥 v2.2 修正：取得本週進度 - 使用正確的字段名
-  Future<Map<String, Map<String, dynamic>>> _getWeeklyProgress(String planId) async {
+  // 🔥 v3.0：取得本週進度（包含狀態類型）
+  Future<Map<String, Map<String, dynamic>>> _getWeeklyProgressV3(
+    String planId,
+    List<Map<String, dynamic>> daysList,
+  ) async {
     try {
       final now = DateTime.now();
       final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
@@ -487,19 +650,11 @@ class TraineePlansTab extends StatelessWidget {
           .get();
 
       final result = <String, Map<String, dynamic>>{};
-
-      // 🔥 v2.2：支援多種中文格式映射
-      final chineseDayMap = {
-        '星期一': 'monday', '星期二': 'tuesday', '星期三': 'wednesday',
-        '星期四': 'thursday', '星期五': 'friday', '星期六': 'saturday', '星期日': 'sunday',
-        '週一': 'monday', '週二': 'tuesday', '週三': 'wednesday',
-        '週四': 'thursday', '週五': 'friday', '週六': 'saturday', '週日': 'sunday',
-      };
+      final completionService = WorkoutCompletionService();
 
       for (final doc in completions.docs) {
         final data = doc.data();
         
-        // 🔥 v2.2 修正：優先使用 actualDate，備用 completionDate 和 createdAt
         DateTime? completionDate;
         if (data['actualDate'] is Timestamp) {
           completionDate = (data['actualDate'] as Timestamp).toDate();
@@ -510,17 +665,25 @@ class TraineePlansTab extends StatelessWidget {
         }
         
         // 只處理本週的記錄
-        if (completionDate != null && completionDate.isAfter(startDate.subtract(const Duration(hours: 1)))) {
-          // 🔥 v2.2 修正：優先使用 planDayOfWeek，備用 dayOfWeek
-          final dayOfWeek = data['planDayOfWeek']?.toString() ?? 
-                            data['dayOfWeek']?.toString() ?? '';
-          final normalizedDay = chineseDayMap[dayOfWeek] ?? dayOfWeek.toLowerCase();
+        if (completionDate != null && 
+            completionDate.isAfter(startDate.subtract(const Duration(hours: 1)))) {
+          
+          final planDayOfWeek = data['planDayOfWeek']?.toString() ?? 
+                                data['dayOfWeek']?.toString() ?? '';
+          final normalizedDay = _normalizeDayOfWeek(planDayOfWeek);
           
           if (normalizedDay.isNotEmpty) {
+            // 計算狀態類型
+            final statusType = completionService.calculateStatus(
+              planDayOfWeek: planDayOfWeek,
+              actualDate: completionDate,
+              referenceDate: now,
+            );
+            
             result[normalizedDay] = {
-              'isOnSchedule': data['isOnSchedule'] ?? false,
+              'statusType': statusType,
               'completionDate': completionDate,
-              'actualDayOfWeek': data['actualDayOfWeek'],
+              'isOnSchedule': data['isOnSchedule'] ?? false,
             };
           }
         }
@@ -531,6 +694,23 @@ class TraineePlansTab extends StatelessWidget {
       debugPrint('取得週進度錯誤: $e');
       return {};
     }
+  }
+
+  // 🔥 星期格式正規化
+  String _normalizeDayOfWeek(String dayOfWeek) {
+    final normalized = dayOfWeek.toLowerCase().trim();
+    
+    const mapping = {
+      '星期一': 'monday', '週一': 'monday', 'monday': 'monday', 'mon': 'monday',
+      '星期二': 'tuesday', '週二': 'tuesday', 'tuesday': 'tuesday', 'tue': 'tuesday',
+      '星期三': 'wednesday', '週三': 'wednesday', 'wednesday': 'wednesday', 'wed': 'wednesday',
+      '星期四': 'thursday', '週四': 'thursday', 'thursday': 'thursday', 'thu': 'thursday',
+      '星期五': 'friday', '週五': 'friday', 'friday': 'friday', 'fri': 'friday',
+      '星期六': 'saturday', '週六': 'saturday', 'saturday': 'saturday', 'sat': 'saturday',
+      '星期日': 'sunday', '週日': 'sunday', 'sunday': 'sunday', 'sun': 'sunday',
+    };
+    
+    return mapping[normalized] ?? normalized;
   }
 
   Widget _buildErrorState(String error) {

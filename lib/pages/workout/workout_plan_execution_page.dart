@@ -1,12 +1,20 @@
 // lib/pages/workout/workout_plan_execution_page.dart
-// 🔥 v5.0 完整重構版 - 使用 Session 系統與自由訓練一致
+// 🔥 v5.1 整合版 - 保留 v5.0 所有功能 + v7.0 修復
 //
-// 核心改動：
-// 1. 使用 startPlanSession() 初始化（而非直接開始）
-// 2. 複用 adHoc 系列方法記錄組數（結構相同）
-// 3. 使用 finishPlanSession() 完成
-// 4. 完成後導航到 WorkoutSummaryPage
-// 5. UI/UX 與自由訓練一致
+// v7.0 修復：
+// 1. 使用 WorkoutDateHelper 正規化星期格式
+// 2. startPlanSession 不建立 sets（由執行頁面用 adHocAddSet 建立）
+//
+// 保留功能：
+// - TTS 語音播報
+// - 動畫效果（脈動、慶祝）
+// - 滑動切換動作（PageView）
+// - 手動休息功能
+// - 上滑完成/下滑略過手勢
+// - 複製上一組數據
+// - 動作預設值記憶
+// - 訓練中新增動作
+// - 導航到 WorkoutSummaryPage
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -19,16 +27,10 @@ import '../../components/workout/soft_workout_card.dart';
 import '../../services/unified_workout_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/exercise_calorie_calculator.dart';
+import '../../utils/workout_date_helper.dart';  // 🔥 v7.0 新增
 import 'workout_summary_page.dart';
 
-/// 計畫訓練執行頁面 - v5.0 完整重構版
-/// 
-/// 🔥 核心功能：
-/// 1. Session 系統 - 完整記錄每組的詳細資料
-/// 2. 即時同步 - 組數操作即時寫入 Firebase
-/// 3. 統一體驗 - UI/UX 與自由訓練一致
-/// 4. 智能預設 - 從計畫或歷史記錄載入預設值
-/// 5. 完整統計 - 精確卡路里計算
+/// 計畫訓練執行頁面 - v5.1 整合版
 class WorkoutPlanExecutionPage extends StatefulWidget {
   final String planId;
   final String planName;
@@ -222,31 +224,42 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
     return _exerciseDefaults[exerciseName] ?? {'reps': 12, 'weight': 0.0};
   }
 
-  /// 🔥 核心：使用 startPlanSession 初始化訓練
+  /// 🔥 v7.0 修復：使用 WorkoutDateHelper + startPlanSession 不建立 sets
   Future<void> _initializeSession() async {
     try {
-      // 🔥 使用 startPlanSession 而非 startAdHocSession
+      // 🔥 v7.0：正規化星期格式
+      final normalizedDayOfWeek = WorkoutDateHelper.normalizeToChinese(widget.dayOfWeek);
+      final workoutName = '${widget.planName} - $normalizedDayOfWeek';
+
+      // 🔥 v7.0：使用 startPlanSession（createSets 預設為 false）
+      // Service 只建立 exercises，不建立 sets
       _sessionId = await _service.startPlanSession(
         planId: widget.planId,
         planName: widget.planName,
         dayOfWeek: widget.dayOfWeek,
         exercises: _exercises,
-        workoutName: '${widget.planName} - ${widget.dayOfWeek}',
+        workoutName: workoutName,
+        // createSets: false,  // 預設值，由執行頁面建立 sets
       );
 
       // 初始化每個動作的組數列表
       for (int i = 0; i < _exercises.length; i++) {
         _exerciseSets[i] = [];
         
-        // 🔥 如果計畫有預設組數，自動新增
+        final exerciseName = _exercises[i]['name'] as String? ?? '';
         final plannedSets = _exercises[i]['sets'] as int? ?? 0;
         final plannedReps = _exercises[i]['reps'] as int? ?? 12;
         
+        // 獲取用戶的預設值
+        final defaults = _getExerciseDefault(exerciseName);
+        final defaultWeight = (defaults['weight'] as num?)?.toDouble() ?? 0.0;
+        
+        // 🔥 v7.0：由執行頁面建立 sets（避免與 Service 重複）
         if (plannedSets > 0) {
           for (int j = 0; j < plannedSets; j++) {
             _exerciseSets[i]!.add(SetData(
               reps: plannedReps,
-              weight: 0,
+              weight: defaultWeight,
               status: 'pending',
             ));
             
@@ -263,10 +276,14 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
       setState(() => _isInitialized = true);
       _startTotalTimer();
 
-      debugPrint('[初始化] 計畫訓練 Session 已創建');
+      debugPrint('[初始化] 計畫訓練 Session 已創建 (v7.0)');
       debugPrint('  - 計畫: ${widget.planName}');
-      debugPrint('  - 日期: ${widget.dayOfWeek}');
+      debugPrint('  - 日期: $normalizedDayOfWeek');
       debugPrint('  - SessionId: $_sessionId');
+      debugPrint('  - 動作數: ${_exercises.length}');
+      for (int i = 0; i < _exercises.length; i++) {
+        debugPrint('  - 動作 $i: ${_exercises[i]['name']} - ${_exerciseSets[i]?.length ?? 0} 組');
+      }
     } catch (e) {
       debugPrint('[錯誤] 初始化失敗: $e');
       if (mounted) {
@@ -815,7 +832,6 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
 
     try {
       // 🔥 使用 finishPlanSession 而非 finishAdHocSession
-      // 注意：addedExercisesCount 會由 Service 自動從 Firebase 計算
       await _service.finishPlanSession(
         sessionId: sessionId,
         planId: widget.planId,
@@ -830,7 +846,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
 
     if (!mounted) return;
 
-    // 🔥 導航到摘要頁面（與自由訓練一致）
+    // 🔥 導航到摘要頁面
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (_) => WorkoutSummaryPage(sessionId: sessionId),
@@ -982,7 +998,6 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 🔥 計畫資訊卡片
                 _buildPlanInfoCard(),
                 const SizedBox(height: 12),
                 _buildSwipeableExerciseCard(),
@@ -1002,7 +1017,6 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
     );
   }
 
-  /// 🔥 計畫資訊卡片
   Widget _buildPlanInfoCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1062,9 +1076,9 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
               color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(
+            child: const Text(
               '計畫訓練',
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
         ],
@@ -1208,7 +1222,6 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
     final isFullyCompleted = totalSets > 0 && completedSets == totalSets;
     final isAddedDuringSession = exercise['addedDuringSession'] == true;
 
-    // 計畫中的預設組數
     final plannedSets = exercise['sets'] as int? ?? 0;
 
     return GestureDetector(
@@ -1222,7 +1235,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
                 ? [WorkoutColors.success, WorkoutColors.success.withOpacity(0.8)]
                 : (hasProgress
                     ? [WorkoutColors.active, WorkoutColors.active.withOpacity(0.8)]
-                    : [Colors.orange, Colors.orange.withOpacity(0.8)]),  // 🔥 計畫訓練用橙色
+                    : [Colors.orange, Colors.orange.withOpacity(0.8)]),
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -2523,7 +2536,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
               decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
             ),
             ListTile(
-              leading: Icon(Icons.add_circle, color: Colors.orange),
+              leading: const Icon(Icons.add_circle, color: Colors.orange),
               title: const Text('新增動作'),
               onTap: () {
                 Navigator.pop(context);
@@ -2700,7 +2713,7 @@ class _WorkoutPlanExecutionPageState extends State<WorkoutPlanExecutionPage>
 }
 
 // ============================================================
-// 動作選擇器（簡化版 - 複用自由訓練的選擇器）
+// 動作選擇器
 // ============================================================
 
 class _ExercisePickerSheet extends StatefulWidget {

@@ -1,5 +1,8 @@
 // lib/components/completion_status_badge.dart
-// 🔥 訓練完成狀態標籤元件 v1.0
+// 🔥 訓練完成狀態標籤元件 v2.0
+// ✅ v2.0 更新：使用新類名避免衝突
+//    - WeeklyPlanProgress → WeeklyCompletionSummary
+//    - DayProgress → DayCompletionInfo
 // 統一的狀態顯示元件，用於列表和詳情頁面
 
 import 'package:flutter/material.dart';
@@ -128,8 +131,9 @@ class CompletionStatusDot extends StatelessWidget {
 }
 
 /// 🔥 週進度條 - 顯示本週七天的完成狀態
+/// v2.0：使用 DayCompletionInfo（舊名 DayProgress）
 class WeekProgressBar extends StatelessWidget {
-  final List<DayProgress> dayProgress;
+  final List<DayCompletionInfo> dayProgress;
   final List<String>? planDays; // 計畫訓練日
   
   const WeekProgressBar({
@@ -155,11 +159,12 @@ class WeekProgressBar extends StatelessWidget {
                         date.year == now.year;
         
         // 找到對應的進度資料
+        // 🔥 v2.0：使用 DayCompletionInfo
         final progress = dayProgress.firstWhere(
           (p) => p.date.day == date.day && 
                  p.date.month == date.month && 
                  p.date.year == date.year,
-          orElse: () => DayProgress(
+          orElse: () => DayCompletionInfo(
             dayOfWeek: '星期${weekDays[index]}',
             date: date,
             hasPlannedWorkout: false,
@@ -265,8 +270,9 @@ class _WeekDayItem extends StatelessWidget {
 }
 
 /// 🔥 進度統計卡片 - 顯示完成率和各狀態數量
+/// v2.0：使用 WeeklyCompletionSummary（舊名 WeeklyPlanProgress）
 class ProgressStatsCard extends StatelessWidget {
-  final WeeklyPlanProgress progress;
+  final WeeklyCompletionSummary progress;
   final bool showDetails;
   
   const ProgressStatsCard({

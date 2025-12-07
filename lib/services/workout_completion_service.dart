@@ -1,11 +1,16 @@
 // lib/services/workout_completion_service.dart
-// 🔥 訓練完成狀態計算服務 v1.0
-// 負責計算和判斷訓練的完成狀態
+// 🔥 訓練完成狀態計算服務 v3.0
+// ✅ v3.0 更新：使用新類名避免衝突
+//    - WeeklyPlanProgress → WeeklyCompletionSummary
+//    - DayProgress → DayCompletionInfo
+// ✅ 重構：使用統一的 WorkoutDateHelper
+// ✅ 職責：專注於狀態計算邏輯
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/completion_status.dart';
+import '../utils/workout_date_helper.dart';
 
 class WorkoutCompletionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -14,99 +19,12 @@ class WorkoutCompletionService {
   String? get _currentUserId => _auth.currentUser?.uid;
 
   // ============================================================
-  // 🔥 星期格式轉換工具
-  // ============================================================
-  
-  /// 星期幾對照表（多種格式支援）
-  static const Map<int, List<String>> _weekdayFormats = {
-    1: ['星期一', '週一', 'monday', 'mon', '一'],
-    2: ['星期二', '週二', 'tuesday', 'tue', '二'],
-    3: ['星期三', '週三', 'wednesday', 'wed', '三'],
-    4: ['星期四', '週四', 'thursday', 'thu', '四'],
-    5: ['星期五', '週五', 'friday', 'fri', '五'],
-    6: ['星期六', '週六', 'saturday', 'sat', '六'],
-    7: ['星期日', '週日', 'sunday', 'sun', '日'],
-  };
-
-  /// 將任意格式的星期字串轉換為 weekday 數字 (1-7)
-  static int? parseWeekday(String dayStr) {
-    final normalized = dayStr.toLowerCase().trim();
-    
-    for (final entry in _weekdayFormats.entries) {
-      for (final format in entry.value) {
-        if (normalized == format.toLowerCase() || normalized.contains(format.toLowerCase())) {
-          return entry.key;
-        }
-      }
-    }
-    return null;
-  }
-
-  /// 獲取標準格式的星期字串（完整格式：星期一）
-  static String getStandardWeekday(int weekday) {
-    return _weekdayFormats[weekday]?[0] ?? '未知';
-  }
-
-  /// 獲取短格式的星期字串（週一）
-  static String getShortWeekday(int weekday) {
-    return _weekdayFormats[weekday]?[1] ?? '未知';
-  }
-
-  /// 判斷兩個星期字串是否相同（格式無關）
-  static bool isSameWeekday(String day1, String day2) {
-    final weekday1 = parseWeekday(day1);
-    final weekday2 = parseWeekday(day2);
-    
-    if (weekday1 == null || weekday2 == null) return false;
-    return weekday1 == weekday2;
-  }
-
-  // ============================================================
-  // 🔥 日期工具函數
-  // ============================================================
-
-  /// 獲取本週的開始日期（週一 00:00:00）
-  static DateTime getWeekStart([DateTime? date]) {
-    final d = date ?? DateTime.now();
-    final weekday = d.weekday;
-    return DateTime(d.year, d.month, d.day).subtract(Duration(days: weekday - 1));
-  }
-
-  /// 獲取本週的結束日期（週日 23:59:59）
-  static DateTime getWeekEnd([DateTime? date]) {
-    final weekStart = getWeekStart(date);
-    return weekStart.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
-  }
-
-  /// 獲取指定星期幾在本週的具體日期
-  static DateTime getDateForWeekday(int weekday, [DateTime? referenceDate]) {
-    final weekStart = getWeekStart(referenceDate);
-    return weekStart.add(Duration(days: weekday - 1));
-  }
-
-  /// 獲取指定星期字串在本週的具體日期
-  static DateTime? getDateForWeekdayString(String dayOfWeek, [DateTime? referenceDate]) {
-    final weekday = parseWeekday(dayOfWeek);
-    if (weekday == null) return null;
-    return getDateForWeekday(weekday, referenceDate);
-  }
-
-  /// 獲取 ISO 週數
-  static int getWeekNumber(DateTime date) {
-    final firstDayOfYear = DateTime(date.year, 1, 1);
-    final daysOffset = firstDayOfYear.weekday - 1;
-    final firstMonday = firstDayOfYear.subtract(Duration(days: daysOffset));
-    final difference = date.difference(firstMonday).inDays;
-    return (difference / 7).ceil();
-  }
-
-  // ============================================================
   // 🔥 狀態計算核心邏輯
   // ============================================================
 
   /// 🔥 計算單筆訓練的完成狀態類型
-  /// 
-  /// [planDayOfWeek] - 計畫的星期幾（例：星期一）
+  ///
+  /// [planDayOfWeek] - 計畫的星期幾（例：星期一、monday）
   /// [actualDate] - 實際完成日期（null 表示未完成）
   /// [referenceDate] - 參考日期（用於計算本週，預設為今天）
   CompletionStatusType calculateStatus({
@@ -116,48 +34,48 @@ class WorkoutCompletionService {
   }) {
     final now = referenceDate ?? DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
-    // 計算計畫日在本週的具體日期
-    final plannedDate = getDateForWeekdayString(planDayOfWeek, referenceDate);
+
+    // 🔥 使用統一的日期工具計算計畫日在本週的具體日期
+    final plannedDate = WorkoutDateHelper.getDateForWeekdayString(planDayOfWeek, referenceDate);
     if (plannedDate == null) {
       if (kDebugMode) {
         debugPrint('⚠️ 無法解析星期格式: $planDayOfWeek');
       }
       return CompletionStatusType.pending;
     }
-    
+
     final plannedDateOnly = DateTime(plannedDate.year, plannedDate.month, plannedDate.day);
-    
+
     // 情況 1：已完成
     if (actualDate != null) {
       final actualDateOnly = DateTime(actualDate.year, actualDate.month, actualDate.day);
-      
+
       // 在計畫日當天完成 → 準時
       if (actualDateOnly.isAtSameMomentAs(plannedDateOnly)) {
         return CompletionStatusType.onTime;
       }
-      
+
       // 在計畫日之前完成 → 提前
       if (actualDateOnly.isBefore(plannedDateOnly)) {
         return CompletionStatusType.early;
       }
-      
+
       // 在計畫日之後完成 → 補做
       return CompletionStatusType.makeup;
     }
-    
+
     // 情況 2：未完成
-    
+
     // 今天是計畫日 → 今日待做
     if (today.isAtSameMomentAs(plannedDateOnly)) {
       return CompletionStatusType.dueToday;
     }
-    
+
     // 計畫日已過 → 逾期
     if (today.isAfter(plannedDateOnly)) {
       return CompletionStatusType.overdue;
     }
-    
+
     // 計畫日還沒到 → 待完成
     return CompletionStatusType.pending;
   }
@@ -169,16 +87,16 @@ class WorkoutCompletionService {
   }) {
     return completions.map((data) {
       final planDayOfWeek = data['planDayOfWeek'] ?? data['dayOfWeek'] ?? '';
-      final actualDate = data['actualDate'] != null 
+      final actualDate = data['actualDate'] != null
           ? (data['actualDate'] as Timestamp).toDate()
           : null;
-      
+
       final statusType = calculateStatus(
         planDayOfWeek: planDayOfWeek,
         actualDate: actualDate,
         referenceDate: referenceDate,
       );
-      
+
       return WorkoutCompletionRecord(
         id: data['id'] ?? '',
         planId: data['planId'] ?? '',
@@ -210,8 +128,9 @@ class WorkoutCompletionService {
     if (uid == null) return {};
 
     try {
-      final weekStart = getWeekStart(referenceDate);
-      final weekEnd = getWeekEnd(referenceDate);
+      // 🔥 使用統一的日期工具
+      final weekStart = WorkoutDateHelper.getWeekStart(referenceDate);
+      final weekEnd = WorkoutDateHelper.getWeekEnd(referenceDate);
 
       final snapshot = await _firestore
           .collection('workoutCompletions')
@@ -227,18 +146,21 @@ class WorkoutCompletionService {
         final data = doc.data();
         final planDayOfWeek = data['planDayOfWeek'] ?? data['dayOfWeek'] ?? '';
         final actualDate = (data['actualDate'] as Timestamp?)?.toDate();
-        
+
         final statusType = calculateStatus(
           planDayOfWeek: planDayOfWeek,
           actualDate: actualDate,
           referenceDate: referenceDate,
         );
 
-        completions[planDayOfWeek] = WorkoutCompletionRecord(
+        // 🔥 使用正規化的 key
+        final normalizedKey = WorkoutDateHelper.normalizeToChinese(planDayOfWeek);
+
+        completions[normalizedKey] = WorkoutCompletionRecord(
           id: doc.id,
           planId: planId,
           planName: data['planName'] ?? '',
-          planDayOfWeek: planDayOfWeek,
+          planDayOfWeek: normalizedKey,
           actualDate: actualDate,
           actualDayOfWeek: data['actualDayOfWeek'],
           statusType: statusType,
@@ -267,7 +189,8 @@ class WorkoutCompletionService {
   }
 
   /// 🔥 獲取計畫的週進度總覽
-  Future<WeeklyPlanProgress> getWeeklyPlanProgress({
+  /// v3.0：返回 WeeklyCompletionSummary（舊名 WeeklyPlanProgress）
+  Future<WeeklyCompletionSummary> getWeeklyPlanProgress({
     required String planId,
     required List<String> planDays, // 計畫的訓練日（例：['星期一', '星期三', '星期五']）
     String? userId,
@@ -275,7 +198,7 @@ class WorkoutCompletionService {
   }) async {
     final uid = userId ?? _currentUserId;
     if (uid == null) {
-      return WeeklyPlanProgress(
+      return WeeklyCompletionSummary(
         planId: planId,
         planName: '',
         totalDays: planDays.length,
@@ -296,15 +219,18 @@ class WorkoutCompletionService {
       int overdue = 0;
       int pending = 0;
       int dueToday = 0;
-      
-      List<DayProgress> dayProgressList = [];
+
+      // 🔥 v3.0：使用 DayCompletionInfo（舊名 DayProgress）
+      List<DayCompletionInfo> dayProgressList = [];
 
       for (final dayOfWeek in planDays) {
-        final completion = completions[dayOfWeek];
-        final plannedDate = getDateForWeekdayString(dayOfWeek, referenceDate);
-        
+        // 🔥 正規化星期格式後查找
+        final normalizedDay = WorkoutDateHelper.normalizeToChinese(dayOfWeek);
+        final completion = completions[normalizedDay];
+        final plannedDate = WorkoutDateHelper.getDateForWeekdayString(dayOfWeek, referenceDate);
+
         CompletionStatusType status;
-        
+
         if (completion != null) {
           status = completion.statusType;
         } else {
@@ -339,8 +265,9 @@ class WorkoutCompletionService {
         }
 
         if (plannedDate != null) {
-          dayProgressList.add(DayProgress(
-            dayOfWeek: dayOfWeek,
+          // 🔥 v3.0：使用 DayCompletionInfo
+          dayProgressList.add(DayCompletionInfo(
+            dayOfWeek: normalizedDay,
             date: plannedDate,
             hasPlannedWorkout: true,
             status: status,
@@ -352,10 +279,11 @@ class WorkoutCompletionService {
       // 按日期排序
       dayProgressList.sort((a, b) => a.date.compareTo(b.date));
 
-      return WeeklyPlanProgress(
+      // 🔥 v3.0：返回 WeeklyCompletionSummary
+      return WeeklyCompletionSummary(
         planId: planId,
-        planName: completions.values.isNotEmpty 
-            ? completions.values.first.planName 
+        planName: completions.values.isNotEmpty
+            ? completions.values.first.planName
             : '',
         totalDays: planDays.length,
         completedOnTime: completedOnTime,
@@ -370,7 +298,7 @@ class WorkoutCompletionService {
       if (kDebugMode) {
         debugPrint('❌ 獲取週進度總覽失敗: $e');
       }
-      return WeeklyPlanProgress(
+      return WeeklyCompletionSummary(
         planId: planId,
         planName: '',
         totalDays: planDays.length,
@@ -394,7 +322,7 @@ class WorkoutCompletionService {
       if (startDate != null) {
         query = query.where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate));
       }
-      
+
       if (endDate != null) {
         query = query.where('actualDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate));
       }
@@ -405,7 +333,7 @@ class WorkoutCompletionService {
         final data = doc.data() as Map<String, dynamic>;
         final planDayOfWeek = data['planDayOfWeek'] ?? data['dayOfWeek'] ?? '';
         final actualDate = (data['actualDate'] as Timestamp?)?.toDate();
-        
+
         final statusType = calculateStatus(
           planDayOfWeek: planDayOfWeek,
           actualDate: actualDate,
@@ -441,7 +369,7 @@ class WorkoutCompletionService {
   }) async {
     try {
       final startDate = DateTime.now().subtract(Duration(days: days));
-      
+
       final snapshot = await _firestore
           .collection('workoutCompletions')
           .where('userId', isEqualTo: traineeId)
@@ -457,12 +385,9 @@ class WorkoutCompletionService {
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        final isOnSchedule = data['isOnSchedule'] as bool? ?? false;
-        
-        // 這裡需要更精確的判斷邏輯
         final planDayOfWeek = data['planDayOfWeek'] ?? data['dayOfWeek'] ?? '';
         final actualDate = (data['actualDate'] as Timestamp?)?.toDate();
-        
+
         final status = calculateStatus(
           planDayOfWeek: planDayOfWeek,
           actualDate: actualDate,
@@ -491,12 +416,12 @@ class WorkoutCompletionService {
         'onTimeCount': onTimeCount,
         'makeupCount': makeupCount,
         'earlyCount': earlyCount,
-        'onTimeRate': totalCompleted > 0 
+        'onTimeRate': totalCompleted > 0
             ? ((onTimeCount + earlyCount) / totalCompleted * 100).round()
             : 0,
         'totalDuration': totalDuration,
         'totalCalories': totalCalories.round(),
-        'avgDuration': totalCompleted > 0 
+        'avgDuration': totalCompleted > 0
             ? (totalDuration / totalCompleted).round()
             : 0,
         'period': '$days 天',

@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart'; // 🆕 用於 debugPrint
-import '../utils/result.dart'; // 🆕 引入 Result 封裝
-import '../providers/network_provider.dart'; // 🆕 引入網路檢查
+import 'package:flutter/foundation.dart';
+import '../utils/result.dart';
+import '../providers/network_provider.dart';
 
 // ========== 數據模型 ==========
 
@@ -13,6 +13,44 @@ enum MessageType {
   text,
   image,
   system,
+  workoutShare,
+}
+
+/// 🆕 回覆引用資料
+class ReplyData {
+  final String messageId;
+  final String messageType;
+  final String previewText;
+  final String? senderName;
+  final Map<String, dynamic>? workoutData;
+  
+  ReplyData({
+    required this.messageId,
+    required this.messageType,
+    required this.previewText,
+    this.senderName,
+    this.workoutData,
+  });
+  
+  factory ReplyData.fromMap(Map<String, dynamic> map) {
+    return ReplyData(
+      messageId: map['messageId'] ?? '',
+      messageType: map['messageType'] ?? 'text',
+      previewText: map['previewText'] ?? '',
+      senderName: map['senderName'],
+      workoutData: map['workoutData'] as Map<String, dynamic>?,
+    );
+  }
+  
+  Map<String, dynamic> toMap() {
+    return {
+      'messageId': messageId,
+      'messageType': messageType,
+      'previewText': previewText,
+      if (senderName != null) 'senderName': senderName,
+      if (workoutData != null) 'workoutData': workoutData,
+    };
+  }
 }
 
 class ChatMessage {
@@ -24,6 +62,8 @@ class ChatMessage {
   final MessageType type;
   final String? imageUrl;
   final int? fileSize;
+  final Map<String, dynamic>? workoutData;
+  final ReplyData? replyTo;  // 🆕 回覆引用
 
   ChatMessage({
     required this.id,
@@ -34,6 +74,8 @@ class ChatMessage {
     required this.type,
     this.imageUrl,
     this.fileSize,
+    this.workoutData,
+    this.replyTo,  // 🆕
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -48,9 +90,18 @@ class ChatMessage {
         case 'system':
           messageType = MessageType.system;
           break;
+        case 'workout_share':
+          messageType = MessageType.workoutShare;
+          break;
         default:
           messageType = MessageType.text;
       }
+    }
+
+    // 🆕 解析回覆資料
+    ReplyData? replyData;
+    if (data['replyTo'] != null) {
+      replyData = ReplyData.fromMap(data['replyTo'] as Map<String, dynamic>);
     }
 
     return ChatMessage(
@@ -62,6 +113,8 @@ class ChatMessage {
       type: messageType,
       imageUrl: data['imageUrl'],
       fileSize: data['fileSize'],
+      workoutData: data['workoutData'] as Map<String, dynamic>?,
+      replyTo: replyData,  // 🆕
     );
   }
 
@@ -75,7 +128,7 @@ class ChatService {
 
   String? get currentUserId => _auth.currentUser?.uid;
 
-  // ========== ✅ 原有方法 - 完全保留，一個字都不改 ==========
+  // ========== ✅ 原有方法 - 完全保留 ==========
 
   /// 創建或獲取聊天室（防止重複）
   Future<String> createOrGetChatRoom(String otherUserId) async {
@@ -126,9 +179,11 @@ class ChatService {
   }
 
   /// 🔔 發送文字訊息（已加入推播通知）
+  /// 🆕 新增 replyTo 參數支援回覆功能
   Future<void> sendMessage({
     required String chatRoomId,
     required String text,
+    ReplyData? replyTo,  // 🆕 回覆引用
   }) async {
     try {
       final currentUserId = this.currentUserId;
@@ -154,21 +209,31 @@ class ChatService {
         orElse: () => '',
       );
 
-      // 創建訊息
-      await _firestore
-          .collection('chatRooms')
-          .doc(chatRoomId)
-          .collection('messages')
-          .add({
+      // 創建訊息（🆕 包含回覆資料）
+      final messageData = <String, dynamic>{
         'text': text.trim(),
         'senderId': currentUserId,
         'timestamp': FieldValue.serverTimestamp(),
         'isRead': false,
         'type': 'text',
-      });
+      };
+      
+      // 🆕 如果有回覆引用，加入訊息資料
+      if (replyTo != null) {
+        messageData['replyTo'] = replyTo.toMap();
+        debugPrint('📤 發送訊息帶回覆: previewText="${replyTo.previewText}", senderName="${replyTo.senderName}"');
+      } else {
+        debugPrint('📤 發送訊息不帶回覆');
+      }
+
+      await _firestore
+          .collection('chatRooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .add(messageData);
 
       // 更新聊天室資訊
-      final updates = {
+      final updates = <String, dynamic>{
         'lastMessage': text.trim(),
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSender': currentUserId,
@@ -181,7 +246,7 @@ class ChatService {
 
       await _firestore.collection('chatRooms').doc(chatRoomId).update(updates);
 
-      // 🔔 新增：發送推播通知
+      // 🔔 發送推播通知
       try {
         final String? recipientId = participants.firstWhere(
           (id) => id != currentUserId,
@@ -189,7 +254,6 @@ class ChatService {
         );
         
         if (recipientId != null && recipientId.isNotEmpty) {
-          // 獲取雙方資料
           final senderDoc = await _firestore.collection('users').doc(currentUserId).get();
           final recipientDoc = await _firestore.collection('users').doc(recipientId).get();
           
@@ -197,7 +261,6 @@ class ChatService {
           final String? fcmToken = recipientDoc.data()?['fcmToken'];
           
           if (fcmToken != null && fcmToken.isNotEmpty) {
-            // 儲存通知到 Firestore（由 Cloud Function 處理）
             await _firestore.collection('notifications').add({
               'to': fcmToken,
               'notification': {
@@ -214,14 +277,11 @@ class ChatService {
               'sent': false,
             });
             
-            print('✅ 訊息通知已排程：發送給 $recipientId');
-          } else {
-            print('⚠️ 接收者沒有 FCM Token');
+            debugPrint('✅ 訊息通知已排程：發送給 $recipientId');
           }
         }
       } catch (e) {
-        print('❌ 發送通知時發生錯誤: $e');
-        // 不影響訊息發送，所以不拋出異常
+        debugPrint('❌ 發送通知時發生錯誤: $e');
       }
     } catch (e) {
       throw Exception('發送訊息失敗: $e');
@@ -232,6 +292,7 @@ class ChatService {
   Future<void> sendImageMessage({
     required String chatRoomId,
     required File imageFile,
+    ReplyData? replyTo,  // 🆕 回覆引用
   }) async {
     try {
       final currentUserId = this.currentUserId;
@@ -239,10 +300,7 @@ class ChatService {
         throw Exception('用戶未登入');
       }
 
-      // 上傳圖片
       final imageUrl = await uploadImage(imageFile, chatRoomId);
-      
-      // 獲取檔案大小
       final fileSize = await imageFile.length();
 
       final chatRoomDoc = await _firestore
@@ -258,12 +316,8 @@ class ChatService {
         orElse: () => '',
       );
 
-      // 創建圖片訊息
-      await _firestore
-          .collection('chatRooms')
-          .doc(chatRoomId)
-          .collection('messages')
-          .add({
+      // 創建圖片訊息（🆕 包含回覆資料）
+      final messageData = <String, dynamic>{
         'text': '[圖片]',
         'senderId': currentUserId,
         'timestamp': FieldValue.serverTimestamp(),
@@ -271,10 +325,21 @@ class ChatService {
         'type': 'image',
         'imageUrl': imageUrl,
         'fileSize': fileSize,
-      });
+      };
+      
+      // 🆕 如果有回覆引用，加入訊息資料
+      if (replyTo != null) {
+        messageData['replyTo'] = replyTo.toMap();
+      }
+
+      await _firestore
+          .collection('chatRooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .add(messageData);
 
       // 更新聊天室資訊
-      final updates = {
+      final updates = <String, dynamic>{
         'lastMessage': '[圖片]',
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSender': currentUserId,
@@ -287,7 +352,7 @@ class ChatService {
 
       await _firestore.collection('chatRooms').doc(chatRoomId).update(updates);
 
-      // 🔔 新增：發送圖片推播通知
+      // 🔔 發送圖片推播通知
       try {
         final String? recipientId = participants.firstWhere(
           (id) => id != currentUserId,
@@ -319,11 +384,11 @@ class ChatService {
               'sent': false,
             });
             
-            print('✅ 圖片通知已排程');
+            debugPrint('✅ 圖片通知已排程');
           }
         }
       } catch (e) {
-        print('❌ 發送圖片通知時發生錯誤: $e');
+        debugPrint('❌ 發送圖片通知時發生錯誤: $e');
       }
     } catch (e) {
       throw Exception('發送圖片失敗: $e');
@@ -373,9 +438,9 @@ class ChatService {
         'unreadCount.$currentUserId': 0,
       });
 
-      print('✅ 已標記聊天室為已讀: $chatRoomId');
+      debugPrint('✅ 已標記聊天室為已讀: $chatRoomId');
     } catch (e) {
-      print('❌ 標記已讀失敗: $e');
+      debugPrint('❌ 標記已讀失敗: $e');
     }
   }
 
@@ -404,7 +469,7 @@ class ChatService {
               totalUnread += (unreadCount[currentUserId] as int?) ?? 0;
             }
           }
-          print('📊 總未讀數: $totalUnread');
+          debugPrint('📊 總未讀數: $totalUnread');
           return totalUnread;
         });
   }
@@ -450,17 +515,87 @@ class ChatService {
     }
   }
 
-  // ========== 🆕 新增 Safe 方法 - 完整錯誤處理 ==========
+  // ========== 🆕 回覆功能工具方法 ==========
+
+  /// 從訊息創建回覆資料
+  ReplyData createReplyDataFromMessage(ChatMessage message, {String? senderName}) {
+    String previewText;
+    String messageType;
+    
+    switch (message.type) {
+      case MessageType.image:
+        previewText = '[圖片]';
+        messageType = 'image';
+        break;
+      case MessageType.workoutShare:
+        final workoutName = message.workoutData?['workoutName'] ?? '訓練記錄';
+        final planName = message.workoutData?['planName'];
+        previewText = planName ?? workoutName;
+        messageType = 'workout_share';
+        break;
+      case MessageType.system:
+        previewText = message.text;
+        messageType = 'system';
+        break;
+      default:
+        previewText = message.text.length > 50 
+            ? '${message.text.substring(0, 50)}...'
+            : message.text;
+        messageType = 'text';
+    }
+    
+    return ReplyData(
+      messageId: message.id,
+      messageType: messageType,
+      previewText: previewText,
+      senderName: senderName,
+      workoutData: message.workoutData,
+    );
+  }
+  
+  /// 從訓練資料創建回覆資料（用於回覆訓練卡片）
+  /// 注意：如果是需要協助的回覆，previewText 顯示求助訊息（helpMessage）
+  ReplyData createReplyDataFromWorkout(
+    Map<String, dynamic> workoutData, {
+    String? senderName,
+  }) {
+    final planName = workoutData['planName'] as String?;
+    final workoutName = workoutData['workoutName'] as String? ?? '訓練記錄';
+    final planDayOfWeek = workoutData['planDayOfWeek'] as String?;
+    final needsHelp = workoutData['feedback']?['needHelp'] == true;
+    final helpMessage = workoutData['feedback']?['helpMessage'] as String?;
+    
+    // 決定 previewText
+    String previewText;
+    if (needsHelp && helpMessage != null && helpMessage.isNotEmpty) {
+      // 🆕 協助回覆：顯示學生的求助訊息
+      previewText = helpMessage;
+    } else {
+      // 一般訓練回覆：顯示訓練名稱
+      previewText = planName ?? workoutName;
+      if (planDayOfWeek != null && planDayOfWeek.isNotEmpty) {
+        previewText = '$previewText - $planDayOfWeek';
+      }
+    }
+    
+    return ReplyData(
+      messageId: workoutData['sessionId'] ?? '',
+      messageType: 'workout_share',
+      previewText: previewText,
+      senderName: senderName,
+      workoutData: workoutData,  // 保留完整資料，UI 層可以判斷 needHelp
+    );
+  }
+
+  // ========== 🆕 Safe 方法 - 完整錯誤處理 ==========
 
   /// 🆕 創建或獲取聊天室（Safe 版本）
   Future<Result<String>> createOrGetChatRoomSafe(String otherUserId) async {
     try {
-      // 檢查網路狀態
       if (!NetworkProvider().isOnline) {
         return Result.failure(AppException.network());
       }
 
-      // 檢查是否登入
       final currentUserId = this.currentUserId;
       if (currentUserId == null) {
         return Result.failure(AppException.unauthorized(
@@ -468,7 +603,6 @@ class ChatService {
         ));
       }
 
-      // 驗證參數
       if (otherUserId.isEmpty) {
         return Result.failure(AppException.validation(
           message: '用戶 ID 不能為空',
@@ -481,7 +615,6 @@ class ChatService {
         ));
       }
 
-      // 執行原有邏輯
       final chatRoomId = await createOrGetChatRoom(otherUserId);
       
       debugPrint('✅ 聊天室創建/獲取成功: $chatRoomId');
@@ -504,23 +637,21 @@ class ChatService {
   Future<Result<void>> sendMessageSafe({
     required String chatRoomId,
     required String text,
+    ReplyData? replyTo,  // 🆕
   }) async {
     try {
-      // 檢查網路狀態
       if (!NetworkProvider().isOnline) {
         return Result.failure(AppException.network(
           message: '網路連接失敗，無法發送訊息',
         ));
       }
 
-      // 檢查是否登入
       if (currentUserId == null) {
         return Result.failure(AppException.unauthorized(
           message: '請先登入才能發送訊息',
         ));
       }
 
-      // 驗證參數
       if (chatRoomId.isEmpty) {
         return Result.failure(AppException.validation(
           message: '聊天室 ID 不能為空',
@@ -533,8 +664,7 @@ class ChatService {
         ));
       }
 
-      // 執行原有邏輯
-      await sendMessage(chatRoomId: chatRoomId, text: text);
+      await sendMessage(chatRoomId: chatRoomId, text: text, replyTo: replyTo);
       
       debugPrint('✅ 訊息發送成功');
       return Result.success(null);
@@ -556,30 +686,27 @@ class ChatService {
   Future<Result<void>> sendImageMessageSafe({
     required String chatRoomId,
     required File imageFile,
+    ReplyData? replyTo,  // 🆕
   }) async {
     try {
-      // 檢查網路狀態
       if (!NetworkProvider().isOnline) {
         return Result.failure(AppException.network(
           message: '網路連接失敗，無法發送圖片',
         ));
       }
 
-      // 檢查是否登入
       if (currentUserId == null) {
         return Result.failure(AppException.unauthorized(
           message: '請先登入才能發送圖片',
         ));
       }
 
-      // 驗證參數
       if (chatRoomId.isEmpty) {
         return Result.failure(AppException.validation(
           message: '聊天室 ID 不能為空',
         ));
       }
 
-      // 驗證檔案
       if (!await imageFile.exists()) {
         return Result.failure(AppException.validation(
           message: '圖片檔案不存在',
@@ -587,14 +714,13 @@ class ChatService {
       }
 
       final fileSize = await imageFile.length();
-      if (fileSize > 10 * 1024 * 1024) { // 10MB 限制
+      if (fileSize > 10 * 1024 * 1024) {
         return Result.failure(AppException.validation(
           message: '圖片大小不能超過 10MB',
         ));
       }
 
-      // 執行原有邏輯
-      await sendImageMessage(chatRoomId: chatRoomId, imageFile: imageFile);
+      await sendImageMessage(chatRoomId: chatRoomId, imageFile: imageFile, replyTo: replyTo);
       
       debugPrint('✅ 圖片發送成功');
       return Result.success(null);
@@ -615,19 +741,16 @@ class ChatService {
   /// 🆕 上傳圖片（Safe 版本）
   Future<Result<String>> uploadImageSafe(File imageFile, String chatRoomId) async {
     try {
-      // 檢查網路狀態
       if (!NetworkProvider().isOnline) {
         return Result.failure(AppException.network(
           message: '網路連接失敗，無法上傳圖片',
         ));
       }
 
-      // 檢查是否登入
       if (currentUserId == null) {
         return Result.failure(AppException.unauthorized());
       }
 
-      // 驗證檔案
       if (!await imageFile.exists()) {
         return Result.failure(AppException.validation(
           message: '圖片檔案不存在',
@@ -641,7 +764,6 @@ class ChatService {
         ));
       }
 
-      // 執行原有邏輯
       final imageUrl = await uploadImage(imageFile, chatRoomId);
       
       debugPrint('✅ 圖片上傳成功: $imageUrl');
@@ -663,24 +785,20 @@ class ChatService {
   /// 🆕 刪除聊天室（Safe 版本）
   Future<Result<void>> deleteChatRoomSafe(String chatRoomId) async {
     try {
-      // 檢查網路狀態
       if (!NetworkProvider().isOnline) {
         return Result.failure(AppException.network());
       }
 
-      // 檢查是否登入
       if (currentUserId == null) {
         return Result.failure(AppException.unauthorized());
       }
 
-      // 驗證參數
       if (chatRoomId.isEmpty) {
         return Result.failure(AppException.validation(
           message: '聊天室 ID 不能為空',
         ));
       }
 
-      // 執行原有邏輯
       await deleteChatRoom(chatRoomId);
       
       debugPrint('✅ 聊天室刪除成功');
@@ -702,19 +820,16 @@ class ChatService {
   /// 🆕 獲取聊天室資訊（Safe 版本）
   Future<Result<DocumentSnapshot?>> getChatRoomInfoSafe(String chatRoomId) async {
     try {
-      // 檢查網路狀態
       if (!NetworkProvider().isOnline) {
         return Result.failure(AppException.network());
       }
 
-      // 驗證參數
       if (chatRoomId.isEmpty) {
         return Result.failure(AppException.validation(
           message: '聊天室 ID 不能為空',
         ));
       }
 
-      // 執行原有邏輯
       final doc = await getChatRoomInfo(chatRoomId);
       
       return Result.success(doc);

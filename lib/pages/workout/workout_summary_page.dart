@@ -6,6 +6,10 @@
 // 🔥 v3 新增：時長顯示「X 分 Y 秒」格式
 // 🔥 v3 新增：動作數量顯示「+N 新增」標註
 // 🔥 v4 新增：本次訓練亮點卡片（最大重量、最多次數、總訓練量）
+// 🔥 v5 新增：分享給教練功能（橋樑整合）
+//    - 通知教練
+//    - 分享到聊天室
+//    - 訓練感受輸入（RPE、心情、疲勞度）
 // ⚠️ 需要在 pubspec.yaml 添加: share_plus: ^7.2.1
 
 import 'package:flutter/material.dart';
@@ -15,6 +19,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+// 🔥 v5 修正：明確指定 import 避免衝突
+import '../../services/workout_share_service.dart' 
+    show WorkoutShareService, WorkoutShareCard, WorkoutFeedback, WorkoutSource, FreeWorkoutType;
+import '../../components/workout_feedback_sheet.dart' 
+    show WorkoutFeedbackSheet, WorkoutFeedbackResult;
 
 class WorkoutSummaryPage extends StatefulWidget {
   final String sessionId;
@@ -48,6 +57,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final WorkoutShareService _shareService = WorkoutShareService();  // 🔥 v5 新增
 
   Map<String, dynamic> _sessionData = {};
   List<Map<String, dynamic>> _exercises = [];
@@ -57,6 +67,9 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
 
   // 🔥 v4 新增：訓練亮點數據
   Map<String, dynamic> _highlights = {};
+  
+  // 🔥 v5 新增：是否已分享給教練
+  bool _hasSharedToCoach = false;
 
   late AnimationController _celebrationController;
   late Animation<double> _scaleAnimation;
@@ -120,6 +133,9 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
 
       // 🔥 v4 新增：計算訓練亮點
       _calculateHighlights();
+      
+      // 🔥 v5 新增：檢查是否已分享給教練
+      _hasSharedToCoach = _sessionData['feedback'] != null;
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -140,6 +156,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
         debugPrint('   完成組數: $_completedSets');
         debugPrint('   消耗卡路里: $_calories');
         debugPrint('   🏆 訓練亮點: $_highlights');
+        debugPrint('   📤 已分享給教練: $_hasSharedToCoach');
         debugPrint('═══════════════════════════════════════════');
       }
     } catch (e, stack) {
@@ -663,6 +680,9 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
                     const SizedBox(height: 16),
                     _buildHighlightsCard(),
                   ],
+                  // 🔥 v5 新增：分享給教練卡片
+                  const SizedBox(height: 16),
+                  _buildShareToCoachCard(),
                   if (_avgStats.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildComparisonCard(),
@@ -1309,6 +1329,282 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // 🔥 v5 新增：分享給教練卡片
+  // ═══════════════════════════════════════════════════════════════
+  Widget _buildShareToCoachCard() {
+    final themeColor = _isPlanWorkout ? Colors.orange : Colors.blue;
+    
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _hasSharedToCoach 
+              ? _primaryColor.withAlpha(100) 
+              : themeColor.withAlpha(100),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(10),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _hasSharedToCoach 
+                      ? _primaryLight 
+                      : themeColor.withAlpha(26),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  _hasSharedToCoach 
+                      ? Icons.check_circle_rounded 
+                      : Icons.send_rounded,
+                  color: _hasSharedToCoach ? _primaryColor : themeColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _hasSharedToCoach ? '已分享給教練' : '分享給教練',
+                      style: TextStyle(
+                        color: _textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _hasSharedToCoach 
+                          ? '教練可以在聊天室查看你的訓練記錄'
+                          : '讓教練了解你的訓練狀況，獲得專業回饋',
+                      style: TextStyle(
+                        color: _textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // 分享按鈕
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _hasSharedToCoach ? null : _shareToCoach,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _hasSharedToCoach 
+                    ? Colors.grey[300] 
+                    : themeColor,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey[200],
+                disabledForegroundColor: Colors.grey[500],
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: Icon(
+                _hasSharedToCoach 
+                    ? Icons.check_rounded 
+                    : Icons.chat_bubble_outline_rounded,
+                size: 20,
+              ),
+              label: Text(
+                _hasSharedToCoach ? '已分享' : '記錄感受並分享',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+          
+          // 提示文字
+          if (!_hasSharedToCoach) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline_rounded, 
+                    color: _textSecondary.withAlpha(150), size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  '記錄 RPE、心情、疲勞度等訓練感受',
+                  style: TextStyle(
+                    color: _textSecondary.withAlpha(150),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // 🔥 v5 新增：分享給教練的邏輯
+  Future<void> _shareToCoach() async {
+    // 顯示訓練感受輸入彈窗
+    final result = _isPlanWorkout
+        ? await WorkoutFeedbackSheet.showForPlan(
+            context,
+            workoutName: _workoutName,
+            planName: _planName ?? _workoutName,
+            durationMinutes: _duration,
+            caloriesBurned: _calories,
+          )
+        : await WorkoutFeedbackSheet.showForFree(
+            context,
+            workoutName: _workoutName,
+            freeWorkoutType: _sessionData['workoutType'] ?? 'weight_training',
+            freeWorkoutCategory: _sessionData['category'],
+            durationMinutes: _duration,
+            caloriesBurned: _calories,
+          );
+
+    if (result == null || !mounted) return;
+
+    // 顯示載入中
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  color: _isPlanWorkout ? Colors.orange : Colors.blue,
+                ),
+                const SizedBox(height: 16),
+                const Text('正在分享給教練...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // 創建分享卡片
+      final shareCard = _isPlanWorkout
+          ? WorkoutShareCard.fromPlan(
+              sessionId: widget.sessionId,
+              workoutName: _workoutName,
+              planName: _planName ?? _workoutName,
+              planDayOfWeek: _dayOfWeek ?? '',
+              durationMinutes: _duration,
+              caloriesBurned: _calories,
+              exerciseCount: _totalExercises,
+              totalSets: _totalSets,
+              isOnSchedule: true,
+              statusLabel: '準時',
+              feedback: result.feedback,
+              completedAt: DateTime.now(),
+              highlights: _highlights,
+            )
+          : WorkoutShareCard.fromFree(
+              sessionId: widget.sessionId,
+              workoutName: _workoutName,
+              freeWorkoutType: _sessionData['workoutType'] ?? 'weight_training',
+              freeWorkoutCategory: _sessionData['category'],
+              durationMinutes: _duration,
+              caloriesBurned: _calories,
+              exerciseCount: _totalExercises,
+              totalSets: _totalSets,
+              feedback: result.feedback,
+              completedAt: DateTime.now(),
+              highlights: _highlights,
+            );
+
+      // 執行分享流程
+      await _shareService.completeWorkoutWithFeedback(
+        shareCard: shareCard,
+        feedback: result.feedback,
+        notifyCoach: result.shareToCoach,
+        autoShareToChat: result.shareToChat,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // 關閉載入對話框
+        
+        setState(() {
+          _hasSharedToCoach = true;
+        });
+
+        // 顯示成功訊息
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(result.shareToChat 
+                    ? '已分享到聊天室！' 
+                    : '已通知教練！'),
+              ],
+            ),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            backgroundColor: _primaryColor,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // 關閉載入對話框
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('分享失敗：$e'),
+              ],
+            ),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildComparisonCard() {
     final avgDuration = (_avgStats['avgDuration'] ?? 0) as int;
     final avgCalories = (_avgStats['avgCalories'] ?? 0) as int;
@@ -1890,7 +2186,7 @@ class _WorkoutSummaryPageState extends State<WorkoutSummaryPage>
     );
   }
 
-  // ===== 🔥 分享功能 =====
+  // ===== 🔥 分享功能（一般社群分享）=====
   void _showShareOptions() {
     showModalBottomSheet(
       context: context,

@@ -1,14 +1,11 @@
 // lib/pages/workout/workout_plan_detail_page.dart
-// ✅ v5.2 - 增加 debug 資訊和延遲確保資料同步
+// ✅ v5.3 - 加入計畫狀態自動更新和防呆機制
+// 🔧 v5.3 新增：計畫到期自動更新狀態
+// 🔧 v5.3 新增：防呆機制（已結束/暫停計畫不能執行）
 // 🔧 v5.2 修復：訓練完成後增加延遲確保 Firebase 同步
-// 🔧 v5.2 修復：增加詳細 debug 資訊
-// 🔧 v5.1 修復：orElse 中的日期計算問題
-// 🔧 v5.1 修復：週進度條顯示問題
 // 🔧 v5.1 修復：isToday 判斷改為直接比較
 // 🔥 v5.0 新增：PlanProgress 整體進度顯示
 // 🔥 v5.0 新增：WeeklyProgress 週進度追蹤
-// 🔥 v5.0 保留：WorkoutDateHelper 統一日期處理
-// 🔥 v5.0 保留：6 種完成狀態系統
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +15,7 @@ import '../../models/plan_progress.dart';
 import '../../services/unified_workout_service.dart';
 import '../../services/workout_progress_service.dart';
 import '../../services/workout_completion_service.dart';
+import '../../services/plan_status_service.dart'; // 🔧 v5.3 新增
 import '../../components/completion_status_badge.dart';
 import '../../utils/workout_date_helper.dart';
 import 'workout_plan_execution_page.dart';
@@ -36,11 +34,15 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
   final WorkoutProgressService _progressService = WorkoutProgressService();
   final WorkoutCompletionService _completionService = WorkoutCompletionService();
+  final PlanStatusService _planStatusService = PlanStatusService(); // 🔧 v5.3 新增
 
   // 🔥 v5.0：使用新的進度模型
   PlanProgress? _planProgress;
   bool _isLoading = true;
   late AnimationController _animController;
+  
+  // 🔧 v5.3：計畫狀態資訊
+  PlanStatusInfo? _planStatusInfo;
   
   // 今日資訊
   late int _todayWeekday;
@@ -81,8 +83,30 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       widget.plan.startDate.day,
     );
     
+    // 🔧 v5.3：檢查計畫狀態
+    _checkAndUpdatePlanStatus();
+    
     _loadProgress();
     _animController.forward();
+  }
+  
+  // 🔧 v5.3：檢查並更新計畫狀態
+  Future<void> _checkAndUpdatePlanStatus() async {
+    final statusInfo = _planStatusService.checkPlanStatus(widget.plan);
+    
+    // 如果計畫已過期，自動更新 Firebase
+    if (statusInfo.shouldAutoUpdate) {
+      await _planStatusService.checkAndUpdatePlanStatus(widget.plan);
+    }
+    
+    if (mounted) {
+      setState(() {
+        _planStatusInfo = statusInfo;
+      });
+    }
+    
+    debugPrint('📋 計畫狀態: ${statusInfo.label}');
+    debugPrint('   可執行: ${statusInfo.canExecute}');
   }
 
   @override
@@ -269,6 +293,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                 ),
               ],
             ),
+            
+            // 🔧 v5.3：計畫狀態和剩餘天數
+            if (_planStatusInfo != null) ...[
+              const SizedBox(height: 12),
+              _buildPlanStatusRow(),
+            ],
 
             const SizedBox(height: 20),
 
@@ -835,6 +865,103 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ),
     );
   }
+  
+  // 🔧 v5.3：計畫狀態列
+  Widget _buildPlanStatusRow() {
+    final statusInfo = _planStatusInfo!;
+    final daysText = _planStatusService.getDaysRemainingText(widget.plan);
+    
+    // 根據狀態選擇顏色和圖標
+    Color statusColor;
+    IconData statusIcon;
+    
+    switch (statusInfo.status) {
+      case PlanStatusType.active:
+        statusColor = Colors.green;
+        statusIcon = Icons.play_circle_outline;
+        break;
+      case PlanStatusType.completed:
+      case PlanStatusType.expired:
+        statusColor = Colors.grey;
+        statusIcon = Icons.check_circle_outline;
+        break;
+      case PlanStatusType.paused:
+        statusColor = Colors.orange;
+        statusIcon = Icons.pause_circle_outline;
+        break;
+      case PlanStatusType.notStarted:
+        statusColor = Colors.blue;
+        statusIcon = Icons.schedule;
+        break;
+      case PlanStatusType.cancelled:
+        statusColor = Colors.red;
+        statusIcon = Icons.cancel_outlined;
+        break;
+    }
+    
+    // 檢查是否即將到期
+    final expiringSoon = _planStatusService.isPlanExpiringSoon(widget.plan);
+    
+    return Row(
+      children: [
+        // 狀態標籤
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: statusColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: statusColor.withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(statusIcon, size: 14, color: statusColor),
+              const SizedBox(width: 4),
+              Text(
+                statusInfo.label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: statusColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // 剩餘天數（如果適用）
+        if (statusInfo.status == PlanStatusType.active && widget.plan.endDate != null) ...[
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: expiringSoon ? Colors.orange.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  expiringSoon ? Icons.warning_amber_rounded : Icons.timer_outlined,
+                  size: 14,
+                  color: expiringSoon ? Colors.orange : _textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  daysText,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: expiringSoon ? Colors.orange : _textSecondary,
+                    fontWeight: expiringSoon ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
   Widget _buildStatCard({
     required IconData icon,
@@ -1265,6 +1392,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       return;
     }
 
+    // 🔧 v5.3：防呆檢查 - 計畫狀態
+    final blockReason = _planStatusService.getExecutionBlockReason(widget.plan);
+    if (blockReason != null) {
+      _showPlanBlockedDialog(blockReason);
+      return;
+    }
+
     final isScheduledToday = WorkoutDateHelper.isSameWeekday(day.dayOfWeek, _todayEnglish);
     
     if (!isScheduledToday) {
@@ -1314,6 +1448,71 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       debugPrint('🔄 訓練結束，重新載入進度...');
       await _loadProgress();
     }
+  }
+  
+  // 🔧 v5.3：顯示計畫無法執行的對話框
+  void _showPlanBlockedDialog(String reason) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.block, color: Colors.red[400], size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Text('無法執行', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              reason,
+              style: TextStyle(fontSize: 15, color: _textPrimary, height: 1.6),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: _textSecondary, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '如需繼續訓練，請聯繫您的教練調整計畫',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF718096)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryOrange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('我知道了'),
+          ),
+        ],
+      ),
+    );
   }
   
   Future<bool?> _showScheduleWarningDialog(WorkoutPlanDay day) {

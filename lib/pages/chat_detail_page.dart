@@ -1,7 +1,10 @@
 // lib/pages/chat_detail_page.dart
+// 🔥 v2.1：發送回覆訊息時自動標記協助已處理
+// 🔥 v2.0：新增 initialReplyData 支援教練端快速回覆訓練
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';  // 🔥 v2.1：標記協助已處理
 import 'dart:io';
 import '../services/chat_service.dart';
 import '../components/workout_share_card_widget.dart';  // 包含 WorkoutShareCardWidget, WorkoutReplyQuote, ReplyMessageBubble
@@ -12,6 +15,8 @@ class ChatDetailPage extends StatefulWidget {
   final String lastMessage;
   final String avatarUrl;
   final bool isOnline;
+  final ReplyData? initialReplyData;        // 🔥 v2.0：初始回覆引用
+  final bool initialIsReplyingToHelp;       // 🔥 v2.0：是否為協助回覆
 
   const ChatDetailPage({
     super.key,
@@ -20,6 +25,8 @@ class ChatDetailPage extends StatefulWidget {
     this.lastMessage = '開始對話...',
     required this.avatarUrl,
     this.isOnline = false,
+    this.initialReplyData,                  // 🔥 v2.0
+    this.initialIsReplyingToHelp = false,   // 🔥 v2.0
   });
 
   @override
@@ -53,6 +60,26 @@ class _ChatDetailPageState extends State<ChatDetailPage>
     );
     
     _initializeChat();
+    
+    // 🔥 v2.0：處理初始回覆引用（從教練端訓練日誌進入）
+    if (widget.initialReplyData != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _replyToData = widget.initialReplyData;
+          _isReplyingToHelp = widget.initialIsReplyingToHelp;
+        });
+        
+        // 如果是需要協助的回覆，預填訊息
+        if (widget.initialIsReplyingToHelp) {
+          _messageController.text = '我看到你需要協助，';
+          _messageController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _messageController.text.length),
+          );
+          setState(() => _isComposing = true);
+          _sendButtonController.forward();
+        }
+      });
+    }
   }
 
   @override
@@ -105,6 +132,7 @@ class _ChatDetailPageState extends State<ChatDetailPage>
     if (text.trim().isEmpty) return;
 
     final replyData = _replyToData;  // 保存回覆引用
+    final wasReplyingToHelp = _isReplyingToHelp;  // 🔥 v2.1：保存是否為協助回覆
     
     _messageController.clear();
     setState(() {
@@ -121,12 +149,37 @@ class _ChatDetailPageState extends State<ChatDetailPage>
         text: text.trim(),
         replyTo: replyData,
       );
+      
+      // 🔥 v2.1：如果是回覆需要協助的訓練，標記為已處理
+      debugPrint('🔍 檢查標記條件: wasReplyingToHelp=$wasReplyingToHelp, replyData=${replyData != null}, messageId=${replyData?.messageId}');
+      if (wasReplyingToHelp && replyData != null && replyData.messageId.isNotEmpty) {
+        debugPrint('🔥 準備標記 sessionId: ${replyData.messageId}');
+        await _markHelpAsResolved(replyData.messageId);
+      } else {
+        debugPrint('⚠️ 未標記: wasReplyingToHelp=$wasReplyingToHelp, messageId=${replyData?.messageId ?? "null"}');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('發送失敗：$e')),
         );
       }
+    }
+  }
+
+  // 🔥 v2.1：標記協助請求已處理
+  Future<void> _markHelpAsResolved(String sessionId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('workoutSessions')
+          .doc(sessionId)
+          .update({
+            'feedback.helpResolved': true,
+            'feedback.helpResolvedAt': FieldValue.serverTimestamp(),
+          });
+      debugPrint('✅ 已標記協助請求為已處理: $sessionId');
+    } catch (e) {
+      debugPrint('❌ 標記協助請求失敗: $e');
     }
   }
 

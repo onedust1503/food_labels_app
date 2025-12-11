@@ -1,6 +1,7 @@
 // lib/services/coach_workout_service.dart
-// 🎯 教練端專用服務 - 學員進度查詢
+// 🎯 教練端專用服務 - 學員進度查詢 v1.1
 // ✅ 整合混合模式資料結構（按時/補做標記）
+// 🔧 v1.1 修復：統一使用根集合 workoutCompletions（與其他服務一致）
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,9 +20,14 @@ class CoachWorkoutService {
   /// 獲取教練所有學員的計畫進度總覽
   /// 返回：List<StudentProgressSummary>
   Future<List<StudentProgressSummary>> getCoachStudentsProgress() async {
-    if (currentUserId == null) return [];
+    if (currentUserId == null) {
+      debugPrint('❌ getCoachStudentsProgress: currentUserId 為 null');
+      return [];
+    }
 
     try {
+      debugPrint('🔄 開始載入學員進度數據...');
+
       // 1. 獲取所有配對的學員
       final pairsSnapshot = await _firestore
           .collection('pairs')
@@ -29,7 +35,12 @@ class CoachWorkoutService {
           .where('status', isEqualTo: 'active')
           .get();
 
-      if (pairsSnapshot.docs.isEmpty) return [];
+      if (pairsSnapshot.docs.isEmpty) {
+        debugPrint('📊 找到 0 位學員');
+        return [];
+      }
+
+      debugPrint('📊 找到 ${pairsSnapshot.docs.length} 位學員');
 
       List<StudentProgressSummary> results = [];
 
@@ -67,30 +78,65 @@ class CoachWorkoutService {
           // 4. 計算本週進度
           final now = DateTime.now();
           final weekStart = now.subtract(Duration(days: now.weekday - 1));
-          final weekEnd = weekStart.add(const Duration(days: 6));
+          final weekStartDate = DateTime(weekStart.year, weekStart.month, weekStart.day);
+          final weekEnd = weekStartDate.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
 
           for (final planDoc in plansSnapshot.docs) {
             final planData = planDoc.data();
             final days = planData['days'] as List<dynamic>? ?? [];
             thisWeekPlannedDays += days.length;
+          }
 
-            // 查詢該計畫本週的完成記錄
+          // 🔧 v1.1 修復：使用根集合 workoutCompletions（與 positive_notification_service 一致）
+          // 查詢該學員本週的所有完成記錄
+          try {
             final completionsSnapshot = await _firestore
-                .collection('users')
-                .doc(traineeId)
                 .collection('workoutCompletions')
-                .where('planId', isEqualTo: planDoc.id)
-                .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
-                .where('actualDate', isLessThanOrEqualTo: Timestamp.fromDate(weekEnd))
+                .where('userId', isEqualTo: traineeId)
+                .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStartDate))
                 .get();
 
             for (final completion in completionsSnapshot.docs) {
               final data = completion.data();
-              totalCompletions++;
-              thisWeekCompletions++;
-              if (data['isOnSchedule'] == true) {
-                onScheduleCompletions++;
+              final actualDate = (data['actualDate'] as Timestamp?)?.toDate();
+              
+              // 確認在本週範圍內
+              if (actualDate != null && actualDate.isBefore(weekEnd)) {
+                totalCompletions++;
+                thisWeekCompletions++;
+                if (data['isOnSchedule'] == true) {
+                  onScheduleCompletions++;
+                }
               }
+            }
+          } catch (e) {
+            // 🔧 如果根集合查詢失敗，嘗試子集合路徑（兼容舊數據）
+            debugPrint('⚠️ 根集合查詢失敗，嘗試子集合: $e');
+            try {
+              for (final planDoc in plansSnapshot.docs) {
+                final completionsSnapshot = await _firestore
+                    .collection('users')
+                    .doc(traineeId)
+                    .collection('workoutCompletions')
+                    .where('planId', isEqualTo: planDoc.id)
+                    .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStartDate))
+                    .get();
+
+                for (final completion in completionsSnapshot.docs) {
+                  final data = completion.data();
+                  final actualDate = (data['actualDate'] as Timestamp?)?.toDate();
+                  
+                  if (actualDate != null && actualDate.isBefore(weekEnd)) {
+                    totalCompletions++;
+                    thisWeekCompletions++;
+                    if (data['isOnSchedule'] == true) {
+                      onScheduleCompletions++;
+                    }
+                  }
+                }
+              }
+            } catch (e2) {
+              debugPrint('⚠️ 子集合查詢也失敗: $e2');
             }
           }
 
@@ -115,6 +161,8 @@ class CoachWorkoutService {
               ? (thisWeekCompletions / thisWeekPlannedDays * 100).clamp(0, 100)
               : 0;
 
+          debugPrint('📈 學員 $studentName: 本週 $thisWeekCompletions/$thisWeekPlannedDays, 按時率 ${onScheduleRate.round()}%');
+
           results.add(StudentProgressSummary(
             traineeId: traineeId,
             traineeName: studentName,
@@ -128,7 +176,7 @@ class CoachWorkoutService {
             needsAttention: needsAttention,
           ));
         } catch (e) {
-          debugPrint('處理學員 $traineeId 進度失敗: $e');
+          debugPrint('⚠️ 處理學員 $traineeId 進度失敗: $e');
         }
       }
 
@@ -139,9 +187,10 @@ class CoachWorkoutService {
         return a.weeklyCompletionRate.compareTo(b.weeklyCompletionRate);
       });
 
+      debugPrint('✅ 學員進度載入完成: ${results.length} 位');
       return results;
     } catch (e) {
-      debugPrint('獲取學員進度總覽失敗: $e');
+      debugPrint('❌ 獲取學員進度總覽失敗: $e');
       return [];
     }
   }
@@ -206,13 +255,25 @@ class CoachWorkoutService {
   /// 獲取單一計畫的統計數據
   Future<Map<String, dynamic>> getPlanStatistics(String traineeId, String planId) async {
     try {
-      final completionsSnapshot = await _firestore
-          .collection('users')
-          .doc(traineeId)
-          .collection('workoutCompletions')
-          .where('planId', isEqualTo: planId)
-          .orderBy('actualDate', descending: true)
-          .get();
+      // 🔧 v1.1：先嘗試根集合，失敗再用子集合
+      QuerySnapshot? completionsSnapshot;
+      
+      try {
+        completionsSnapshot = await _firestore
+            .collection('workoutCompletions')
+            .where('userId', isEqualTo: traineeId)
+            .where('planId', isEqualTo: planId)
+            .get();
+      } catch (e) {
+        // 如果根集合查詢失敗（可能是索引問題），嘗試子集合
+        debugPrint('⚠️ 根集合查詢失敗，嘗試子集合');
+        completionsSnapshot = await _firestore
+            .collection('users')
+            .doc(traineeId)
+            .collection('workoutCompletions')
+            .where('planId', isEqualTo: planId)
+            .get();
+      }
 
       if (completionsSnapshot.docs.isEmpty) {
         return {
@@ -230,7 +291,7 @@ class CoachWorkoutService {
       double totalCalories = 0;
 
       for (final doc in completionsSnapshot.docs) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         if (data['isOnSchedule'] == true) {
           onScheduleCount++;
         }
@@ -265,17 +326,29 @@ class CoachWorkoutService {
     try {
       final now = DateTime.now();
       final weekStart = now.subtract(Duration(days: now.weekday - 1));
-      final weekEnd = weekStart.add(const Duration(days: 6));
+      final weekStartDate = DateTime(weekStart.year, weekStart.month, weekStart.day);
+      final weekEnd = weekStartDate.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
 
-      // 查詢本週完成記錄
-      final completionsSnapshot = await _firestore
-          .collection('users')
-          .doc(traineeId)
-          .collection('workoutCompletions')
-          .where('planId', isEqualTo: planId)
-          .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
-          .where('actualDate', isLessThanOrEqualTo: Timestamp.fromDate(weekEnd))
-          .get();
+      // 🔧 v1.1：先嘗試根集合
+      QuerySnapshot? completionsSnapshot;
+      
+      try {
+        completionsSnapshot = await _firestore
+            .collection('workoutCompletions')
+            .where('userId', isEqualTo: traineeId)
+            .where('planId', isEqualTo: planId)
+            .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStartDate))
+            .get();
+      } catch (e) {
+        debugPrint('⚠️ 根集合查詢失敗，嘗試子集合');
+        completionsSnapshot = await _firestore
+            .collection('users')
+            .doc(traineeId)
+            .collection('workoutCompletions')
+            .where('planId', isEqualTo: planId)
+            .where('actualDate', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStartDate))
+            .get();
+      }
 
       // 建立 planDayOfWeek -> 完成記錄 的映射
       Map<String, WeekDayProgress> result = {};
@@ -295,23 +368,26 @@ class CoachWorkoutService {
 
       // 標記已完成的
       for (final doc in completionsSnapshot.docs) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         final planDayOfWeek = data['planDayOfWeek'] as String? ?? '';
         final isOnSchedule = data['isOnSchedule'] as bool? ?? false;
         final actualDate = (data['actualDate'] as Timestamp?)?.toDate();
         final duration = (data['totalDuration'] as num?)?.toInt() ?? 0;
         final calories = (data['caloriesBurned'] as num?)?.toDouble() ?? 0;
 
-        if (planDayOfWeek.isNotEmpty && result.containsKey(planDayOfWeek)) {
-          result[planDayOfWeek] = WeekDayProgress(
-            dayOfWeek: planDayOfWeek,
-            isPlanned: true,
-            isCompleted: true,
-            isOnSchedule: isOnSchedule,
-            actualDate: actualDate,
-            duration: duration,
-            calories: calories,
-          );
+        // 確認在本週範圍內
+        if (actualDate != null && actualDate.isBefore(weekEnd)) {
+          if (planDayOfWeek.isNotEmpty && result.containsKey(planDayOfWeek)) {
+            result[planDayOfWeek] = WeekDayProgress(
+              dayOfWeek: planDayOfWeek,
+              isPlanned: true,
+              isCompleted: true,
+              isOnSchedule: isOnSchedule,
+              actualDate: actualDate,
+              duration: duration,
+              calories: calories,
+            );
+          }
         }
       }
 

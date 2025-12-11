@@ -1,4 +1,5 @@
 // lib/pages/chat_detail_page.dart
+// 🔥 v2.2：新增 initialMessage 支援快速回饋預填訊息
 // 🔥 v2.1：發送回覆訊息時自動標記協助已處理
 // 🔥 v2.0：新增 initialReplyData 支援教練端快速回覆訓練
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ class ChatDetailPage extends StatefulWidget {
   final bool isOnline;
   final ReplyData? initialReplyData;        // 🔥 v2.0：初始回覆引用
   final bool initialIsReplyingToHelp;       // 🔥 v2.0：是否為協助回覆
+  final String? initialMessage;             // 🆕 v2.2：預填訊息內容
 
   const ChatDetailPage({
     super.key,
@@ -27,6 +29,7 @@ class ChatDetailPage extends StatefulWidget {
     this.isOnline = false,
     this.initialReplyData,                  // 🔥 v2.0
     this.initialIsReplyingToHelp = false,   // 🔥 v2.0
+    this.initialMessage,                    // 🆕 v2.2
   });
 
   @override
@@ -72,6 +75,21 @@ class _ChatDetailPageState extends State<ChatDetailPage>
         // 如果是需要協助的回覆，預填訊息
         if (widget.initialIsReplyingToHelp) {
           _messageController.text = '我看到你需要協助，';
+          _messageController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _messageController.text.length),
+          );
+          setState(() => _isComposing = true);
+          _sendButtonController.forward();
+        }
+      });
+    }
+    
+    // 🆕 v2.2：處理預填訊息（從快速回饋功能進入）
+    if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // 只有在沒有其他預填內容時才設定
+        if (_messageController.text.isEmpty) {
+          _messageController.text = widget.initialMessage!;
           _messageController.selection = TextSelection.fromPosition(
             TextPosition(offset: _messageController.text.length),
           );

@@ -1,21 +1,22 @@
 // lib/pages/workout/workout_plan_detail_page.dart
-// ✅ v5.3 - 加入計畫狀態自動更新和防呆機制
-// 🔧 v5.3 新增：計畫到期自動更新狀態
-// 🔧 v5.3 新增：防呆機制（已結束/暫停計畫不能執行）
-// 🔧 v5.2 修復：訓練完成後增加延遲確保 Firebase 同步
-// 🔧 v5.1 修復：isToday 判斷改為直接比較
-// 🔥 v5.0 新增：PlanProgress 整體進度顯示
-// 🔥 v5.0 新增：WeeklyProgress 週進度追蹤
+// ✅ v5.5 - 加入計畫更新通知橫幅
+// 🔧 v5.5 新增：PlanUpdateBanner 顯示教練更新通知
+// 🔧 v5.5 新增：hasUnreadUpdate 未讀標記處理
+// 🔧 v5.5 新增：自動標記已讀功能
+// 🔧 v5.4 教練備註區（學生端唯讀）
+// 🔧 v5.4 已結束計畫灰色主題 + 執行限制
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../../models/workout_model.dart';
 import '../../models/completion_status.dart';
 import '../../models/plan_progress.dart';
 import '../../services/unified_workout_service.dart';
 import '../../services/workout_progress_service.dart';
 import '../../services/workout_completion_service.dart';
-import '../../services/plan_status_service.dart'; // 🔧 v5.3 新增
+import '../../services/plan_status_service.dart';
 import '../../components/completion_status_badge.dart';
 import '../../utils/workout_date_helper.dart';
 import 'workout_plan_execution_page.dart';
@@ -34,7 +35,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   final UnifiedWorkoutService _workoutService = UnifiedWorkoutService();
   final WorkoutProgressService _progressService = WorkoutProgressService();
   final WorkoutCompletionService _completionService = WorkoutCompletionService();
-  final PlanStatusService _planStatusService = PlanStatusService(); // 🔧 v5.3 新增
+  final PlanStatusService _planStatusService = PlanStatusService();
 
   // 🔥 v5.0：使用新的進度模型
   PlanProgress? _planProgress;
@@ -44,13 +45,23 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   // 🔧 v5.3：計畫狀態資訊
   PlanStatusInfo? _planStatusInfo;
   
+  // 🔧 v5.4：教練備註和已結束狀態
+  List<Map<String, dynamic>> _coachNotes = [];
+  bool _isPlanEnded = false;
+  
+  // 🔧 v5.5 新增：更新通知相關
+  bool _hasUnreadUpdate = false;
+  int? _currentVersion;
+  DateTime? _lastUpdateAt;
+  String? _latestChangeSummary;
+  
   // 今日資訊
   late int _todayWeekday;
   late String _todayEnglish;
   late String _todayFullName;
   late String _todayShortName;
   late DateTime _planStartDateOnly;
-  late DateTime _todayDateOnly; // 🔧 v5.1：新增
+  late DateTime _todayDateOnly;
 
   // 🎨 Soft UI 配色
   static const Color _primaryOrange = Color(0xFFFF9800);
@@ -61,6 +72,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   static const Color _textPrimary = Color(0xFF2D3748);
   static const Color _textSecondary = Color(0xFF718096);
   static const Color _disabledColor = Color(0xFFCBD5E0);
+  
+  // 🔧 v5.4 配色
+  static const Color _endedGrey = Color(0xFF9CA3AF);
+  static const Color _coachGreen = Color(0xFF48BB78);
+  
+  // 🔧 v5.5 新增配色
+  static const Color _updateWarning = Color(0xFFF59E0B);
 
   @override
   void initState() {
@@ -75,7 +93,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     _todayEnglish = WorkoutDateHelper.getTodayEnglish();
     _todayFullName = WorkoutDateHelper.getTodayFullChinese();
     _todayShortName = WorkoutDateHelper.getShortChinese(_todayWeekday);
-    _todayDateOnly = DateTime(now.year, now.month, now.day); // 🔧 v5.1
+    _todayDateOnly = DateTime(now.year, now.month, now.day);
     
     _planStartDateOnly = DateTime(
       widget.plan.startDate.year,
@@ -83,18 +101,78 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       widget.plan.startDate.day,
     );
     
-    // 🔧 v5.3：檢查計畫狀態
     _checkAndUpdatePlanStatus();
-    
+    _checkIfPlanEnded();
+    _loadCoachNotes();
+    _loadUpdateInfo(); // 🔧 v5.5 新增
     _loadProgress();
     _animController.forward();
+  }
+  
+  // 🔧 v5.5 新增：載入更新資訊
+  Future<void> _loadUpdateInfo() async {
+    if (widget.plan.id == null) return;
+    
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('workoutPlans')
+          .doc(widget.plan.id)
+          .get();
+      
+      if (doc.exists && mounted) {
+        final data = doc.data() as Map<String, dynamic>;
+        setState(() {
+          _hasUnreadUpdate = data['hasUnreadUpdate'] == true;
+          _currentVersion = data['version'] as int?;
+          _lastUpdateAt = data['lastUpdateAt'] != null 
+              ? (data['lastUpdateAt'] as Timestamp).toDate() 
+              : null;
+        });
+        
+        // 從最新的調整通知獲取變更摘要
+        final coachNotes = data['coachNotes'] as List?;
+        if (coachNotes != null && coachNotes.isNotEmpty) {
+          for (var note in coachNotes.reversed) {
+            if (note is Map && note['isAdjustmentNotice'] == true) {
+              setState(() {
+                _latestChangeSummary = note['content']?.toString();
+              });
+              break;
+            }
+          }
+        }
+        
+        debugPrint('📢 更新資訊: hasUnread=$_hasUnreadUpdate, version=$_currentVersion');
+      }
+    } catch (e) {
+      debugPrint('❌ 載入更新資訊失敗: $e');
+    }
+  }
+  
+  // 🔧 v5.5 新增：標記更新為已讀
+  Future<void> _markUpdateAsRead() async {
+    if (widget.plan.id == null || !_hasUnreadUpdate) return;
+    
+    try {
+      await FirebaseFirestore.instance
+          .collection('workoutPlans')
+          .doc(widget.plan.id)
+          .update({'hasUnreadUpdate': false});
+      
+      setState(() {
+        _hasUnreadUpdate = false;
+      });
+      
+      debugPrint('✅ 已標記更新為已讀');
+    } catch (e) {
+      debugPrint('❌ 標記已讀失敗: $e');
+    }
   }
   
   // 🔧 v5.3：檢查並更新計畫狀態
   Future<void> _checkAndUpdatePlanStatus() async {
     final statusInfo = _planStatusService.checkPlanStatus(widget.plan);
     
-    // 如果計畫已過期，自動更新 Firebase
     if (statusInfo.shouldAutoUpdate) {
       await _planStatusService.checkAndUpdatePlanStatus(widget.plan);
     }
@@ -104,9 +182,44 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         _planStatusInfo = statusInfo;
       });
     }
+  }
+  
+  // 🔧 v5.4：檢查計畫是否已結束
+  void _checkIfPlanEnded() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     
-    debugPrint('📋 計畫狀態: ${statusInfo.label}');
-    debugPrint('   可執行: ${statusInfo.canExecute}');
+    bool isEnded = widget.plan.status == 'completed' ||
+        widget.plan.status == 'cancelled' ||
+        widget.plan.status == 'expired';
+    
+    if (!isEnded && widget.plan.endDate != null) {
+      final endDate = widget.plan.endDate!;
+      final endDateOnly = DateTime(endDate.year, endDate.month, endDate.day);
+      if (endDateOnly.isBefore(today)) {
+        isEnded = true;
+      }
+    }
+    
+    setState(() {
+      _isPlanEnded = isEnded;
+    });
+  }
+
+  // 🔧 v5.4：載入教練備註
+  Future<void> _loadCoachNotes() async {
+    if (widget.plan.id == null) return;
+    
+    try {
+      final notes = await _workoutService.getPlanNotes(widget.plan.id!);
+      if (mounted) {
+        setState(() {
+          _coachNotes = notes;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ 載入教練備註失敗: $e');
+    }
   }
 
   @override
@@ -117,26 +230,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
   Future<void> _loadProgress() async {
     try {
-      debugPrint('🔄 開始載入進度...');
-      debugPrint('   計畫ID: ${widget.plan.id}');
-      debugPrint('   計畫訓練日數: ${widget.plan.days.length}');
-      for (var day in widget.plan.days) {
-        debugPrint('   - ${day.dayOfWeek}');
-      }
-      
       final progress = await _progressService.getPlanProgress(widget.plan);
-      
-      debugPrint('✅ 進度載入完成');
-      debugPrint('   總訓練天數: ${progress.totalTrainingDays}');
-      debugPrint('   已完成天數: ${progress.completedDays}');
-      debugPrint('   本週應完成: ${progress.currentWeek.shouldComplete}');
-      debugPrint('   本週已完成: ${progress.currentWeek.completed}');
-      debugPrint('   週進度天數: ${progress.currentWeek.days.length}');
-      
-      // 🔧 v5.2：打印每天的狀態
-      for (var day in progress.currentWeek.days) {
-        debugPrint('   ${day.dayName}: ${day.status.name} (completed: ${day.isCompleted}, isToday: ${day.isToday})');
-      }
       
       if (mounted) {
         setState(() {
@@ -152,7 +246,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     }
   }
   
-  /// 獲取今日推薦訓練
   WorkoutPlanDay? _getTodayRecommendedWorkout() {
     for (var day in widget.plan.days) {
       if (WorkoutDateHelper.isSameWeekday(day.dayOfWeek, _todayEnglish)) {
@@ -162,12 +255,10 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     return null;
   }
   
-  /// 🔧 v5.1：修正 - 檢查指定星期幾是否是今天
   bool _isDayToday(String dayOfWeek) {
     return WorkoutDateHelper.isSameWeekday(dayOfWeek, _todayEnglish);
   }
   
-  /// 🔧 v5.1：修正 - 檢查指定星期幾在本週的日期是否在計畫開始後
   bool _isDayAfterPlanStart(String dayOfWeek) {
     final dayDate = WorkoutDateHelper.getDateForWeekdayString(dayOfWeek);
     if (dayDate == null) return false;
@@ -175,11 +266,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     return !dayDateOnly.isBefore(_planStartDateOnly);
   }
   
-  /// 檢查今天是否已完成
   bool _isTodayCompleted() {
     if (_planProgress == null) return false;
     
-    // 🔧 v5.1：直接從 days 中找今天
     for (final day in _planProgress!.currentWeek.days) {
       if (day.isToday && day.isCompleted) {
         return true;
@@ -188,7 +277,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     return false;
   }
   
-  /// 檢查今天是否在計畫開始後
   bool _isTodayAfterPlanStart() {
     return !_todayDateOnly.isBefore(_planStartDateOnly);
   }
@@ -199,21 +287,32 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     final isTodayCompleted = _isTodayCompleted();
     final isTodayAfterPlanStart = _isTodayAfterPlanStart();
     
+    final themeColor = _isPlanEnded ? _endedGrey : _primaryOrange;
+    
     return Scaffold(
       backgroundColor: _bgColor,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          _buildSliverAppBar(),
+          _buildSliverAppBar(themeColor),
           SliverToBoxAdapter(
             child: Column(
               children: [
+                // 🔧 v5.5 新增：更新通知橫幅（最優先顯示）
+                if (_hasUnreadUpdate) _buildUpdateBanner(),
+                
+                // 🔧 v5.4：已結束計畫提示橫幅
+                if (_isPlanEnded && !_hasUnreadUpdate) _buildEndedBanner(),
+                
                 // 🔥 v5.0：整體進度卡片
                 _buildProgressCard(),
                 const SizedBox(height: 8),
                 
-                // 今日推薦
-                if (todayWorkout != null && !isTodayCompleted && isTodayAfterPlanStart)
+                // 🔧 v5.4：教練備註區
+                if (_coachNotes.isNotEmpty) _buildCoachNotesSection(),
+                
+                // 今日推薦（已結束計畫不顯示）
+                if (todayWorkout != null && !isTodayCompleted && isTodayAfterPlanStart && !_isPlanEnded)
                   _buildTodayRecommendationCard(todayWorkout),
                 
                 // 🔥 v5.0：週進度條
@@ -239,8 +338,602 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ),
     );
   }
+  
+  // ============================================================
+  // 🔧 v5.5 新增：更新通知橫幅
+  // ============================================================
+  Widget _buildUpdateBanner() {
+    final dateStr = _lastUpdateAt != null
+        ? DateFormat('MM/dd HH:mm').format(_lastUpdateAt!)
+        : '剛剛';
+    
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            _updateWarning.withOpacity(0.15),
+            _updateWarning.withOpacity(0.05),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _updateWarning.withOpacity(0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _updateWarning.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 標題列
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+            decoration: BoxDecoration(
+              color: _updateWarning.withOpacity(0.1),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                // 動畫鈴鐺
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: -0.1, end: 0.1),
+                  duration: const Duration(milliseconds: 300),
+                  builder: (context, value, child) {
+                    return Transform.rotate(
+                      angle: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _updateWarning.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.notifications_active,
+                          color: _updateWarning,
+                          size: 22,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '計畫已更新',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: _updateWarning.withOpacity(0.9),
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (_currentVersion != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _updateWarning,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'v$_currentVersion',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      Text(
+                        '更新於 $dateStr',
+                        style: TextStyle(
+                          color: _textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 關閉按鈕
+                IconButton(
+                  icon: Icon(Icons.close, color: _textSecondary, size: 20),
+                  onPressed: _markUpdateAsRead,
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
 
-  // 🔥 v5.0：整體進度卡片
+          // 變更摘要
+          if (_latestChangeSummary != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Text(
+                _latestChangeSummary!.length > 150 
+                    ? '${_latestChangeSummary!.substring(0, 150)}...' 
+                    : _latestChangeSummary!,
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+          // 操作按鈕
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _markUpdateAsRead,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _textSecondary,
+                      side: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    child: const Text('知道了'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      _markUpdateAsRead();
+                      // 滾動到訓練日程區塊
+                      _showSnackBar('請查看下方更新後的訓練計畫');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _updateWarning,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      elevation: 0,
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.visibility, size: 18),
+                        SizedBox(width: 6),
+                        Text('查看新計畫'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: _primaryOrange,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+  
+  // 🔧 v5.4：已結束計畫提示橫幅
+  Widget _buildEndedBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _endedGrey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _endedGrey.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _endedGrey.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.archive_outlined, color: _endedGrey, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '此計畫已結束',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _textPrimary,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '您可以查看歷史記錄，但無法執行新的訓練',
+                  style: TextStyle(color: _textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // 🔧 v5.4：教練備註區
+  Widget _buildCoachNotesSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 標題列
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _coachGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.comment_outlined, color: _coachGreen, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '教練備註',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _coachGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_coachNotes.length} 則',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _coachGreen,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            
+            // 備註列表
+            ..._coachNotes.take(3).map((note) {
+              final content = note['content'] as String? ?? '';
+              final createdAt = note['createdAt'] as Timestamp?;
+              final isAdjustmentNotice = note['isAdjustmentNotice'] == true;
+              final version = note['version'] as int?;
+              final timeStr = createdAt != null ? _formatNoteTime(createdAt.toDate()) : '';
+              
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isAdjustmentNotice 
+                      ? _updateWarning.withOpacity(0.05) 
+                      : _coachGreen.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isAdjustmentNotice 
+                        ? _updateWarning.withOpacity(0.2) 
+                        : _coachGreen.withOpacity(0.15),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 調整通知標記
+                    if (isAdjustmentNotice)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _updateWarning.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.tune, size: 10, color: _updateWarning),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '計畫調整',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: _updateWarning,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (version != null) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _updateWarning,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'v$version',
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    Text(
+                      content,
+                      style: TextStyle(fontSize: 13, color: _textPrimary, height: 1.4),
+                    ),
+                    if (timeStr.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.schedule, size: 11, color: _textSecondary),
+                          const SizedBox(width: 4),
+                          Text(
+                            timeStr,
+                            style: TextStyle(fontSize: 10, color: _textSecondary),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+            
+            // 查看更多
+            if (_coachNotes.length > 3)
+              Center(
+                child: TextButton(
+                  onPressed: () => _showAllNotes(),
+                  child: Text(
+                    '查看全部 ${_coachNotes.length} 則備註',
+                    style: TextStyle(color: _coachGreen, fontSize: 12),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  String _formatNoteTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+    if (diff.inMinutes < 1) return '剛剛';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} 分鐘前';
+    if (diff.inHours < 24) return '${diff.inHours} 小時前';
+    if (diff.inDays < 7) return '${diff.inDays} 天前';
+    return '${dateTime.month}/${dateTime.day}';
+  }
+  
+  void _showAllNotes() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _coachGreen.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.comment_outlined, color: _coachGreen, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '教練備註 (${_coachNotes.length})', 
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _coachNotes.length,
+                  itemBuilder: (context, index) {
+                    final note = _coachNotes[index];
+                    final content = note['content'] as String? ?? '';
+                    final createdAt = note['createdAt'] as Timestamp?;
+                    final isAdjustmentNotice = note['isAdjustmentNotice'] == true;
+                    final version = note['version'] as int?;
+                    final timeStr = createdAt != null ? _formatNoteTime(createdAt.toDate()) : '';
+                    
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isAdjustmentNotice 
+                            ? _updateWarning.withOpacity(0.05)
+                            : _coachGreen.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isAdjustmentNotice 
+                              ? _updateWarning.withOpacity(0.2)
+                              : _coachGreen.withOpacity(0.15),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (isAdjustmentNotice)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: _updateWarning.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.tune, size: 12, color: _updateWarning),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '計畫調整',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: _updateWarning,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (version != null) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: _updateWarning,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'v$version',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          Text(
+                            content, 
+                            style: TextStyle(fontSize: 14, color: _textPrimary, height: 1.5),
+                          ),
+                          if (timeStr.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.schedule, size: 12, color: _textSecondary),
+                                const SizedBox(width: 4),
+                                Text(timeStr, style: TextStyle(fontSize: 11, color: _textSecondary)),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // 以下是原有的方法（保持不變）
+  // ============================================================
+
   Widget _buildProgressCard() {
     final progress = _planProgress;
     final totalDays = widget.plan.days.length;
@@ -263,7 +956,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 計畫描述
             if (widget.plan.description != null &&
                 widget.plan.description!.isNotEmpty) ...[
               Text(
@@ -277,24 +969,22 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               const SizedBox(height: 16),
             ],
 
-            // 日期和頻率
             Row(
               children: [
                 _buildInfoChip(
                   icon: Icons.calendar_today,
                   label: _formatDateRange(),
-                  color: _primaryOrange,
+                  color: _isPlanEnded ? _endedGrey : _primaryOrange,
                 ),
                 const SizedBox(width: 12),
                 _buildInfoChip(
                   icon: Icons.repeat,
                   label: '每週 $totalDays 天',
-                  color: Colors.blue,
+                  color: _isPlanEnded ? _endedGrey : Colors.blue,
                 ),
               ],
             ),
             
-            // 🔧 v5.3：計畫狀態和剩餘天數
             if (_planStatusInfo != null) ...[
               const SizedBox(height: 12),
               _buildPlanStatusRow(),
@@ -302,13 +992,11 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
             const SizedBox(height: 20),
 
-            // 🔥 v5.0：進度條
             if (progress != null && !progress.isOngoing) ...[
               _buildOverallProgressBar(progress),
               const SizedBox(height: 20),
             ],
 
-            // 統計卡片
             Row(
               children: [
                 Expanded(
@@ -316,7 +1004,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     icon: Icons.check_circle_outline,
                     value: progress?.progressText ?? '0 次',
                     label: progress?.isOngoing == true ? '累計完成' : '整體進度',
-                    color: CompletionStatus.fromType(CompletionStatusType.onTime).color,
+                    color: _isPlanEnded ? _endedGrey : CompletionStatus.fromType(CompletionStatusType.onTime).color,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -325,7 +1013,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     icon: Icons.timeline,
                     value: '${progress?.onTimePercent ?? 0}%',
                     label: '準時率',
-                    color: Colors.blue,
+                    color: _isPlanEnded ? _endedGrey : Colors.blue,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -334,7 +1022,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     icon: Icons.timer,
                     value: '${progress?.avgDuration ?? 0}',
                     label: '平均時長',
-                    color: Colors.purple,
+                    color: _isPlanEnded ? _endedGrey : Colors.purple,
                   ),
                 ),
               ],
@@ -345,10 +1033,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // 🔥 v5.0：整體進度條
   Widget _buildOverallProgressBar(PlanProgress progress) {
     final rate = progress.completionRate;
-    final color = ProgressDisplayHelper.getProgressColor(rate);
+    final color = _isPlanEnded ? _endedGrey : ProgressDisplayHelper.getProgressColor(rate);
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,7 +1064,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         const SizedBox(height: 8),
         Stack(
           children: [
-            // 背景
             Container(
               height: 10,
               decoration: BoxDecoration(
@@ -385,7 +1071,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                 borderRadius: BorderRadius.circular(5),
               ),
             ),
-            // 進度
             AnimatedContainer(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
@@ -419,21 +1104,16 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // 🔥 v5.1：修正週進度條
   Widget _buildWeeklyProgressBar() {
     final weeklyProgress = _planProgress?.currentWeek;
     
-    // 🔧 v5.1：如果沒有載入進度，手動生成週資料
     List<_WeekDayData> weekDays = [];
     final weekStart = WorkoutDateHelper.getWeekStart(DateTime.now());
     
-    // 取得計畫的訓練日
     final trainingWeekdays = widget.plan.days
         .map((d) => WorkoutDateHelper.parseWeekday(d.dayOfWeek))
         .whereType<int>()
         .toSet();
-    
-    debugPrint('🔍 訓練日 weekdays: $trainingWeekdays');
     
     for (int i = 0; i < 7; i++) {
       final date = weekStart.add(Duration(days: i));
@@ -444,7 +1124,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       final isAfterPlanStart = !dateOnly.isBefore(_planStartDateOnly);
       final isPast = dateOnly.isBefore(_todayDateOnly);
       
-      // 從進度資料中找完成狀態
       CompletionStatusType status = CompletionStatusType.pending;
       bool isCompleted = false;
       
@@ -462,7 +1141,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         status = dayProgress.status;
         isCompleted = dayProgress.isCompleted;
       } else if (isTrainingDay) {
-        // 沒有進度資料時，根據日期判斷狀態
         if (!isAfterPlanStart) {
           status = CompletionStatusType.pending;
         } else if (isToday) {
@@ -485,9 +1163,10 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ));
     }
     
-    // 計算本週應完成和已完成
     final shouldComplete = weekDays.where((d) => d.isTrainingDay && d.isAfterPlanStart).length;
     final completed = weekDays.where((d) => d.isTrainingDay && d.isCompleted).length;
+    
+    final themeColor = _isPlanEnded ? _endedGrey : _primaryOrange;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -507,13 +1186,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 標題行
             Row(
               children: [
-                Icon(Icons.calendar_view_week, size: 18, color: _primaryOrange),
+                Icon(Icons.calendar_view_week, size: 18, color: themeColor),
                 const SizedBox(width: 8),
                 Text(
-                  '本週訓練',
+                  _isPlanEnded ? '最後一週訓練' : '本週訓練',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -524,7 +1202,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: _primaryOrange.withOpacity(0.1),
+                    color: themeColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -532,7 +1210,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: _primaryOrange,
+                      color: themeColor,
                     ),
                   ),
                 ),
@@ -542,7 +1220,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
             ),
             const SizedBox(height: 16),
             
-            // 週日期顯示
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: weekDays.map((day) => _buildDayCircleNew(day)).toList(),
@@ -553,20 +1230,20 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // 🔧 v5.1：新的單日圓圈
   Widget _buildDayCircleNew(_WeekDayData day) {
     final status = CompletionStatus.fromType(day.status);
     final shortName = WorkoutDateHelper.getShortChinese(day.weekday);
+    
+    final activeColor = _isPlanEnded ? _endedGrey : _primaryOrange;
 
     return Column(
       children: [
-        // 今日指示器
-        if (day.isToday)
+        if (day.isToday && !_isPlanEnded)
           Container(
             margin: const EdgeInsets.only(bottom: 4),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: _primaryOrange,
+              color: activeColor,
               borderRadius: BorderRadius.circular(4),
             ),
             child: const Text(
@@ -581,29 +1258,28 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         else
           const SizedBox(height: 18),
         
-        // 日期圓圈
         Container(
           width: 36,
           height: 36,
           decoration: BoxDecoration(
             color: day.isCompleted 
-                ? status.color 
+                ? (_isPlanEnded ? _endedGrey : status.color)
                 : day.isTrainingDay && day.isAfterPlanStart
-                    ? status.backgroundColor
+                    ? (_isPlanEnded ? _endedGrey.withOpacity(0.1) : status.backgroundColor)
                     : Colors.grey.withOpacity(0.1),
             shape: BoxShape.circle,
             border: !day.isCompleted && day.isTrainingDay && day.isAfterPlanStart
                 ? Border.all(
-                    color: status.color,
-                    width: day.isToday ? 3 : 2,
+                    color: _isPlanEnded ? _endedGrey : status.color,
+                    width: day.isToday && !_isPlanEnded ? 3 : 2,
                   )
                 : !day.isCompleted && day.isTrainingDay && !day.isAfterPlanStart
                     ? Border.all(color: _disabledColor, width: 1)
                     : null,
-            boxShadow: day.isToday && !day.isCompleted && day.isAfterPlanStart
+            boxShadow: day.isToday && !day.isCompleted && day.isAfterPlanStart && !_isPlanEnded
                 ? [BoxShadow(color: status.color.withOpacity(0.3), blurRadius: 8, spreadRadius: 1)]
                 : day.isCompleted
-                    ? [BoxShadow(color: status.color.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))]
+                    ? [BoxShadow(color: (_isPlanEnded ? _endedGrey : status.color).withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))]
                     : null,
           ),
           child: Center(
@@ -619,7 +1295,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                                     ? Icons.warning_amber
                                     : Icons.fitness_center,
                         size: 16,
-                        color: day.isAfterPlanStart ? status.color : _disabledColor,
+                        color: day.isAfterPlanStart ? (_isPlanEnded ? _endedGrey : status.color) : _disabledColor,
                       )
                     : null,
           ),
@@ -629,24 +1305,23 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           shortName,
           style: TextStyle(
             fontSize: 11,
-            color: day.isToday
-                ? _primaryOrange
+            color: day.isToday && !_isPlanEnded
+                ? activeColor
                 : day.isTrainingDay && day.isAfterPlanStart
                     ? _textPrimary
                     : _textSecondary,
-            fontWeight: day.isToday || (day.isTrainingDay && day.isAfterPlanStart) 
+            fontWeight: (day.isToday && !_isPlanEnded) || (day.isTrainingDay && day.isAfterPlanStart) 
                 ? FontWeight.w600 
                 : FontWeight.normal,
           ),
         ),
         
-        // 狀態標籤
         if (day.isCompleted && day.status == CompletionStatusType.makeup)
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               '補做',
-              style: TextStyle(fontSize: 8, color: status.color, fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 8, color: _isPlanEnded ? _endedGrey : status.color, fontWeight: FontWeight.w500),
             ),
           )
         else if (!day.isAfterPlanStart && day.isTrainingDay && !day.isCompleted)
@@ -682,7 +1357,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         Container(
           width: 10,
           height: 10,
-          decoration: BoxDecoration(color: status.color, shape: BoxShape.circle),
+          decoration: BoxDecoration(color: _isPlanEnded ? _endedGrey : status.color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 3),
         Text(label, style: TextStyle(fontSize: 9, color: _textSecondary)),
@@ -765,12 +1440,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  Widget _buildSliverAppBar() {
+  Widget _buildSliverAppBar(Color themeColor) {
     return SliverAppBar(
       expandedHeight: 160,
       floating: false,
       pinned: true,
-      backgroundColor: _primaryOrange,
+      backgroundColor: themeColor,
       foregroundColor: Colors.white,
       elevation: 0,
       flexibleSpace: FlexibleSpaceBar(
@@ -787,7 +1462,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [_primaryOrange, _darkOrange],
+              colors: _isPlanEnded 
+                  ? [_endedGrey, _endedGrey.withOpacity(0.8)]
+                  : [_primaryOrange, _darkOrange],
             ),
           ),
           child: Stack(
@@ -814,14 +1491,74 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               ),
               Positioned(
                 right: 24, bottom: 60,
-                child: Icon(Icons.fitness_center, size: 48, color: Colors.white.withOpacity(0.3)),
+                child: Icon(
+                  _isPlanEnded ? Icons.archive : Icons.fitness_center, 
+                  size: 48, 
+                  color: Colors.white.withOpacity(0.3),
+                ),
               ),
+              if (_isPlanEnded)
+                Positioned(
+                  left: 20, top: 80,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.archive, color: Colors.white, size: 14),
+                        SizedBox(width: 4),
+                        Text(
+                          '已結束',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // 🔧 v5.5 新增：更新標記
+              if (_hasUnreadUpdate && !_isPlanEnded)
+                Positioned(
+                  left: 20, top: 80,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _updateWarning,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _updateWarning.withOpacity(0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.new_releases, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          '已更新${_currentVersion != null ? ' v$_currentVersion' : ''}',
+                          style: const TextStyle(
+                            color: Colors.white, 
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
       ),
       actions: [
-        if (widget.plan.status == 'active')
+        if (widget.plan.status == 'active' && !_isPlanEnded)
           PopupMenuButton(
             icon: const Icon(Icons.more_vert),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -866,23 +1603,21 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
   
-  // 🔧 v5.3：計畫狀態列
   Widget _buildPlanStatusRow() {
     final statusInfo = _planStatusInfo!;
     final daysText = _planStatusService.getDaysRemainingText(widget.plan);
     
-    // 根據狀態選擇顏色和圖標
     Color statusColor;
     IconData statusIcon;
     
     switch (statusInfo.status) {
       case PlanStatusType.active:
-        statusColor = Colors.green;
+        statusColor = _isPlanEnded ? _endedGrey : Colors.green;
         statusIcon = Icons.play_circle_outline;
         break;
       case PlanStatusType.completed:
       case PlanStatusType.expired:
-        statusColor = Colors.grey;
+        statusColor = _endedGrey;
         statusIcon = Icons.check_circle_outline;
         break;
       case PlanStatusType.paused:
@@ -899,12 +1634,15 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         break;
     }
     
-    // 檢查是否即將到期
+    if (_isPlanEnded && statusInfo.status == PlanStatusType.active) {
+      statusColor = _endedGrey;
+      statusIcon = Icons.archive_outlined;
+    }
+    
     final expiringSoon = _planStatusService.isPlanExpiringSoon(widget.plan);
     
     return Row(
       children: [
-        // 狀態標籤
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
@@ -918,7 +1656,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               Icon(statusIcon, size: 14, color: statusColor),
               const SizedBox(width: 4),
               Text(
-                statusInfo.label,
+                _isPlanEnded ? '已結束' : statusInfo.label,
                 style: TextStyle(
                   fontSize: 12,
                   color: statusColor,
@@ -929,8 +1667,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           ),
         ),
         
-        // 剩餘天數（如果適用）
-        if (statusInfo.status == PlanStatusType.active && widget.plan.endDate != null) ...[
+        if (!_isPlanEnded && statusInfo.status == PlanStatusType.active && widget.plan.endDate != null) ...[
           const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1001,7 +1738,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           Container(
             width: 4, height: 20,
             decoration: BoxDecoration(
-              color: _primaryOrange,
+              color: _isPlanEnded ? _endedGrey : _primaryOrange,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -1042,19 +1779,15 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     );
   }
 
-  // 🔧 v5.1：修正 _buildDayCard
   Widget _buildDayCard(WorkoutPlanDay day, int index) {
-    // 🔧 v5.1：直接計算而不是依賴可能為空的 days
     final dayWeekday = WorkoutDateHelper.parseWeekday(day.dayOfWeek) ?? 1;
     final dayDate = WorkoutDateHelper.getDateForWeekdayString(day.dayOfWeek) ?? DateTime.now();
     final dayDateOnly = DateTime(dayDate.year, dayDate.month, dayDate.day);
     
-    // 🔧 v5.1：直接計算 isToday，不依賴 PlanDayProgress
     final isToday = _isDayToday(day.dayOfWeek);
     final isAfterPlanStart = _isDayAfterPlanStart(day.dayOfWeek);
     final isPast = dayDateOnly.isBefore(_todayDateOnly);
     
-    // 從進度中查找完成狀態
     bool isCompleted = false;
     CompletionStatusType statusType = CompletionStatusType.pending;
     
@@ -1072,7 +1805,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       isCompleted = dayProgress.isCompleted;
       statusType = dayProgress.status;
     } else {
-      // 沒有進度資料時，根據日期判斷
       if (!isAfterPlanStart) {
         statusType = CompletionStatusType.pending;
       } else if (isToday) {
@@ -1086,6 +1818,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
     
     final status = CompletionStatus.fromType(statusType);
     final fullName = WorkoutDateHelper.normalizeToChinese(day.dayOfWeek);
+    
+    final themeColor = _isPlanEnded ? _endedGrey : _primaryOrange;
+    final darkThemeColor = _isPlanEnded ? _endedGrey.withOpacity(0.8) : _darkOrange;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1093,12 +1828,14 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         decoration: BoxDecoration(
           color: _cardColor,
           borderRadius: BorderRadius.circular(20),
-          border: isToday && !isCompleted && isAfterPlanStart
+          border: isToday && !isCompleted && isAfterPlanStart && !_isPlanEnded
               ? Border.all(color: status.color, width: 2)
-              : null,
+              : _isPlanEnded
+                  ? Border.all(color: _endedGrey.withOpacity(0.3), width: 1)
+                  : null,
           boxShadow: [
             BoxShadow(
-              color: isToday && !isCompleted && isAfterPlanStart
+              color: isToday && !isCompleted && isAfterPlanStart && !_isPlanEnded
                   ? status.color.withOpacity(0.15)
                   : Colors.black.withOpacity(0.04),
               blurRadius: 15,
@@ -1108,14 +1845,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
         ),
         child: Column(
           children: [
-            // 標題區
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: isCompleted
-                      ? [status.color.withOpacity(0.08), status.color.withOpacity(0.03)]
-                      : [_primaryOrange.withOpacity(0.08), _lightOrange.withOpacity(0.5)],
+                      ? [(_isPlanEnded ? _endedGrey : status.color).withOpacity(0.08), (_isPlanEnded ? _endedGrey : status.color).withOpacity(0.03)]
+                      : [themeColor.withOpacity(0.08), _lightOrange.withOpacity(_isPlanEnded ? 0.1 : 0.5)],
                 ),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(20),
@@ -1124,19 +1860,18 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
               ),
               child: Row(
                 children: [
-                  // 日期標籤
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: isCompleted
-                            ? [status.color, status.color.withOpacity(0.8)]
-                            : [_primaryOrange, _darkOrange],
+                            ? [_isPlanEnded ? _endedGrey : status.color, (_isPlanEnded ? _endedGrey : status.color).withOpacity(0.8)]
+                            : [themeColor, darkThemeColor],
                       ),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: (isCompleted ? status.color : _primaryOrange).withOpacity(0.3),
+                          color: (isCompleted ? (_isPlanEnded ? _endedGrey : status.color) : themeColor).withOpacity(0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -1163,7 +1898,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                   ),
                   const SizedBox(width: 12),
 
-                  // 動作數量
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
@@ -1182,8 +1916,7 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     ),
                   ),
                   
-                  // 🔧 v5.1：修正今日標記 - 只有真的是今天才顯示
-                  if (isToday && !isCompleted && isAfterPlanStart) ...[
+                  if (isToday && !isCompleted && isAfterPlanStart && !_isPlanEnded) ...[
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1200,7 +1933,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
                   const Spacer(),
 
-                  // 狀態標籤
                   if (!isAfterPlanStart && !isCompleted)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1222,13 +1954,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                     )
                   else if (isCompleted)
                     CompletionStatusBadge(statusType: statusType, compact: true)
-                  else if (statusType == CompletionStatusType.overdue)
+                  else if (statusType == CompletionStatusType.overdue && !_isPlanEnded)
                     CompletionStatusBadge(statusType: statusType, compact: true),
                 ],
               ),
             ),
 
-            // 動作列表
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -1239,19 +1970,22 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
                   const SizedBox(height: 16),
 
-                  // 開始訓練按鈕
                   SizedBox(
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: () => _startWorkout(day),
+                      onPressed: _isPlanEnded ? null : () => _startWorkout(day),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isCompleted 
-                            ? status.color.withOpacity(0.9)
-                            : _primaryOrange,
+                        backgroundColor: _isPlanEnded 
+                            ? _endedGrey.withOpacity(0.5)
+                            : isCompleted 
+                                ? status.color.withOpacity(0.9)
+                                : _primaryOrange,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        disabledBackgroundColor: _endedGrey.withOpacity(0.3),
+                        disabledForegroundColor: Colors.white70,
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1262,13 +1996,22 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
                               color: Colors.white.withOpacity(0.2),
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(isCompleted ? Icons.replay : Icons.play_arrow, size: 20),
+                            child: Icon(
+                              _isPlanEnded 
+                                  ? Icons.lock_outline
+                                  : isCompleted 
+                                      ? Icons.replay 
+                                      : Icons.play_arrow, 
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            isCompleted 
-                                ? '再次訓練' 
-                                : (isToday && isAfterPlanStart ? '開始今日訓練' : '開始訓練'),
+                            _isPlanEnded 
+                                ? '計畫已結束'
+                                : isCompleted 
+                                    ? '再次訓練' 
+                                    : (isToday && isAfterPlanStart ? '開始今日訓練' : '開始訓練'),
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
                           ),
                         ],
@@ -1286,6 +2029,9 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
   Widget _buildExerciseItem(PlannedExercise exercise, int index) {
     final categoryInfo = _getCategoryInfo(exercise.type);
+    
+    final accentColor = _isPlanEnded ? _endedGrey : _primaryOrange;
+    final darkAccent = _isPlanEnded ? _endedGrey.withOpacity(0.8) : _darkOrange;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1300,13 +2046,13 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           Container(
             width: 28, height: 28,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_primaryOrange.withOpacity(0.2), _lightOrange]),
+              gradient: LinearGradient(colors: [accentColor.withOpacity(0.2), _isPlanEnded ? _endedGrey.withOpacity(0.1) : _lightOrange]),
               shape: BoxShape.circle,
             ),
             child: Center(
               child: Text(
                 '$index',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _darkOrange),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: darkAccent),
               ),
             ),
           ),
@@ -1314,10 +2060,10 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: categoryInfo['color'].withOpacity(0.12),
+              color: (_isPlanEnded ? _endedGrey : categoryInfo['color']).withOpacity(0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(categoryInfo['icon'], color: categoryInfo['color'], size: 20),
+            child: Icon(categoryInfo['icon'], color: _isPlanEnded ? _endedGrey : categoryInfo['color'], size: 20),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -1379,20 +2125,15 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
 
   Future<void> _startWorkout(WorkoutPlanDay day) async {
     if (widget.plan.id == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [Icon(Icons.error_outline, color: Colors.white), SizedBox(width: 8), Text('計畫 ID 不存在')],
-          ),
-          backgroundColor: Colors.red[400],
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+      _showSnackBar('計畫 ID 不存在');
       return;
     }
 
-    // 🔧 v5.3：防呆檢查 - 計畫狀態
+    if (_isPlanEnded) {
+      _showPlanBlockedDialog('此計畫已結束，無法執行新的訓練。\n\n您可以查看歷史記錄，但無法開始新訓練。');
+      return;
+    }
+
     final blockReason = _planStatusService.getExecutionBlockReason(widget.plan);
     if (blockReason != null) {
       _showPlanBlockedDialog(blockReason);
@@ -1441,16 +2182,12 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
       ),
     );
 
-    // 🔧 v5.2：不管返回什麼都重新載入，並增加延遲確保 Firebase 同步
     if (mounted) {
-      // 等待 Firebase 同步
       await Future.delayed(const Duration(milliseconds: 500));
-      debugPrint('🔄 訓練結束，重新載入進度...');
       await _loadProgress();
     }
   }
   
-  // 🔧 v5.3：顯示計畫無法執行的對話框
   void _showPlanBlockedDialog(String reason) {
     showDialog(
       context: context,
@@ -1656,7 +2393,6 @@ class _WorkoutPlanDetailPageState extends State<WorkoutPlanDetailPage>
   }
 }
 
-// 🔧 v5.1：新增輔助類
 class _WeekDayData {
   final int weekday;
   final DateTime date;

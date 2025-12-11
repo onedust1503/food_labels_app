@@ -1,5 +1,7 @@
 // lib/pages/home/coach_home_page.dart
-// 🎨 教練主頁 v3.0 - 整合待處理事項管理系統
+// 🎨 教練主頁 v3.9 - 整合待處理事項管理系統 + 快速回饋功能
+// ✅ v3.9 新增：快速回饋按鈕、頭像點擊打開側邊欄
+// ✅ v3.8 修復：補齊所有 PendingActionType switch case
 // ✅ v3.0 新增：待回覆統計、待處理事項區塊、快速行動按鈕
 // ✅ v2.0 整合真實計畫進度
 // ✨ 明亮版莫蘭迪風格 + 混合模式進度顯示
@@ -19,6 +21,9 @@ import '../coach/trainee_detail_page.dart';
 
 // ✅ 引入明亮版莫蘭迪設計系統
 import '../../theme/app_theme.dart';
+
+// 🆕 v3.9：快速回饋功能
+import '../../widgets/quick_feedback_sheet.dart';
 
 class CoachHomePage extends StatefulWidget {
   const CoachHomePage({super.key});
@@ -180,7 +185,7 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
     }
   }
 
-  // 🔥 v3.0：處理待處理事項的行動
+  // 🔥 v3.8：處理待處理事項的行動（補齊所有 case）
   Future<void> _handlePendingAction(PendingAction action) async {
     switch (action.type) {
       case PendingActionType.needsHelp:
@@ -194,6 +199,14 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
         _viewStudentDetail(action.traineeId, action.traineeName);
         break;
       case PendingActionType.noActivity:
+      case PendingActionType.lowCompletion:    // 🆕 v3.8
+      case PendingActionType.lowOnTimeRate:    // 🆕 v3.8
+        // 警告類：開啟聊天關心學員
+        await _startConsultation(action.traineeId, action.traineeName);
+        break;
+      case PendingActionType.goalAchieved:     // 🆕 v3.8
+      case PendingActionType.personalRecord:   // 🆕 v3.8
+        // 正面類：發送鼓勵訊息
         await _startConsultation(action.traineeId, action.traineeName);
         break;
     }
@@ -463,7 +476,7 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
     );
   }
 
-  // 🔥 v3.6：帶狀態更新的通知項目
+  // 🔥 v3.8：帶狀態更新的通知項目（補齊所有 case）
   Widget _buildNotificationItemWithState(
     PendingAction action, 
     StateSetter setSheetState,
@@ -496,6 +509,27 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
         typeColor = Colors.orange;
         typeIcon = Icons.warning_amber;
         typeLabel = '長時間無活動';
+        break;
+      // 🆕 v3.8：新增的類型
+      case PendingActionType.lowCompletion:
+        typeColor = AppColors.warning;
+        typeIcon = Icons.trending_down;
+        typeLabel = '完成率偏低';
+        break;
+      case PendingActionType.lowOnTimeRate:
+        typeColor = Colors.orange;
+        typeIcon = Icons.schedule;
+        typeLabel = '按時率偏低';
+        break;
+      case PendingActionType.goalAchieved:
+        typeColor = AppColors.success;
+        typeIcon = Icons.emoji_events;
+        typeLabel = '達成目標 🎉';
+        break;
+      case PendingActionType.personalRecord:
+        typeColor = Colors.purple;
+        typeIcon = Icons.military_tech;
+        typeLabel = '個人紀錄 🏆';
         break;
     }
     
@@ -760,7 +794,7 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
     );
   }
 
-  // 🎨 1. 歡迎區
+  // 🎨 1. 歡迎區 - 🆕 v3.9：頭像可點擊打開側邊欄
   Widget _buildWelcomeSection() {
     // 🔥 v3.0：計算總待處理數量
     final totalPending = _stats.needsHelpCount + _stats.pendingRequests;
@@ -775,22 +809,51 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
       ),
       child: Row(
         children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: AppShadows.small,
-            ),
-            child: Center(
-              child: Text(
-                realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'C',
-                style: AppTextStyles.h2.copyWith(
-                  color: AppColors.coach,
-                  fontWeight: FontWeight.bold,
+          // 🆕 v3.9：頭像可點擊打開側邊欄
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Scaffold.of(context).openDrawer();
+            },
+            child: Stack(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: AppShadows.small,
+                  ),
+                  child: Center(
+                    child: Text(
+                      realUserName.isNotEmpty ? realUserName[0].toUpperCase() : 'C',
+                      style: AppTextStyles.h2.copyWith(
+                        color: AppColors.coach,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                // 🆕 選單指示器
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.coach,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(
+                      Icons.menu,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 16),
@@ -1325,6 +1388,31 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // 🆕 v3.9：快速回饋按鈕
+              IconButton(
+                onPressed: () => QuickFeedbackSheet.show(
+                  context,
+                  traineeId: student.traineeId,
+                  traineeName: student.traineeName,
+                  completionRate: student.weeklyCompletionRate / 100,
+                  onTimeRate: student.onScheduleRate / 100,
+                  achievedGoal: student.weeklyCompletionRate >= 100,
+                  onFeedbackSent: () => _refreshDataQuietly(),
+                ),
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.flash_on,
+                    color: Colors.orange,
+                    size: 18,
+                  ),
+                ),
+                tooltip: '快速回饋',
+              ),
               IconButton(
                 onPressed: () => _viewStudentDetail(
                   student.traineeId, 
@@ -1567,6 +1655,31 @@ class _CoachHomePageState extends State<CoachHomePage> with SingleTickerProvider
                         ),
                       ),
                       tooltip: '開始諮詢',
+                    ),
+                    // 🆕 v3.9：快速回饋按鈕
+                    IconButton(
+                      onPressed: () => QuickFeedbackSheet.show(
+                        context,
+                        traineeId: student.traineeId,
+                        traineeName: student.traineeName,
+                        completionRate: student.weeklyCompletionRate / 100,
+                        onTimeRate: student.onScheduleRate / 100,
+                        achievedGoal: student.weeklyCompletionRate >= 100,
+                        onFeedbackSent: () => _refreshDataQuietly(),
+                      ),
+                      icon: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.flash_on,
+                          color: Colors.orange,
+                          size: 20,
+                        ),
+                      ),
+                      tooltip: '快速回饋',
                     ),
                   ],
                 ),

@@ -1,8 +1,11 @@
 // lib/components/page_wrapper_with_navigation.dart
 // 🎨 明亮版莫蘭迪風格 - 整合訓練計畫管理功能 + 優化設計
+// ✅ v4.0：修復 Drawer 打開問題，添加浮動選單按鈕
+// ✅ v3.9：新增快速回饋模板管理、週報總結入口
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';  // 🆕 v4.0
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../components/modern_bottom_navigation.dart';
@@ -30,6 +33,10 @@ import '../pages/profile/trainee_edit_page.dart';
 // 營養 OCR 掃描頁面
 import '../pages/nutrition/ocr_scan_page.dart';
 
+// 🆕 v3.9：快速回饋相關頁面
+import '../pages/coach/feedback_templates_page.dart';
+import '../pages/coach/weekly_report_page.dart';
+
 // 🎨 引入明亮版莫蘭迪主題
 import '../theme/app_theme.dart';
 
@@ -50,6 +57,9 @@ class PageWrapperWithNavigation extends StatefulWidget {
 class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
   late PageController _pageController;
+  
+  // 🆕 v4.0：使用 GlobalKey 控制 Scaffold
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -141,6 +151,12 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
     } else {
       _showStudentQuickActions();
     }
+  }
+  
+  // 🆕 v4.0：打開側邊欄的方法
+  void _openDrawer() {
+    HapticFeedback.lightImpact();
+    _scaffoldKey.currentState?.openDrawer();
   }
 
   /// 🎨 教練快速操作 - 明亮莫蘭迪風格
@@ -508,6 +524,45 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
                       padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       child: Divider(height: 1),
                     ),
+                    
+                    // ═══════════════════════════════════════
+                    // 🆕 v3.9：快速回饋功能區塊
+                    // ═══════════════════════════════════════
+                    _buildDrawerHeader('💬 回饋管理'),
+                    _buildDrawerItem(
+                      icon: Icons.flash_on,
+                      title: '回饋模板',
+                      subtitle: '管理快速回饋模板',
+                      color: Colors.orange,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const FeedbackTemplatesPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDrawerItem(
+                      icon: Icons.summarize,
+                      title: '週報總結',
+                      subtitle: '查看本週學員表現',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const WeeklyReportPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      child: Divider(height: 1),
+                    ),
                   ],
 
                   // 📊 統計相關選項
@@ -669,6 +724,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
     }
 
     return Scaffold(
+      key: _scaffoldKey,  // 🆕 v4.0：添加 GlobalKey
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false,
       drawer: _buildDrawer(),
@@ -690,6 +746,14 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
             ],
           ),
           
+          // 🆕 v4.0：浮動選單按鈕（只在首頁顯示）
+          if (_currentIndex == 0)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              left: 16,
+              child: _buildMenuButton(),
+            ),
+          
           // 底部導航
           ModernBottomNavigation(
             currentIndex: _currentIndex,
@@ -698,6 +762,35 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
             isCoach: widget.isCoach,
           ),
         ],
+      ),
+    );
+  }
+  
+  // 🆕 v4.0：浮動選單按鈕
+  Widget _buildMenuButton() {
+    return GestureDetector(
+      onTap: _openDrawer,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Icon(
+            Icons.menu,
+            color: widget.isCoach ? AppColors.coach : AppColors.primary,
+            size: 24,
+          ),
+        ),
       ),
     );
   }

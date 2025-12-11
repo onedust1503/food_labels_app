@@ -1,9 +1,10 @@
 // lib/pages/workout/coach_plans_management_page.dart
-// 🎯 教練端訓練計畫管理 v2.0
+// 🎯 教練端訓練計畫管理 v2.1
 // ✨ 明亮版莫蘭迪風格
 // ✅ 從 workoutCompletions 頂層集合讀取進度
 // ✅ 混合模式標記（綠色按時/黃色補做）
 // ✅ 真實完成率統計
+// ✅ v2.1: 整合新的計畫詳情頁面
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../coach/coach_plan_detail_page.dart'; // 🔥 新增 import
 
 class CoachPlansManagementPage extends StatefulWidget {
   const CoachPlansManagementPage({super.key});
@@ -20,7 +22,7 @@ class CoachPlansManagementPage extends StatefulWidget {
 }
 
 class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -120,8 +122,8 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
               text: '進行中',
             ),
             Tab(
-              icon: Icon(Icons.check_circle_outline, size: 20),
-              text: '已完成',
+              icon: Icon(Icons.archive_outlined, size: 20),
+              text: '已結束',
             ),
           ],
         ),
@@ -267,18 +269,18 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: (isActive ? AppColors.coach : AppColors.success).withOpacity(0.1),
+              color: (isActive ? AppColors.coach : AppColors.textTertiary).withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
-              isActive ? Icons.assignment_outlined : Icons.check_circle_outline,
+              isActive ? Icons.assignment_outlined : Icons.archive_outlined,
               size: 64,
-              color: isActive ? AppColors.coach : AppColors.success,
+              color: isActive ? AppColors.coach : AppColors.textTertiary,
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            isActive ? '尚無進行中的計畫' : '尚無已完成的計畫',
+            isActive ? '尚無進行中的計畫' : '尚無已結束的計畫',
             style: AppTextStyles.h4.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -344,7 +346,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
         border: Border.all(
           color: isActive 
               ? AppColors.coach.withOpacity(0.2) 
-              : AppColors.success.withOpacity(0.2),
+              : AppColors.textTertiary.withOpacity(0.2),
           width: 1.5,
         ),
       ),
@@ -366,12 +368,17 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                       decoration: BoxDecoration(
                         gradient: isActive
                             ? AppColors.secondaryGradient
-                            : AppColors.successGradient,
+                            : LinearGradient(
+                                colors: [
+                                  AppColors.textTertiary,
+                                  AppColors.textTertiary.withOpacity(0.7),
+                                ],
+                              ),
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: AppShadows.small,
                       ),
                       child: Icon(
-                        isActive ? Icons.fitness_center : Icons.emoji_events,
+                        isActive ? Icons.fitness_center : Icons.archive,
                         color: Colors.white,
                         size: 24,
                       ),
@@ -395,44 +402,73 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                         ],
                       ),
                     ),
-                    if (isActive)
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        onSelected: (value) {
-                          if (value == 'delete') {
-                            _deletePlan(planId, planName);
-                          } else if (value == 'complete') {
-                            _markAsCompleted(planId, planName);
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: 'complete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.check_circle, 
-                                  color: AppColors.success, size: 20),
-                                const SizedBox(width: 12),
-                                const Text('標記完成'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete, 
-                                  color: AppColors.error, size: 20),
-                                const SizedBox(width: 12),
-                                const Text('刪除計畫'),
-                              ],
-                            ),
-                          ),
-                        ],
+                    // 🔥 v2.2: 進行中和已結束都顯示選單
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
                       ),
+                      onSelected: (value) {
+                        if (value == 'delete') {
+                          _deletePlan(planId, planName);
+                        } else if (value == 'end') {
+                          _markAsEnded(planId, planName);
+                        } else if (value == 'reactivate') {
+                          _reactivatePlan(planId, planName);
+                        }
+                      },
+                      itemBuilder: (context) => isActive
+                          ? [
+                              // 進行中：可標記結束、刪除
+                              PopupMenuItem(
+                                value: 'end',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.archive, 
+                                      color: AppColors.warning, size: 20),
+                                    const SizedBox(width: 12),
+                                    const Text('標記為已結束'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete, 
+                                      color: AppColors.error, size: 20),
+                                    const SizedBox(width: 12),
+                                    const Text('刪除計畫'),
+                                  ],
+                                ),
+                              ),
+                            ]
+                          : [
+                              // 已結束：可重新啟用、刪除
+                              PopupMenuItem(
+                                value: 'reactivate',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.play_circle, 
+                                      color: AppColors.success, size: 20),
+                                    const SizedBox(width: 12),
+                                    const Text('重新啟用'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete, 
+                                      color: AppColors.error, size: 20),
+                                    const SizedBox(width: 12),
+                                    const Text('刪除計畫'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                    ),
                   ],
                 ),
                 
@@ -509,6 +545,25 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                         color: AppColors.textSecondary,
                       ),
                     ),
+                    // 🔥 v2.2: 已結束標籤
+                    if (!isActive) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.textTertiary.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '已結束',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
 
@@ -782,32 +837,84 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     return AppColors.error;
   }
 
-  // 👁️ 查看計畫詳情
+  // 👁️ 查看計畫詳情 - 🔥 v2.1 改用新的詳情頁面
   Future<void> _viewPlanDetail(
     String planId, 
     Map<String, dynamic> data, 
     String traineeId,
   ) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => PlanDetailSheet(
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CoachPlanDetailPage(
           planId: planId,
           planData: data,
           traineeId: traineeId,
-          scrollController: scrollController,
         ),
       ),
     );
   }
 
   // ✅ 標記完成
-  Future<void> _markAsCompleted(String planId, String planName) async {
+  // 🔥 v2.2: 標記為已結束
+  Future<void> _markAsEnded(String planId, String planName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.archive, color: AppColors.warning),
+            ),
+            const SizedBox(width: 12),
+            const Text('標記為已結束'),
+          ],
+        ),
+        content: Text('確定要將「$planName」標記為已結束嗎？\n\n計畫將移至「已結束」分類，之後可以重新啟用。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              '取消',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('確定結束'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _firestore.collection('workoutPlans').doc(planId).update({
+          'status': 'completed',
+          'completedAt': FieldValue.serverTimestamp(),
+        });
+        _showSnackBar('計畫已結束');
+      } catch (e) {
+        _showSnackBar('操作失敗：$e', isError: true);
+      }
+    }
+  }
+
+  // 🔥 v2.2: 重新啟用計畫
+  Future<void> _reactivatePlan(String planId, String planName) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -820,13 +927,13 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                 color: AppColors.success.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.check_circle, color: AppColors.success),
+              child: Icon(Icons.play_circle, color: AppColors.success),
             ),
             const SizedBox(width: 12),
-            const Text('標記完成'),
+            const Text('重新啟用'),
           ],
         ),
-        content: Text('確定要將「$planName」標記為已完成嗎？'),
+        content: Text('確定要重新啟用「$planName」嗎？\n\n計畫將移回「進行中」分類。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -844,7 +951,7 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('確定'),
+            child: const Text('重新啟用'),
           ),
         ],
       ),
@@ -853,10 +960,10 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
     if (confirmed == true) {
       try {
         await _firestore.collection('workoutPlans').doc(planId).update({
-          'status': 'completed',
-          'completedAt': FieldValue.serverTimestamp(),
+          'status': 'active',
+          'completedAt': FieldValue.delete(),
         });
-        _showSnackBar('已標記為完成！');
+        _showSnackBar('計畫已重新啟用！');
       } catch (e) {
         _showSnackBar('操作失敗：$e', isError: true);
       }
@@ -936,400 +1043,4 @@ class _CoachPlansManagementPageState extends State<CoachPlansManagementPage>
   }
 }
 
-// ===================================
-// 📌 計畫詳情 Sheet
-// ===================================
-
-class PlanDetailSheet extends StatelessWidget {
-  final String planId;
-  final Map<String, dynamic> planData;
-  final String traineeId;
-  final ScrollController scrollController;
-
-  const PlanDetailSheet({
-    super.key,
-    required this.planId,
-    required this.planData,
-    required this.traineeId,
-    required this.scrollController,
-  });
-
-  Color _getCategoryColor(String category) {
-    switch (category) {
-      case '胸部': return const Color(0xFFE57373);
-      case '背部': return const Color(0xFF64B5F6);
-      case '腿部': return const Color(0xFFFFB74D);
-      case '肩膀': return const Color(0xFFBA68C8);
-      case '手臂': return AppColors.coach;
-      case '腹肌': return const Color(0xFF4DB6AC);
-      case '有氧': return const Color(0xFFF06292);
-      default: return AppColors.textSecondary;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final planName = planData['planName'] ?? '未命名計畫';
-    final description = planData['description'] as String?;
-    
-    final daysData = planData['days'];
-    List<Map<String, dynamic>> daysList = [];
-    
-    if (daysData is List) {
-      daysList = daysData.map((d) => d as Map<String, dynamic>).toList();
-    } else if (daysData is Map) {
-      daysList = (daysData as Map<String, dynamic>).values
-          .map((d) => d as Map<String, dynamic>)
-          .toList();
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        children: [
-          // 拖曳指示
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.divider,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          
-          // 標題區
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-            decoration: BoxDecoration(
-              gradient: AppColors.secondaryGradient,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.fitness_center,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        planName,
-                        style: AppTextStyles.h3.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // 學員名稱
-                FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(traineeId)
-                      .get(),
-                  builder: (context, snapshot) {
-                    String traineeName = '載入中...';
-                    if (snapshot.hasData && snapshot.data!.exists) {
-                      final userData = snapshot.data!.data() as Map<String, dynamic>;
-                      traineeName = userData['displayName'] ?? '未命名學員';
-                    }
-
-                    return Row(
-                      children: [
-                        const Icon(Icons.person, 
-                          color: Colors.white70, size: 18),
-                        const SizedBox(width: 8),
-                        Text(
-                          traineeName,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          // 說明區
-          if (description != null && description.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.info.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.info.withOpacity(0.2),
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline, 
-                    size: 20, color: AppColors.info),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '計畫說明',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.info,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          description,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textPrimary,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // 訓練內容列表
-          Expanded(
-            child: ListView.builder(
-              controller: scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: daysList.length,
-              itemBuilder: (context, index) {
-                final day = daysList[index];
-                return _buildDayCard(day, index);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 📅 單日訓練卡片
-  Widget _buildDayCard(Map<String, dynamic> day, int dayIndex) {
-    final dayOfWeek = day['dayOfWeek']?.toString() ?? '';
-    final exercises = day['exercises'];
-    List<Map<String, dynamic>> exerciseList = [];
-    
-    if (exercises is List) {
-      exerciseList = exercises.map((e) => e as Map<String, dynamic>).toList();
-    }
-
-    final Map<String, String> dayNames = {
-      'monday': '星期一',
-      'tuesday': '星期二',
-      'wednesday': '星期三',
-      'thursday': '星期四',
-      'friday': '星期五',
-      'saturday': '星期六',
-      'sunday': '星期日',
-      'single': '單次訓練',
-    };
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.divider),
-        boxShadow: AppShadows.small,
-      ),
-      child: Column(
-        children: [
-          // 標題
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.coach.withOpacity(0.08),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.coach.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.calendar_today,
-                    color: AppColors.coach,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  dayNames[dayOfWeek.toLowerCase()] ?? dayOfWeek,
-                  style: AppTextStyles.h4.copyWith(
-                    color: AppColors.coach,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.coach.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${exerciseList.length} 個動作',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.coach,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // 動作列表
-          if (exerciseList.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                '尚未添加運動',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              itemCount: exerciseList.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final exercise = exerciseList[index];
-                return _buildExerciseItem(exercise, index);
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExerciseItem(Map<String, dynamic> exercise, int index) {
-    final name = exercise['name'] ?? '未命名運動';
-    final type = exercise['type']?.toString() ?? '';
-    final sets = exercise['sets'];
-    final reps = exercise['reps'];
-    final categoryColor = _getCategoryColor(type);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: categoryColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: categoryColor.withOpacity(0.2),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: categoryColor.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                '${index + 1}',
-                style: AppTextStyles.label.copyWith(
-                  color: categoryColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (sets != null && reps != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.repeat, 
-                        size: 14, color: AppColors.textTertiary),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$sets 組 × $reps 次',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (type.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: categoryColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                type,
-                style: AppTextStyles.caption.copyWith(
-                  color: categoryColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
+// ✅ PlanDetailSheet 已移除，改用 CoachPlanDetailPage

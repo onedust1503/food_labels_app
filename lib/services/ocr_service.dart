@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// OCR 引擎類型
 enum OcrEngine {
@@ -21,12 +22,12 @@ class OcrService {
   
   // YOLO (RunPod) 設定
   static const String _runpodEndpointId = '62gcl0q6545hqb';
-  static const String _runpodApiKey = '';
+  static String get _runpodApiKey => dotenv.env['RUNPOD_API_KEY'] ?? '';
   static const String _runpodBaseUrl = 'https://api.runpod.ai/v2';
   
   // Google Cloud Vision 設定
   // 🔥 請替換成你的 API Key
-  static const String _googleApiKey = '';
+  static String get _googleApiKey => dotenv.env['GOOGLE_VISION_API_KEY'] ?? '';
   static const String _googleVisionUrl = 'https://vision.googleapis.com/v1/images:annotate';
   
   // 圖片壓縮設定

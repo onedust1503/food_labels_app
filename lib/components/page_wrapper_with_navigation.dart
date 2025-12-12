@@ -2,6 +2,7 @@
 // 🎨 明亮版莫蘭迪風格 - 整合訓練計畫管理功能 + 優化設計
 // ✅ v4.0：修復 Drawer 打開問題，添加浮動選單按鈕
 // ✅ v3.9：新增快速回饋模板管理、週報總結入口
+import '../pages/test/ai_food_test_page.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -1297,6 +1298,17 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
                       color: AppColors.warning,
                       onTap: () {
                         _initializeDatabase();
+                      },
+                    ),
+                    _buildProfileOption(
+                      icon: Icons.auto_awesome,
+                      title: '🤖 AI 食物辨識測試',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AIFoodTestPage()),
+                        );
                       },
                     ),
                     _buildProfileOption(

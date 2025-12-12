@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 // ✅ 修改：導入分角色的編輯頁面
 import 'trainee_edit_page.dart';
 import 'coach_edit_page.dart';
+// ✅ 新增：導入 AI 食物辨識測試頁面
+import 'package:food_labels_app/pages/test/ai_food_test_page.dart';
 
 class ProfileTab extends StatefulWidget {
   final bool isCoach;
@@ -153,6 +155,19 @@ class _ProfileTabState extends State<ProfileTab> {
                     );
                   },
                 ),
+
+                // ✅ 新增：AI 食物辨識測試入口
+                _buildProfileOption(
+                  icon: Icons.camera_alt_outlined,
+                  title: '🤖 AI 食物辨識測試',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AIFoodTestPage()),
+                    );
+                  },
+                ),
+
                 _buildProfileOption(
                   icon: Icons.logout_outlined,
                   title: '登出',

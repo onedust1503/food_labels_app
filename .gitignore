@@ -58,3 +58,7 @@ android/key.properties
 
 # Local build caches
 .gradle/
+
+# API Keys
+.env
+*.env

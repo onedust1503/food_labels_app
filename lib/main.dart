@@ -26,11 +26,15 @@ import 'pages/nutrition/ocr_test_page.dart';
 
 import 'utils/init_exercises_collection.dart';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 // 全域導航鍵
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: ".env");
 
   // 初始化國際化日期格式
   await initializeDateFormatting('zh_TW', null);

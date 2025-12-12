@@ -41,6 +41,8 @@ dependencies:
   firebase_messaging: ^14.9.0
   # Firebase 雲端儲存
   firebase_storage: ^11.6.0
+  # Firebase 雲端函式
+  cloud_functions: 4.7.6
 
   # ----- UI 與狀態管理 -----
   # iOS 風格圖示
@@ -88,6 +90,7 @@ dependencies:
 
   # 語音功能
   flutter_tts: ^3.8.5
+  flutter_dotenv: ^6.0.0
 
 
 
@@ -127,6 +130,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - .env
     - assets/icons/
     - assets/anim/
     - assets/standardized_foods.json

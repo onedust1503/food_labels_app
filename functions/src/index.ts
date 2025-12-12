@@ -1,4 +1,5 @@
 // functions/src/index.ts
+// ✨ v2.0: 新增 sugar + fiber 營養素估算
 import {setGlobalOptions} from "firebase-functions/v2/options";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -35,6 +36,7 @@ interface BoundingBox {
   y_max: number;
 }
 
+// ✨ v2.0: 更新 FoodItem 增加 sugar 和 fiber
 interface FoodItem {
   name: string;
   portion: string;
@@ -44,15 +46,20 @@ interface FoodItem {
   protein: number;
   carbs: number;
   fat: number;
+  sugar: number; // 🆕 糖 (g)
+  fiber: number; // 🆕 膳食纖維 (g)
   notes?: string;
   bounding_box?: BoundingBox;
 }
 
+// ✨ v2.0: 更新 NutritionTotal 增加 sugar 和 fiber
 interface NutritionTotal {
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
+  sugar: number; // 🆕
+  fiber: number; // 🆕
 }
 
 interface Recommendation {
@@ -159,7 +166,7 @@ function isRetryableError(status: number, message: string): boolean {
 }
 
 // ============================================
-// 🍽️ AI 食物辨識 Function（加入重試機制）
+// 🍽️ AI 食物辨識 Function（v2.0 增加 sugar + fiber）
 // ============================================
 
 export const analyzeFood = onCall(
@@ -194,7 +201,7 @@ export const analyzeFood = onCall(
 
     console.log(`📸 收到圖片，大小: ${imageBase64.length} 字元`);
 
-    // 3. 🆕 優化的 System Instruction（提高 bounding box 準確度）
+    // 3. ✨ v2.0: 更新的 System Instruction（增加 sugar + fiber）
     const systemInstruction = `你是專業的營養師和食物辨識專家，專精於台灣飲食文化。
 
 【核心任務】
@@ -207,30 +214,72 @@ export const analyzeFood = onCall(
 3. 營養數據參考衛福部食品營養資料庫
 4. 對不確定的項目標註信心度（high/medium/low）
 
-【⚠️ Bounding Box 精確度要求 - 非常重要！】
-座標系統：使用 0-1000 的相對座標（左上角為原點）
-- x_min：食物最左邊的 x 座標
-- y_min：食物最上方的 y 座標  
-- x_max：食物最右邊的 x 座標
-- y_max：食物最下方的 y 座標
+【✨ 營養素估算 - 6 項必填】
+每個食物必須估算以下 6 種營養素：
+1. calories (大卡) - 總熱量
+2. protein (g) - 蛋白質
+3. carbs (g) - 碳水化合物
+4. fat (g) - 脂肪
+5. sugar (g) - 糖（包含天然糖和添加糖）
+6. fiber (g) - 膳食纖維
 
-【精確標記規則】
-1. 框框必須緊貼食物邊緣，不要留太多空白區域
-2. 不要把框框畫得比實際食物大
-3. 仔細觀察每個食物的實際邊界位置
-4. 重疊的食物要分別標記各自「可見」的區域
-5. 如果食物被部分遮擋，只框選可見的部分
-6. 每個食物的框框應該盡量不重疊
-7. 座標數值要精確，誤差控制在 ±30 以內
+【糖分估算指南】
+- 白飯、麵條：糖 ≈ 0-1g
+- 水果：根據種類，約 10-15g/份
+- 含糖飲料：約 25-50g
+- 甜點、糕點：約 15-30g
+- 炒菜、肉類：通常 < 3g（除非有糖醋、蜜汁等）
+
+【膳食纖維估算指南】
+- 白飯：約 0.3g/碗
+- 蔬菜類：約 2-4g/份
+- 水果類：約 2-3g/份
+- 全穀類：約 3-5g/份
+- 肉類、蛋類：0g
+- 豆類：約 5-8g/份
+
+【⚠️ Bounding Box 座標系統 - 請仔細閱讀！】
+圖片座標使用 0-1000 的相對座標系統：
+- 圖片左上角 = (0, 0)
+- 圖片右下角 = (1000, 1000)
+- 圖片正中央 = (500, 500)
+- 圖片左半邊 x 約 0-500，右半邊 x 約 500-1000
+- 圖片上半部 y 約 0-500，下半部 y 約 500-1000
+
+【Bounding Box 欄位說明】
+- x_min：食物最左邊的 x 座標（0-1000）
+- y_min：食物最上邊的 y 座標（0-1000）
+- x_max：食物最右邊的 x 座標（0-1000）
+- y_max：食物最下邊的 y 座標（0-1000）
+
+【⚠️ 定位步驟 - 請依序執行】
+為每個食物標記 bounding box 時，請：
+1. 先觀察食物在圖片中的相對位置（左/中/右、上/中/下）
+2. 估算食物佔圖片的比例（例如：佔寬度 30%、高度 20%）
+3. 計算具體座標數值
+4. 確認框框緊貼食物邊緣
+
+【座標範例參考】
+- 左上角的小菜：x_min=50, y_min=50, x_max=300, y_max=250
+- 正中央的主食：x_min=300, y_min=350, x_max=700, y_max=650
+- 右下角的配菜：x_min=600, y_min=700, x_max=900, y_max=950
+- 橫跨中間的長條食物：x_min=100, y_min=400, x_max=900, y_max=550
+
+【精確度要求】
+1. 框框必須緊貼食物實際邊緣
+2. 不要框太大（包含空白或其他食物）
+3. 不要框太小（切掉食物的一部分）
+4. 重疊的食物要分別標記各自可見的區域
+5. 座標誤差應控制在 ±50 以內
 
 【常見錯誤 - 請避免】
-❌ 框框太大，包含了旁邊的食物
-❌ 框框位置偏移，沒有對準食物
-❌ 多個食物共用同一個框框
-❌ 框框超出圖片範圍（座標應在 0-1000 之間）
+❌ 所有食物都給類似的座標
+❌ 框框明顯偏離食物實際位置
+❌ 框框大小與食物實際大小不符
+❌ 忽略食物的實際形狀（如長條形、圓形）
 
 【輸出要求】
-- 每項食物必須包含：名稱、份量、熱量、蛋白質、碳水、脂肪、bounding_box
+- 每項食物必須包含：名稱、份量、6種營養素、bounding_box
 - 提供具體的飲食建議，不要空泛籠統
 - 建議必須考慮用戶的健身目標
 - 只輸出純 JSON，不要任何額外文字或 markdown 標記
@@ -240,31 +289,41 @@ export const analyzeFood = onCall(
 - 複合食物要逐一拆解成分
 - 烹調方式會影響熱量，要納入考量`;
 
-    // 4. 🆕 優化的 Prompt（強調 bounding box 準確度）
+    // 4. ✨ v2.0: 更新的 Prompt（增加 sugar + fiber）
     const prompt = `【任務】分析這張食物照片的營養成分，並【精確標記】每個食物的位置
 
-【分析步驟】
-1. 辨識：仔細觀察圖片，列出所有可見的食物品項
-2. 精確定位：為每個食物標記 bounding_box
-   - 使用 0-1000 相對座標系統
-   - 框框要緊貼食物邊緣
-   - 不要框得太大或太小
-3. 估量：估算每項食物的份量（使用台灣常見單位）
-4. 計算：計算每項的營養素（熱量、蛋白質、碳水、脂肪）
-5. 評估：標註每項估算的信心度（high/medium/low）
-6. 加總：計算整餐總營養素
-7. 建議：根據用戶目標提供3條具體建議
+【分析步驟 - 請依序執行】
+1. 整體觀察：先看整張圖片，了解食物的整體分布
+2. 逐一辨識：列出每個可見的食物品項
+3. 精確定位：為每個食物計算 bounding_box
+   - 先判斷食物在圖片的哪個區域（左上/中間/右下等）
+   - 估算食物佔圖片的寬度和高度比例
+   - 計算出 x_min, y_min, x_max, y_max（0-1000）
+4. 估量：估算每項食物的份量
+5. 計算：計算 6 種營養素（熱量、蛋白質、碳水、脂肪、糖、纖維）
+6. 評估：標註信心度
+7. 建議：提供3條具體建議
 
 【用餐資訊】
 - 餐別：${mealType || "一般餐點"}
 ${userGoal ? `- 健身目標：${userGoal}` : ""}
 ${targetCalories ? `- 每日目標熱量：${targetCalories}kcal` : ""}
 
-【⚠️ Bounding Box 重要提醒】
-- 請仔細看清楚每個食物的實際位置
-- 框框要精確對準食物，不要偏移
-- 重疊的食物要分開標記各自的區域
-- 座標範圍 0-1000，左上角是 (0, 0)
+【⚠️ Bounding Box 計算提醒】
+座標系統：0-1000（左上角是原點）
+- 如果食物在圖片左邊 1/3 處：x 約 0-333
+- 如果食物在圖片中間：x 約 333-666
+- 如果食物在圖片右邊 1/3 處：x 約 666-1000
+- y 座標同理（上/中/下）
+
+請仔細觀察每個食物的：
+- 實際位置（不要猜測）
+- 實際大小（框框要符合食物大小）
+- 實際形狀（長條形、圓形、不規則形）
+
+【⚠️ 營養素提醒】
+- sugar (糖)：甜食、飲料、水果通常較高；白飯、肉類通常很低
+- fiber (纖維)：蔬菜、水果、全穀較高；肉類、精製澱粉很低或為 0
 
 【重要】只輸出純 JSON，不要包含任何 markdown 標記！
 
@@ -280,54 +339,60 @@ ${targetCalories ? `- 每日目標熱量：${targetCalories}kcal` : ""}
       "protein": 蛋白質克數,
       "carbs": 碳水克數,
       "fat": 脂肪克數,
-      "notes": "備註（可選）",
+      "sugar": 糖克數,
+      "fiber": 纖維克數,
       "bounding_box": {
-        "x_min": 左邊界0-1000,
-        "y_min": 上邊界0-1000,
-        "x_max": 右邊界0-1000,
-        "y_max": 下邊界0-1000
-      }
+        "x_min": 左邊界(0-1000),
+        "y_min": 上邊界(0-1000),
+        "x_max": 右邊界(0-1000),
+        "y_max": 下邊界(0-1000)
+      },
+      "notes": "備註(可選)"
     }
   ],
   "total": {
     "calories": 總熱量,
     "protein": 總蛋白質,
     "carbs": 總碳水,
-    "fat": 總脂肪
-  },
-  "meal_assessment": {
-    "balance_score": 1-10分,
-    "strengths": ["優點1", "優點2"],
-    "improvements": ["可改進點1", "可改進點2"]
+    "fat": 總脂肪,
+    "sugar": 總糖,
+    "fiber": 總纖維
   },
   "recommendations": [
     {
       "type": "immediate/next_meal/general",
-      "advice": "具體建議內容",
-      "reason": "建議原因"
+      "advice": "具體建議",
+      "reason": "原因說明"
     }
   ],
-  "overall_confidence": "high/medium/low"
+  "overall_confidence": "high/medium/low",
+  "meal_assessment": {
+    "balance_score": 1-10分,
+    "strengths": ["優點1", "優點2"],
+    "improvements": ["可改進1", "可改進2"]
+  }
 }`;
 
-    // 5. 🆕 帶重試的 Gemini API 呼叫
+    // 5. 嘗試多個模型
     let lastError: Error | null = null;
 
-    for (let modelIndex = 0; modelIndex < MODELS.length; modelIndex++) {
-      const modelName = MODELS[modelIndex];
+    for (const modelName of MODELS) {
       console.log(`🤖 嘗試模型: ${modelName}`);
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        console.log(`  📤 第 ${attempt} 次嘗試...`);
+
         try {
-          console.log(`  📤 第 ${attempt}/${MAX_RETRIES} 次嘗試...`);
+          const baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+          const apiUrl = `${baseUrl}/models/${modelName}:generateContent` +
+            `?key=${geminiApiKey.value()}`;
 
           const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+            apiUrl,
             {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "x-goog-api-key": geminiApiKey.value(),
               },
               body: JSON.stringify({
                 system_instruction: {
@@ -348,7 +413,7 @@ ${targetCalories ? `- 每日目標熱量：${targetCalories}kcal` : ""}
                 ],
                 generationConfig: {
                   responseMimeType: "application/json",
-                  temperature: 0.3, // 🆕 降低 temperature 提高準確度
+                  temperature: 0.2, // 降低到 0.2 提高穩定性
                   maxOutputTokens: 8192,
                 },
               }),
@@ -424,6 +489,19 @@ ${targetCalories ? `- 每日目標熱量：${targetCalories}kcal` : ""}
               continue;
             }
             break;
+          }
+
+          // ✨ v2.0: 確保每個食物都有 sugar 和 fiber 欄位（預設為 0）
+          analysisResult.foods = analysisResult.foods.map((food) => ({
+            ...food,
+            sugar: food.sugar ?? 0,
+            fiber: food.fiber ?? 0,
+          }));
+
+          // ✨ v2.0: 確保 total 也有 sugar 和 fiber
+          if (analysisResult.total) {
+            analysisResult.total.sugar = analysisResult.total.sugar ?? 0;
+            analysisResult.total.fiber = analysisResult.total.fiber ?? 0;
           }
 
           // ✅ 成功！

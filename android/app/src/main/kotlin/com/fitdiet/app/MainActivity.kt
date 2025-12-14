@@ -1,4 +1,4 @@
-package com.example.food_labels_app
+package com.fitdiet.app
 
 import io.flutter.embedding.android.FlutterActivity
 

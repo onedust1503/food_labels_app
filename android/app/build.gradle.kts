@@ -19,7 +19,7 @@ val flutterVersionCode = localProperties.getProperty("flutter.versionCode") ?: "
 val flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "1.0"
 
 android {
-    namespace = "com.example.food_labels_app"
+    namespace = "com.fitdiet.app"
     
     // ✅ 升級到 SDK 35（插件要求）
     compileSdk = 35
@@ -36,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.food_labels_app"
+        applicationId = "com.fitdiet.app"
         minSdk = 23
         targetSdk = 35  // ✅ 同步升級 targetSdk
         versionCode = flutterVersionCode.toInt()

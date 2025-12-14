@@ -1,6 +1,7 @@
 // lib/pages/nutrition/nutrition_analysis_page.dart
 // 營養分析頁面 - 近期趨勢圖表 + 時間軸視圖
-// ✨ v3.4: 新增詳細營養素分析卡片（糖、鈉、飽和脂肪、反式脂肪、膳食纖維、膽固醇）
+// ✨ v3.5: 基於 v3.4 新增 AI 辨識記錄支援
+// ⚠️ 保留所有原有功能：詳細營養素分析卡片（糖、鈉、飽和脂肪、反式脂肪、膳食纖維、膽固醇）
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -37,6 +38,9 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     'fiber': Color(0xFF0891B2),        // 膳食纖維 - 青色
     'cholesterol': Color(0xFFE11D48),  // 膽固醇 - 粉紅色
   };
+  
+  // 🆕 v3.5: AI 主題色
+  static const Color _aiColor = Color(0xFF10B981);
   
   @override
   void dispose() {
@@ -75,6 +79,9 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
           
           // ✨ v3.4: 計算詳細營養素總計
           final extendedNutrients = _processExtendedNutrients(logs);
+          
+          // 🆕 v3.5: 計算記錄方式統計
+          final recordStats = _processRecordStats(logs);
 
           return GestureDetector(
             onTap: _removeTooltip,
@@ -84,6 +91,11 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
               children: [
                 _buildPeriodSelector(),
                 const SizedBox(height: 20),
+                // 🆕 v3.5: 記錄來源統計卡片
+                if (_hasMultipleRecordMethods(recordStats))
+                  _buildRecordSourcesCard(recordStats),
+                if (_hasMultipleRecordMethods(recordStats))
+                  const SizedBox(height: 20),
                 _buildCaloriesTrendChart(dailyData),
                 const SizedBox(height: 20),
                 _buildNutrientsPieChart(dailyData),
@@ -174,6 +186,43 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     return nutrients.values.any((value) => value > 0);
   }
 
+  // 🆕 v3.5: 處理記錄方式統計
+  Map<String, int> _processRecordStats(List<QueryDocumentSnapshot> logs) {
+    Map<String, int> stats = {
+      'search': 0,
+      'scan': 0,
+      'quick': 0,
+      'combo': 0,
+      'ai': 0,
+    };
+
+    for (var doc in logs) {
+      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+      String recordMethod = data['recordMethod'] ?? 'search';
+      bool isFromCombo = data['isFromCombo'] ?? false;
+      bool isFromAI = data['isFromAI'] ?? false;
+      
+      // 優先判斷 AI 和組合
+      if (isFromAI || recordMethod == 'ai') {
+        stats['ai'] = stats['ai']! + 1;
+      } else if (isFromCombo || recordMethod == 'combo') {
+        stats['combo'] = stats['combo']! + 1;
+      } else if (stats.containsKey(recordMethod)) {
+        stats[recordMethod] = stats[recordMethod]! + 1;
+      } else {
+        stats['search'] = stats['search']! + 1;
+      }
+    }
+
+    return stats;
+  }
+
+  // 🆕 v3.5: 檢查是否有多種記錄方式
+  bool _hasMultipleRecordMethods(Map<String, int> stats) {
+    int methodsUsed = stats.values.where((v) => v > 0).length;
+    return methodsUsed >= 2 || stats['ai']! > 0; // 有 AI 記錄時也顯示
+  }
+
   List<Map<String, dynamic>> _processTimelineData(List<QueryDocumentSnapshot> logs) {
     List<Map<String, dynamic>> timelineData = [];
 
@@ -202,6 +251,10 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
         'fiber': ((data['fiber'] ?? 0) as num).toDouble(),
         'cholesterol': ((data['cholesterol'] ?? 0) as num).toDouble(),
         'recordMethod': data['recordMethod'] ?? 'search',
+        // 🆕 v3.5: AI 相關欄位
+        'isFromAI': data['isFromAI'] ?? false,
+        'aiFoodCount': data['aiFoodCount'] ?? 0,
+        'aiDetails': data['aiDetails'] ?? [],
       });
     }
 
@@ -276,6 +329,202 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
       ),
     );
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ██  🆕 v3.5: 記錄來源統計卡片
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildRecordSourcesCard(Map<String, int> stats) {
+    int total = stats.values.fold(0, (sum, v) => sum + v);
+    if (total == 0) return const SizedBox.shrink();
+
+    return SoftCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 標題
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      _aiColor.withOpacity(0.2),
+                      const Color(0xFF4FACFE).withOpacity(0.15),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.source_outlined, color: _aiColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  '記錄來源分析',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '共 $total 筆',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 20),
+          
+          // 記錄來源條
+          _buildSourceProgressBar(stats, total),
+          
+          const SizedBox(height: 16),
+          
+          // 來源圖例
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              if (stats['search']! > 0)
+                _buildSourceLegend('搜尋', stats['search']!, total, const Color(0xFF10B981), Icons.search),
+              if (stats['scan']! > 0)
+                _buildSourceLegend('掃描', stats['scan']!, total, const Color(0xFF8B5CF6), Icons.document_scanner),
+              if (stats['quick']! > 0)
+                _buildSourceLegend('手動', stats['quick']!, total, const Color(0xFFFA709A), Icons.edit_note),
+              if (stats['combo']! > 0)
+                _buildSourceLegend('組合', stats['combo']!, total, const Color(0xFF4FACFE), Icons.restaurant_menu),
+              if (stats['ai']! > 0)
+                _buildSourceLegend('AI辨識', stats['ai']!, total, _aiColor, Icons.auto_awesome),
+            ],
+          ),
+          
+          // 🆕 AI 辨識提示
+          if (stats['ai']! > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    _aiColor.withOpacity(0.08),
+                    _aiColor.withOpacity(0.04),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _aiColor.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: _aiColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.auto_awesome, size: 16, color: _aiColor),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'AI 辨識讓記錄更便捷，拍照即可自動識別食物營養',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _aiColor.withOpacity(0.9),
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSourceProgressBar(Map<String, int> stats, int total) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        height: 12,
+        child: Row(
+          children: [
+            if (stats['search']! > 0)
+              Expanded(
+                flex: stats['search']!,
+                child: Container(color: const Color(0xFF10B981)),
+              ),
+            if (stats['scan']! > 0)
+              Expanded(
+                flex: stats['scan']!,
+                child: Container(color: const Color(0xFF8B5CF6)),
+              ),
+            if (stats['quick']! > 0)
+              Expanded(
+                flex: stats['quick']!,
+                child: Container(color: const Color(0xFFFA709A)),
+              ),
+            if (stats['combo']! > 0)
+              Expanded(
+                flex: stats['combo']!,
+                child: Container(color: const Color(0xFF4FACFE)),
+              ),
+            if (stats['ai']! > 0)
+              Expanded(
+                flex: stats['ai']!,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF10B981), Color(0xFF34D399)],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSourceLegend(String label, int count, int total, Color color, IconData icon) {
+    double percentage = total > 0 ? (count / total * 100) : 0;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count (${percentage.toStringAsFixed(0)}%)',
+            style: TextStyle(fontSize: 11, color: color.withOpacity(0.8)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ██  以下是原版 v3.4 的所有功能（完整保留）
+  // ══════════════════════════════════════════════════════════════════════════
 
   Widget _buildCaloriesTrendChart(Map<String, Map<String, dynamic>> dailyData) {
     return SoftCard(
@@ -1213,6 +1462,10 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
     String comboName = item['comboName'] ?? '';
     String recordMethod = item['recordMethod'] ?? 'search';
     
+    // 🆕 v3.5: AI 記錄判斷
+    bool isFromAI = item['isFromAI'] ?? false;
+    int aiFoodCount = item['aiFoodCount'] ?? 0;
+    
     // ✨ v3.4: 檢查是否有詳細營養素
     bool hasExtended = (item['sugar'] ?? 0) > 0 ||
         (item['sodium'] ?? 0) > 0 ||
@@ -1272,12 +1525,16 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (isFromCombo) ...[
+                        // 🆕 v3.5: AI 記錄標籤優先
+                        if (isFromAI || recordMethod == 'ai') ...[
+                          const SizedBox(width: 8),
+                          _buildAiTag(aiFoodCount),
+                        ] else if (isFromCombo) ...[
                           const SizedBox(width: 8),
                           _buildComboTag(comboName),
                         ],
-                        // ✨ v3.4: 顯示記錄方式
-                        if (recordMethod == 'scan') ...[
+                        // ✨ v3.4: 顯示記錄方式（非 AI、非組合時）
+                        if (!isFromAI && recordMethod != 'ai' && !isFromCombo && recordMethod == 'scan') ...[
                           const SizedBox(width: 6),
                           _buildRecordMethodTag(),
                         ],
@@ -1320,6 +1577,34 @@ class _NutritionAnalysisPageState extends State<NutritionAnalysisPage> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🆕 v3.5: AI 記錄標籤
+  Widget _buildAiTag(int foodCount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            _aiColor.withOpacity(0.15),
+            _aiColor.withOpacity(0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _aiColor.withOpacity(0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.auto_awesome, size: 10, color: _aiColor),
+          const SizedBox(width: 4),
+          Text(
+            foodCount > 0 ? 'AI·$foodCount項' : 'AI辨識',
+            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: _aiColor),
           ),
         ],
       ),

@@ -1,5 +1,5 @@
-name: food_labels_app
-description: "A new Flutter project."
+name: fitdiet
+description: "食尚健身 - 健身教練學員整合管理系統"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -92,6 +92,8 @@ dependencies:
   flutter_tts: ^3.8.5
   flutter_dotenv: ^6.0.0
 
+  flutter_launcher_icons: ^0.14.3
+
 
 
 dev_dependencies:
@@ -165,3 +167,12 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#A8C5B5"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  remove_alpha_ios: true

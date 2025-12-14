@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'trainee_edit_page.dart';
 import 'coach_edit_page.dart';
 // ✅ 新增：導入 AI 食物辨識測試頁面
-import 'package:food_labels_app/pages/test/ai_food_test_page.dart';
+import 'package:fitdiet/pages/test/ai_food_test_page.dart';
 
 class ProfileTab extends StatefulWidget {
   final bool isCoach;

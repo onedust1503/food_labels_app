@@ -57,12 +57,19 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-
     if (kDebugMode) {
       debugPrint('[init] Firebase initialized successfully');
     }
 
-
+    // ✅ 新增：啟用 Firestore 離線快取（斷網時仍可讀取快取資料）
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,           // 啟用本地持久化
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,  // 無限制快取大小
+    );
+    
+    if (kDebugMode) {
+      debugPrint('[init] Firestore offline cache enabled');
+    }
 
     // 初始化通知服務
     await NotificationService().initialize();
@@ -70,17 +77,22 @@ void main() async {
       debugPrint('[init] Notification Service initialized successfully');
     }
 
-    // 初始化網路監控
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('[init] Firebase initialization failed: $e');
+    }
+  }
+
+  try {
     final networkProvider = NetworkProvider();
     await networkProvider.initialize();
     if (kDebugMode) {
       debugPrint('[init] Network Provider initialized successfully');
     }
-
   } catch (e) {
-    if (kDebugMode) {
-      debugPrint('[init] Firebase initialization failed: $e');
-    }
+      if (kDebugMode) {
+        debugPrint('[init] Network Provider initialization failed: $e');
+      }
   }
 
   //導入食物資料（在開發模式下執行)

@@ -1,5 +1,5 @@
 // lib/pages/test/ai_food_test_page.dart
-// AI 食物辨識測試頁面 - v5 Soft UI 風格，解決標籤重疊
+// AI 食物辨識測試頁面 - v6 新增 sugar + fiber 顯示
 
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -37,20 +37,19 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
   // ========== 柔和明亮 Soft UI 色系 ==========
   static const Color _bgColor = Color(0xFFF5F6F8);
   static const Color _cardColor = Color(0xFFFFFFFF);
-  static const Color _primaryColor = Color(0xFF5B9A8B);  // 柔和綠
+  static const Color _primaryColor = Color(0xFF5B9A8B);
   static const Color _textPrimary = Color(0xFF2D3436);
   static const Color _textSecondary = Color(0xFF636E72);
 
-  // 🆕 柔和明亮色系（介於莫蘭迪和高飽和之間）
   static const List<Color> _foodColors = [
-    Color(0xFF5B9A8B), // 柔和綠
-    Color(0xFF5B8FB9), // 柔和藍
-    Color(0xFFE8A87C), // 柔和橘
-    Color(0xFFD88B9A), // 柔和粉
-    Color(0xFF9B8DC9), // 柔和紫
-    Color(0xFF5BB5B0), // 柔和青
-    Color(0xFFE8907C), // 柔和珊瑚
-    Color(0xFF8B85C9), // 柔和靛
+    Color(0xFF5B9A8B),
+    Color(0xFF5B8FB9),
+    Color(0xFFE8A87C),
+    Color(0xFFD88B9A),
+    Color(0xFF9B8DC9),
+    Color(0xFF5BB5B0),
+    Color(0xFFE8907C),
+    Color(0xFF8B85C9),
   ];
 
   @override
@@ -164,11 +163,17 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
             _buildImageCard(),
             const SizedBox(height: 20),
             _buildAnalyzeButton(),
-            if (_isRetrying) ...[const SizedBox(height: 16), _buildRetryCard()],
-            if (_errorMessage != null) ...[const SizedBox(height: 16), _buildErrorCard()],
+            if (_isRetrying) ...[
+              const SizedBox(height: 16),
+              _buildRetryCard(),
+            ],
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 16),
+              _buildErrorCard(),
+            ],
             if (_result != null) ...[
               const SizedBox(height: 24),
-              _buildFoodLegend(), // 🆕 圖例（解決重疊）
+              _buildFoodLegend(),
               const SizedBox(height: 20),
               _buildNutritionCard(),
               const SizedBox(height: 20),
@@ -194,7 +199,10 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
       backgroundColor: _primaryColor,
       foregroundColor: Colors.white,
       centerTitle: true,
-      title: const Text('AI 食物辨識', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+      title: const Text(
+        'AI 食物辨識',
+        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+      ),
       actions: [
         if (_selectedImage != null)
           IconButton(
@@ -245,9 +253,23 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildDropdown('餐別', _mealType, ['早餐', '午餐', '晚餐', '點心'], (v) => setState(() => _mealType = v!))),
+              Expanded(
+                child: _buildDropdown(
+                  '餐別',
+                  _mealType,
+                  ['早餐', '午餐', '晚餐', '點心'],
+                  (v) => setState(() => _mealType = v!),
+                ),
+              ),
               const SizedBox(width: 16),
-              Expanded(child: _buildDropdown('健身目標', _userGoal, ['減脂', '增肌', '維持'], (v) => setState(() => _userGoal = v!))),
+              Expanded(
+                child: _buildDropdown(
+                  '健身目標',
+                  _userGoal,
+                  ['減脂', '增肌', '維持'],
+                  (v) => setState(() => _userGoal = v!),
+                ),
+              ),
             ],
           ),
         ],
@@ -267,12 +289,24 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
           child: Icon(icon, color: _primaryColor, size: 18),
         ),
         const SizedBox(width: 12),
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: _textPrimary,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildDropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged) {
+  Widget _buildDropdown(
+    String label,
+    String value,
+    List<String> items,
+    ValueChanged<String?> onChanged,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -288,9 +322,12 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
             child: DropdownButton<String>(
               value: value,
               isExpanded: true,
-              icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSecondary),
+              icon: Icon(Icons.keyboard_arrow_down_rounded,
+                  color: _textSecondary),
               style: const TextStyle(color: _textPrimary, fontSize: 14),
-              items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              items: items
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  .toList(),
               onChanged: onChanged,
             ),
           ),
@@ -306,11 +343,16 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
         color: _cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: _selectedImage == null ? _buildImagePicker() : _buildImageWithBoxes(),
+      child:
+          _selectedImage == null ? _buildImagePicker() : _buildImageWithBoxes(),
     );
   }
 
@@ -335,14 +377,28 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20)],
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.08), blurRadius: 20)
+                  ],
                 ),
-                child: Icon(Icons.add_photo_alternate_rounded, size: 44, color: _primaryColor),
+                child: Icon(Icons.add_photo_alternate_rounded,
+                    size: 44, color: _primaryColor),
               ),
               const SizedBox(height: 20),
-              Text('點擊選擇食物照片', style: TextStyle(color: _textSecondary, fontSize: 16, fontWeight: FontWeight.w500)),
+              Text(
+                '點擊選擇食物照片',
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               const SizedBox(height: 6),
-              Text('支援拍照或從相簿選擇', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              Text(
+                '支援拍照或從相簿選擇',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              ),
             ],
           ),
         ),
@@ -363,7 +419,14 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             const SizedBox(height: 24),
             _sourceOption(Icons.camera_alt_rounded, '拍照', () {
               Navigator.pop(ctx);
@@ -393,11 +456,18 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: _primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(
+                  color: _primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 child: Icon(icon, color: _primaryColor, size: 22),
               ),
               const SizedBox(width: 14),
-              Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              Text(
+                title,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
               const Spacer(),
               Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
             ],
@@ -407,15 +477,17 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
     );
   }
 
-  // ========== 圖片 + Bounding Box（只顯示數字標記）==========
+  // ========== 圖片 + Bounding Box ==========
   Widget _buildImageWithBoxes() {
     return Stack(
       children: [
-        Image.file(_selectedImage!, fit: BoxFit.contain, width: double.infinity),
+        Image.file(_selectedImage!,
+            fit: BoxFit.contain, width: double.infinity),
         if (_result != null)
           Positioned.fill(
             child: LayoutBuilder(
-              builder: (context, constraints) => Stack(children: _buildBoxes(constraints.maxWidth, constraints.maxHeight)),
+              builder: (context, constraints) =>
+                  Stack(children: _buildBoxes(constraints.maxWidth, constraints.maxHeight)),
             ),
           ),
         Positioned(
@@ -441,11 +513,10 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
     );
   }
 
-  // 🆕 Bounding Box：智能標籤定位，自動避免重疊
   List<Widget> _buildBoxes(double w, double h) {
     if (_result == null) return [];
     final List<Widget> boxes = [];
-    final List<Rect> placedLabels = []; // 記錄已放置的標籤位置
+    final List<Rect> placedLabels = [];
 
     for (int i = 0; i < _result!.foods.length; i++) {
       final food = _result!.foods[i];
@@ -461,7 +532,7 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
       final boxW = pixels[2];
       final boxH = pixels[3];
 
-      // 框框（不可點擊，只顯示）
+      // 框框
       boxes.add(
         Positioned(
           left: left,
@@ -487,23 +558,22 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
         ),
       );
 
-      // 🆕 智能標籤定位
+      // 標籤定位
       const labelW = 130.0;
       const labelH = 28.0;
-      
-      // 嘗試不同位置：上方、下方、左上、右上、左下、右下
+
       final positions = [
-        Offset(left, top - labelH - 6),                    // 上方
-        Offset(left, top + boxH + 6),                       // 下方
-        Offset(left - labelW - 6, top),                     // 左邊
-        Offset(left + boxW + 6, top),                       // 右邊
-        Offset(left, top - labelH - 6 - 30),               // 更上方
-        Offset(left + boxW / 2, top - labelH - 6),         // 中上
-        Offset(left + boxW - labelW, top + boxH + 6),      // 右下
+        Offset(left, top - labelH - 6),
+        Offset(left, top + boxH + 6),
+        Offset(left - labelW - 6, top),
+        Offset(left + boxW + 6, top),
+        Offset(left, top - labelH - 6 - 30),
+        Offset(left + boxW / 2, top - labelH - 6),
+        Offset(left + boxW - labelW, top + boxH + 6),
       ];
 
       Offset bestPos = positions[0];
-      
+
       for (final pos in positions) {
         final candidateRect = Rect.fromLTWH(
           pos.dx.clamp(4.0, w - labelW - 4),
@@ -511,8 +581,7 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
           labelW,
           labelH,
         );
-        
-        // 檢查是否與已放置的標籤重疊
+
         bool overlaps = false;
         for (final placed in placedLabels) {
           if (candidateRect.overlaps(placed)) {
@@ -520,21 +589,21 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
             break;
           }
         }
-        
+
         if (!overlaps) {
           bestPos = Offset(candidateRect.left, candidateRect.top);
           placedLabels.add(candidateRect);
           break;
         }
-        
-        // 如果都重疊，用最後一個位置並加上偏移
+
         if (pos == positions.last) {
           final offset = i * 32.0;
           bestPos = Offset(
             (positions[0].dx + offset).clamp(4.0, w - labelW - 4),
             (positions[0].dy - offset).clamp(4.0, h - labelH - 4),
           );
-          placedLabels.add(Rect.fromLTWH(bestPos.dx, bestPos.dy, labelW, labelH));
+          placedLabels
+              .add(Rect.fromLTWH(bestPos.dx, bestPos.dy, labelW, labelH));
         }
       }
 
@@ -557,8 +626,8 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: isSelected 
-                        ? color.withOpacity(0.4) 
+                    color: isSelected
+                        ? color.withOpacity(0.4)
                         : Colors.black.withOpacity(0.12),
                     blurRadius: isSelected ? 8 : 4,
                     offset: const Offset(0, 2),
@@ -568,7 +637,6 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 數字
                   Container(
                     width: 18,
                     height: 18,
@@ -588,9 +656,10 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                     ),
                   ),
                   const SizedBox(width: 5),
-                  // 食物名（限制長度）
                   Text(
-                    food.name.length > 6 ? '${food.name.substring(0, 6)}...' : food.name,
+                    food.name.length > 6
+                        ? '${food.name.substring(0, 6)}...'
+                        : food.name,
                     style: TextStyle(
                       color: isSelected ? Colors.white : _textPrimary,
                       fontSize: 11,
@@ -598,12 +667,12 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  // 熱量
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
-                      color: isSelected 
-                          ? Colors.white.withOpacity(0.25) 
+                      color: isSelected
+                          ? Colors.white.withOpacity(0.25)
                           : color.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -626,7 +695,7 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
     return boxes;
   }
 
-  // ========== 🆕 圖例區域（明亮版）==========
+  // ========== 圖例區域 ==========
   Widget _buildFoodLegend() {
     if (_result == null || _result!.foods.isEmpty) return const SizedBox.shrink();
 
@@ -639,7 +708,14 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
             children: [
               Icon(Icons.touch_app_rounded, color: _primaryColor, size: 18),
               const SizedBox(width: 8),
-              const Text('點擊食物可高亮顯示', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: _textSecondary)),
+              const Text(
+                '點擊食物可高亮顯示',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: _textSecondary,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -655,7 +731,8 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                 onTap: () => _onFoodTap(i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: isSelected ? color : Colors.white,
                     borderRadius: BorderRadius.circular(20),
@@ -664,13 +741,18 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                       width: 1.5,
                     ),
                     boxShadow: isSelected
-                        ? [BoxShadow(color: color.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))]
+                        ? [
+                            BoxShadow(
+                              color: color.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            )
+                          ]
                         : null,
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // 數字標記
                       Container(
                         width: 22,
                         height: 22,
@@ -690,7 +772,6 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // 食物名稱
                       Text(
                         food.name,
                         style: TextStyle(
@@ -700,11 +781,13 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      // 熱量
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.white.withOpacity(0.25) : color.withOpacity(0.15),
+                          color: isSelected
+                              ? Colors.white.withOpacity(0.25)
+                              : color.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -727,7 +810,7 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
     );
   }
 
-  // ========== 分析按鈕（柔和版）==========
+  // ========== 分析按鈕 ==========
   Widget _buildAnalyzeButton() {
     final enabled = _selectedImage != null && !_isLoading;
     return GestureDetector(
@@ -737,14 +820,18 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
         height: 56,
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: enabled 
-                ? [const Color(0xFF5B9A8B), const Color(0xFF4E8A7C)] 
+            colors: enabled
+                ? [const Color(0xFF5B9A8B), const Color(0xFF4E8A7C)]
                 : [Colors.grey.shade300, Colors.grey.shade400],
           ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: enabled
               ? [
-                  BoxShadow(color: const Color(0xFF5B9A8B).withOpacity(0.35), blurRadius: 15, offset: const Offset(0, 6)),
+                  BoxShadow(
+                    color: const Color(0xFF5B9A8B).withOpacity(0.35),
+                    blurRadius: 15,
+                    offset: const Offset(0, 6),
+                  ),
                 ]
               : null,
         ),
@@ -753,17 +840,39 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, valueColor: AlwaysStoppedAnimation(Colors.white))),
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Text(_isRetrying ? '重試中...' : '分析中...', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text(
+                      _isRetrying ? '重試中...' : '分析中...',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 )
               : const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 22),
+                    Icon(Icons.auto_awesome_rounded,
+                        color: Colors.white, size: 22),
                     SizedBox(width: 10),
-                    Text('開始 AI 分析', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text(
+                      '開始 AI 分析',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
         ),
@@ -782,14 +891,33 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
       ),
       child: Row(
         children: [
-          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Color(0xFFE8A000)))),
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(Color(0xFFE8A000)),
+            ),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('AI 服務忙碌中', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFFB87A00))),
-                Text('正在重試 ($_currentRetry/$_maxRetries)...', style: const TextStyle(fontSize: 12, color: Color(0xFFB87A00))),
+                const Text(
+                  'AI 服務忙碌中',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFB87A00),
+                  ),
+                ),
+                Text(
+                  '正在重試 ($_currentRetry/$_maxRetries)...',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFB87A00),
+                  ),
+                ),
               ],
             ),
           ),
@@ -814,18 +942,37 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFFDC2626).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.error_outline_rounded,
+                    color: Color(0xFFDC2626),
+                    size: 18,
+                  ),
                 ),
                 const SizedBox(width: 12),
-                const Text('分析失敗', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFFDC2626))),
+                const Text(
+                  '分析失敗',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.copy_rounded, size: 18, color: Color(0xFFDC2626)),
+                  icon: const Icon(Icons.copy_rounded,
+                      size: 18, color: Color(0xFFDC2626)),
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: _errorMessage ?? ''));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: const Text('已複製'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                      SnackBar(
+                        content: const Text('已複製'),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
                     );
                   },
                 ),
@@ -835,8 +982,18 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-            child: SelectableText(_errorMessage!, style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF991B1B))),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: SelectableText(
+              _errorMessage!,
+              style: const TextStyle(
+                fontSize: 11,
+                fontFamily: 'monospace',
+                color: Color(0xFF991B1B),
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -850,7 +1007,8 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                   backgroundColor: const Color(0xFFDC2626),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ),
@@ -860,7 +1018,7 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
     );
   }
 
-  // ========== 營養總計卡片 ==========
+  // ========== 🆕 v6: 營養總計卡片（新增糖和纖維）==========
   Widget _buildNutritionCard() {
     final total = _result!.total;
     return _softCard(
@@ -874,15 +1032,54 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
             ],
           ),
           const SizedBox(height: 20),
+          // 第一排：熱量、蛋白質、碳水、脂肪
           Row(
             children: [
-              Expanded(child: _nutrientBox('熱量', '${total.calories.toInt()}', 'kcal', const Color(0xFFE57373))),
+              Expanded(
+                child: _nutrientBox(
+                    '熱量', '${total.calories.toInt()}', 'kcal', 
+                    const Color(0xFFE57373)),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: _nutrientBox('蛋白質', total.protein.toStringAsFixed(1), 'g', const Color(0xFF64B5F6))),
+              Expanded(
+                child: _nutrientBox(
+                    '蛋白質', total.protein.toStringAsFixed(1), 'g',
+                    const Color(0xFF64B5F6)),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: _nutrientBox('碳水', total.carbs.toStringAsFixed(1), 'g', const Color(0xFFFFB74D))),
+              Expanded(
+                child: _nutrientBox(
+                    '碳水', total.carbs.toStringAsFixed(1), 'g',
+                    const Color(0xFFFFB74D)),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: _nutrientBox('脂肪', total.fat.toStringAsFixed(1), 'g', const Color(0xFF81C784))),
+              Expanded(
+                child: _nutrientBox(
+                    '脂肪', total.fat.toStringAsFixed(1), 'g',
+                    const Color(0xFF81C784)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // 🆕 第二排：糖、纖維
+          Row(
+            children: [
+              Expanded(
+                child: _nutrientBox(
+                    '糖', total.sugar.toStringAsFixed(1), 'g',
+                    const Color(0xFFEC4899)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _nutrientBox(
+                    '膳食纖維', total.fiber.toStringAsFixed(1), 'g',
+                    const Color(0xFF22C55E)),
+              ),
+              const SizedBox(width: 10),
+              // 空白佔位
+              const Expanded(child: SizedBox()),
+              const SizedBox(width: 10),
+              const Expanded(child: SizedBox()),
             ],
           ),
         ],
@@ -893,12 +1090,22 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
   Widget _nutrientBox(String label, String value, String unit, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Column(
         children: [
           Text(label, style: TextStyle(fontSize: 11, color: _textSecondary)),
           const SizedBox(height: 4),
-          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
           Text(unit, style: TextStyle(fontSize: 10, color: _textSecondary)),
         ],
       ),
@@ -927,27 +1134,39 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 4),
-          Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w500, fontSize: 11)),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w500,
+              fontSize: 11,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ========== 食物列表卡片 ==========
+  // ========== 🆕 v6: 食物列表卡片（新增糖和纖維）==========
   Widget _buildFoodsCard() {
     return _softCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(Icons.restaurant_rounded, '辨識食物 (${_result!.foods.length}項)'),
+          _sectionHeader(
+              Icons.restaurant_rounded, '辨識食物 (${_result!.foods.length}項)'),
           const SizedBox(height: 16),
-          ...List.generate(_result!.foods.length, (i) => _foodItem(_result!.foods[i], i)),
+          ...List.generate(
+              _result!.foods.length, (i) => _foodItem(_result!.foods[i], i)),
         ],
       ),
     );
@@ -967,7 +1186,10 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.06) : _bgColor,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isSelected ? color.withOpacity(0.4) : Colors.transparent, width: 1.5),
+          border: Border.all(
+            color: isSelected ? color.withOpacity(0.4) : Colors.transparent,
+            width: 1.5,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -977,16 +1199,35 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
                 Container(
                   width: 26,
                   height: 26,
-                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                  child: Center(child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                  decoration:
+                      BoxDecoration(color: color, shape: BoxShape.circle),
+                  child: Center(
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(food.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      Text(food.portion, style: TextStyle(fontSize: 12, color: _textSecondary)),
+                      Text(
+                        food.name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        food.portion,
+                        style: TextStyle(fontSize: 12, color: _textSecondary),
+                      ),
                     ],
                   ),
                 ),
@@ -994,27 +1235,56 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
               ],
             ),
             const SizedBox(height: 12),
+            // 🆕 v6: 新增糖和纖維標籤
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _nutrientTag('${food.calories.toInt()} kcal', const Color(0xFFE57373)),
-                _nutrientTag('蛋白 ${food.protein.toStringAsFixed(1)}g', const Color(0xFF64B5F6)),
-                _nutrientTag('碳水 ${food.carbs.toStringAsFixed(1)}g', const Color(0xFFFFB74D)),
-                _nutrientTag('脂肪 ${food.fat.toStringAsFixed(1)}g', const Color(0xFF81C784)),
+                _nutrientTag(
+                    '${food.calories.toInt()} kcal', const Color(0xFFE57373)),
+                _nutrientTag(
+                    '蛋白 ${food.protein.toStringAsFixed(1)}g', 
+                    const Color(0xFF64B5F6)),
+                _nutrientTag(
+                    '碳水 ${food.carbs.toStringAsFixed(1)}g',
+                    const Color(0xFFFFB74D)),
+                _nutrientTag(
+                    '脂肪 ${food.fat.toStringAsFixed(1)}g',
+                    const Color(0xFF81C784)),
+                // 🆕 糖和纖維
+                _nutrientTag(
+                    '糖 ${food.sugar.toStringAsFixed(1)}g',
+                    const Color(0xFFEC4899)),
+                _nutrientTag(
+                    '纖維 ${food.fiber.toStringAsFixed(1)}g',
+                    const Color(0xFF22C55E)),
               ],
             ),
             if (food.notes != null && food.notes!.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.info_outline_rounded, size: 14, color: _textSecondary),
+                    Icon(Icons.info_outline_rounded,
+                        size: 14, color: _textSecondary),
                     const SizedBox(width: 6),
-                    Flexible(child: Text(food.notes!, style: TextStyle(fontSize: 11, color: _textSecondary, fontStyle: FontStyle.italic))),
+                    Flexible(
+                      child: Text(
+                        food.notes!,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1028,15 +1298,29 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
   Widget _nutrientTag(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-      child: Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: color)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: color,
+        ),
+      ),
     );
   }
 
   // ========== 餐點評估卡片 ==========
   Widget _buildAssessmentCard() {
     final assessment = _result!.mealAssessment!;
-    final scoreColor = assessment.balanceScore >= 8 ? const Color(0xFF22C55E) : assessment.balanceScore >= 5 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444);
+    final scoreColor = assessment.balanceScore >= 8
+        ? const Color(0xFF22C55E)
+        : assessment.balanceScore >= 5
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFFEF4444);
 
     return _softCard(
       child: Column(
@@ -1047,52 +1331,111 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
               _sectionHeader(Icons.star_rounded, '餐點評估'),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(color: scoreColor.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                child: Text('${assessment.balanceScore}/10', style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold, fontSize: 15)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: scoreColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${assessment.balanceScore}/10',
+                  style: TextStyle(
+                    color: scoreColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 18),
-          if (assessment.strengths.isNotEmpty) _assessmentSection('優點', Icons.check_circle_rounded, const Color(0xFF22C55E), assessment.strengths),
+          if (assessment.strengths.isNotEmpty)
+            _assessmentSection(
+              '優點',
+              Icons.check_circle_rounded,
+              const Color(0xFF22C55E),
+              assessment.strengths,
+            ),
           if (assessment.improvements.isNotEmpty) ...[
             const SizedBox(height: 14),
-            _assessmentSection('可改進', Icons.lightbulb_rounded, const Color(0xFFF59E0B), assessment.improvements),
+            _assessmentSection(
+              '可改進',
+              Icons.lightbulb_rounded,
+              const Color(0xFFF59E0B),
+              assessment.improvements,
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _assessmentSection(String title, IconData icon, Color color, List<String> items) {
+  Widget _assessmentSection(
+      String title, IconData icon, Color color, List<String> items) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 8),
-          Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: color, fontSize: 13)),
-        ]),
-        const SizedBox(height: 8),
-        ...items.map((item) => Padding(
-              padding: const EdgeInsets.only(left: 24, bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(margin: const EdgeInsets.only(top: 7), width: 4, height: 4, decoration: BoxDecoration(color: _textSecondary, shape: BoxShape.circle)),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(item, style: TextStyle(color: _textSecondary, fontSize: 13, height: 1.5))),
-                ],
+        Row(
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontSize: 13,
               ),
-            )),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(left: 24, bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 7),
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: _textSecondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item,
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
   // ========== AI 建議卡片 ==========
   Widget _buildRecommendationsCard() {
-    final colors = [const Color(0xFFF59E0B), const Color(0xFF3B82F6), const Color(0xFFA855F7)];
-    final icons = [Icons.flash_on_rounded, Icons.restaurant_menu_rounded, Icons.lightbulb_rounded];
+    final colors = [
+      const Color(0xFFF59E0B),
+      const Color(0xFF3B82F6),
+      const Color(0xFFA855F7),
+    ];
+    final icons = [
+      Icons.flash_on_rounded,
+      Icons.restaurant_menu_rounded,
+      Icons.lightbulb_rounded,
+    ];
 
     return _softCard(
       child: Column(
@@ -1116,16 +1459,39 @@ class _AIFoodTestPageState extends State<AIFoodTestPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [
-                    Icon(icon, color: color, size: 16),
-                    const SizedBox(width: 8),
-                    Text('建議', style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
-                  ]),
+                  Row(
+                    children: [
+                      Icon(icon, color: color, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        '建議',
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 10),
-                  Text(rec.advice, style: const TextStyle(height: 1.6, color: _textPrimary, fontSize: 14)),
+                  Text(
+                    rec.advice,
+                    style: const TextStyle(
+                      height: 1.6,
+                      color: _textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
                   if (rec.reason.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(rec.reason, style: TextStyle(fontSize: 12, color: _textSecondary, height: 1.5)),
+                    Text(
+                      rec.reason,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
                   ],
                 ],
               ),

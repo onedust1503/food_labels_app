@@ -3,7 +3,9 @@ import 'package:flutter/foundation.dart'; // *** 新增：用於 kDebugMode ***
 import 'package:flutter/services.dart'; //觸覺回饋
 import 'package:firebase_auth/firebase_auth.dart'; // Firebase 認證
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore 資料庫
+import 'package:provider/provider.dart'; // ✅ 新增：Provider
 import 'register.dart';
+import 'providers/network_provider.dart'; // ✅ 新增：NetworkProvider
 
 // 使用 StatefulWidget，管理輸入框的狀態
 class LoginScreen extends StatefulWidget {
@@ -45,14 +47,6 @@ class _LoginScreenState extends State<LoginScreen>
     String emailError = '';
     String passwordError = '';
 
-    // 模擬網路狀態（之後換成 connectivity_plus）
-    bool isConnected = true;
-
-    // *** 移除身分選擇相關變數 ***
-    // int selectedRoleIndex = 0;
-    // final List<String> roleOptions = ['學員', '教練'];
-    // String get selectedRole => roleOptions[selectedRoleIndex];
-
     @override
     void initState() {
         super.initState();
@@ -62,9 +56,6 @@ class _LoginScreenState extends State<LoginScreen>
         //  監聽輸入框變化，進行即時驗證
         emailController.addListener(_onEmailChanged);
         passwordController.addListener(_onPasswordChanged);
-        
-        // *** 修改：移除自動檢查當前用戶（由 AuthWrapper 處理） ***
-        // 不再需要檢查當前用戶，因為 AuthWrapper 會處理
     }
 
     // 從 Firestore 獲取用戶角色 - 改進版本，有更好的錯誤處理
@@ -91,17 +82,6 @@ class _LoginScreenState extends State<LoginScreen>
             return '';
         }
     }
-
-    // *** 修改：移除導航方法，由 AuthWrapper 統一處理 ***
-    // 不再需要手動導航方法，AuthWrapper 會自動根據用戶狀態導航到正確頁面
-
-    // *** 移除：創建用戶資料方法，登入頁面不需要創建新用戶 ***
-    // 登入頁面只負責驗證現有用戶，新用戶創建由註冊頁面處理
-
-    // *** 移除：將 UI 選擇轉換為資料庫角色值的方法 ***
-    // String _convertSelectedRoleToDbRole() {
-    //     return selectedRole == '教練' ? 'coach' : 'trainee';
-    // }
 
     //  初始化所有動畫效果
     void _initializeAnimations() {
@@ -135,10 +115,6 @@ class _LoginScreenState extends State<LoginScreen>
             curve: Curves.elasticIn, // 彈性曲線，產生震動效果
         ));
     }
-
-    // *** 移除身分切換相關方法 ***
-    // void _onRoleChanged(int newIndex) { ... }
-    // Widget _buildRoleSelector() { ... }
 
     //  Email 輸入變化監聽器 - 每次用戶輸入都會觸發
     void _onEmailChanged() {
@@ -316,12 +292,11 @@ class _LoginScreenState extends State<LoginScreen>
         return emailIsValid && passwordIsValid;
     }
 
-    // 檢查網路連接狀態
+    // ✅ 修改：使用 NetworkProvider 進行真實網路檢測
     Future<bool> _checkInternetConnection() async {
-        // 實際專案中，這裡應該使用 connectivity_plus 套件
-        // 現在先模擬網路檢查
-        await Future.delayed(const Duration(milliseconds: 500));
-        return isConnected; // 模擬網路狀態
+        final networkProvider = Provider.of<NetworkProvider>(context, listen: false);
+        await networkProvider.checkConnectivity();
+        return networkProvider.isOnline;
     }
 
     // 處理 Firebase 認證錯誤
@@ -357,8 +332,7 @@ class _LoginScreenState extends State<LoginScreen>
         _handleLoginError(errorMessage);
     }
 
-    // *** 修改：登入方法改進，移除角色選擇邏輯 ***
-    //  執行登入邏輯 - 使用 Firebase 認證 (改進版本)
+    //  執行登入邏輯 - 使用 Firebase 認證
     void login() async {
         //  播放按鈕動畫
         _playButtonPressAnimation();
@@ -374,7 +348,7 @@ class _LoginScreenState extends State<LoginScreen>
         });
 
         try {
-            //  檢查網路連接
+            //  檢查網路連接（使用真實網路檢測）
             bool hasInternet = await _checkInternetConnection();
             if (!hasInternet) {
                 throw Exception('無網路連接，請檢查您的網路設定');
@@ -390,7 +364,6 @@ class _LoginScreenState extends State<LoginScreen>
                 // 獲取用戶角色信息
                 String userRole = await _getUserRole(userCredential.user!.uid);
                 
-                // *** 修改：簡化邏輯，只檢查角色是否存在 ***
                 if (userRole.isEmpty) {
                     // 如果沒有角色資料，這表示帳號沒有完成註冊流程
                     _handleLoginError('此帳號沒有完整的註冊資料，請重新註冊');
@@ -406,8 +379,7 @@ class _LoginScreenState extends State<LoginScreen>
                 //  登入成功：先顯示成功訊息
                 _showSuccessMessage();
 
-                // ✅ 修改：導向 AuthWrapper 讓它自動判斷
-                // AuthWrapper 會根據 profileSetupCompleted 決定導向設定頁面或主頁
+                // 導向 AuthWrapper 讓它自動判斷
                 await Future.delayed(const Duration(milliseconds: 500));
                 if (mounted) {
                     ScaffoldMessenger.of(context).removeCurrentSnackBar();
@@ -416,10 +388,9 @@ class _LoginScreenState extends State<LoginScreen>
                         print('登入成功，導向 AuthWrapper');
                     }
                     
-                    // 導向 AuthWrapper，讓它檢查並決定下一步
                     Navigator.of(context).pushNamedAndRemoveUntil(
-                        '/home', // 導向 AuthWrapper
-                        (route) => false, // 清除所有路由
+                        '/home',
+                        (route) => false,
                     );
                 }
 
@@ -606,9 +577,6 @@ class _LoginScreenState extends State<LoginScreen>
             MaterialPageRoute(builder: (context) => const RegisterScreen()),
         );
     }
-
-    // *** 刪除：移除 registerWithFirebase() 方法 ***
-    // 此方法已移動至 RegisterScreen，登入頁面不再需要註冊邏輯
 
     // 社群帳號登入功能
     void socialLogin(String platform) {
@@ -801,7 +769,6 @@ class _LoginScreenState extends State<LoginScreen>
 
                                 const SizedBox(height: 30),
 
-                                // *** 修改：確保容器完全居中，修復偏移問題 ***
                                 Container(
                                     margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                                     padding: const EdgeInsets.all(12),
@@ -811,11 +778,11 @@ class _LoginScreenState extends State<LoginScreen>
                                         border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                                     ),
                                     child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.center, // *** 新增：確保居中對齊 ***
+                                        mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                             Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
                                             const SizedBox(width: 8),
-                                            Text( // *** 修改：移除 Expanded，使用固定文字 ***
+                                            Text(
                                                 '系統將自動識別您的身分',
                                                 style: TextStyle(
                                                     color: Colors.blue[700],
@@ -829,8 +796,8 @@ class _LoginScreenState extends State<LoginScreen>
 
                                 // 表單容器
                                 Container(
-                                    width: double.infinity,  // 確保容器佔滿寬度
-                                    margin: const EdgeInsets.symmetric(horizontal: 0), // *** 新增：確保沒有額外邊距 ***
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.symmetric(horizontal: 0),
                                     padding: const EdgeInsets.all(30),
                                     decoration: const BoxDecoration(
                                         color: Colors.white,
@@ -859,7 +826,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             //Email輸入框動畫效果
                                             AnimatedContainer(
                                             duration: const Duration(milliseconds: 300),
-                                            width: double.infinity, // *** 新增：確保佔滿寬度 ***
+                                            width: double.infinity,
                                             decoration: BoxDecoration(
                                                 borderRadius: BorderRadius.circular(20),
                                                 boxShadow: _getInputBoxShadow(emailTouched, emailIsValid),
@@ -917,7 +884,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             // 密碼輸入框動畫效果
                                             AnimatedContainer(
                                             duration: const Duration(milliseconds: 300),
-                                            width: double.infinity, // *** 新增：確保佔滿寬度 ***
+                                            width: double.infinity,
                                             decoration: BoxDecoration(
                                                 borderRadius: BorderRadius.circular(20),
                                                 boxShadow: _getInputBoxShadow(passwordTouched, passwordIsValid),

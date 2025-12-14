@@ -1,6 +1,7 @@
 // lib/services/nutrition_service.dart
 // 飲食記錄服務層 - 完整版本(支援詳細營養素 + 快速新增 + 組合標記 + 掃描記錄)
-// ✨ v2.1: 新增 addScanLog 方法和 recordMethod 參數
+// ✨ v2.2: 新增 AI 辨識記錄功能 (addAiLog) + 存為自訂食物功能
+// ⚠️ 基於 v2.1 修改，保留所有原有功能
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,13 +21,14 @@ class NutritionService {
   /// - 'scan': OCR 掃描
   /// - 'quick' / 'manual': 手動輸入
   /// - 'combo': 組合記錄
+  /// - 'ai': AI 辨識記錄 ✨ 新增
   /// 
   /// 如果不傳入 recordMethod，會自動根據 foodData 中的標記判斷
   Future<void> addFoodLog({
     required Map<String, dynamic> foodData,
     required double servings,
     required String mealType,
-    String? recordMethod,  // ✅ 新增：可選的記錄方式參數
+    String? recordMethod,  // ✅ 可選的記錄方式參數
   }) async {
     String userId = _auth.currentUser!.uid;
     String today = DateTime.now().toIso8601String().split('T')[0];
@@ -198,8 +200,8 @@ class NutritionService {
     double? sodium,
     double? saturatedFat,
     double? transFat,
-    double? fiber,        // 🔥 新增
-    double? cholesterol,  // 🔥 新增
+    double? fiber,
+    double? cholesterol,
   }) async {
     await addQuickLog(
       foodName: foodName,
@@ -214,8 +216,8 @@ class NutritionService {
       sodium: sodium ?? 0,
       saturatedFat: saturatedFat ?? 0,
       transFat: transFat ?? 0,
-      fiber: fiber ?? 0,          // 🔥 新增
-      cholesterol: cholesterol ?? 0,  // 🔥 新增
+      fiber: fiber ?? 0,
+      cholesterol: cholesterol ?? 0,
       recordMethod: 'scan', // ✅ 標記為掃描記錄
     );
     
@@ -286,6 +288,252 @@ class NutritionService {
       rethrow;
     }
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ██  🆕 AI 辨識記錄 (recordMethod: 'ai') - v2.2 新增
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 🆕 AI 辨識記錄 - 合併成一筆記錄
+  /// 
+  /// [mealName] 餐點名稱（如：排骨便當）- AI 建議或用戶自訂
+  /// [mealType] 餐別（breakfast, lunch, dinner, snack, latenight）
+  /// [foods] AI 辨識的食物列表
+  /// [totalNutrition] 營養素總計（如果為空則自動計算）
+  /// 
+  /// 資料結構：
+  /// ```
+  /// foods = [
+  ///   {
+  ///     'name': '白飯',
+  ///     'calories': 280,
+  ///     'protein': 5.0,
+  ///     'carbs': 62,
+  ///     'fat': 0.5,
+  ///     'sugar': 0,
+  ///     'fiber': 0.5,
+  ///     'confidence': 'high',
+  ///     'servings': 1.0,
+  ///   },
+  ///   ...
+  /// ]
+  /// ```
+  Future<String> addAiLog({
+    required String mealName,
+    required String mealType,
+    required List<Map<String, dynamic>> foods,
+    Map<String, double>? totalNutrition,
+  }) async {
+    String userId = _auth.currentUser!.uid;
+    String today = DateTime.now().toIso8601String().split('T')[0];
+
+    // 計算總營養素（如果沒有傳入 totalNutrition）
+    double totalCalories = 0;
+    double totalProtein = 0;
+    double totalCarbs = 0;
+    double totalFat = 0;
+    double totalSugar = 0;
+    double totalFiber = 0;
+    double totalSodium = 0;
+    double totalSaturatedFat = 0;
+    double totalTransFat = 0;
+    double totalCholesterol = 0;
+
+    if (totalNutrition != null) {
+      // 使用傳入的總計
+      totalCalories = totalNutrition['calories'] ?? 0;
+      totalProtein = totalNutrition['protein'] ?? 0;
+      totalCarbs = totalNutrition['carbs'] ?? 0;
+      totalFat = totalNutrition['fat'] ?? 0;
+      totalSugar = totalNutrition['sugar'] ?? 0;
+      totalFiber = totalNutrition['fiber'] ?? 0;
+      totalSodium = totalNutrition['sodium'] ?? 0;
+      totalSaturatedFat = totalNutrition['saturatedFat'] ?? 0;
+      totalTransFat = totalNutrition['transFat'] ?? 0;
+      totalCholesterol = totalNutrition['cholesterol'] ?? 0;
+    } else {
+      // 從食物列表計算
+      for (var food in foods) {
+        double servings = ((food['servings'] ?? 1.0) as num).toDouble();
+        totalCalories += ((food['calories'] ?? 0) as num).toDouble() * servings;
+        totalProtein += ((food['protein'] ?? 0) as num).toDouble() * servings;
+        totalCarbs += ((food['carbs'] ?? 0) as num).toDouble() * servings;
+        totalFat += ((food['fat'] ?? 0) as num).toDouble() * servings;
+        totalSugar += ((food['sugar'] ?? 0) as num).toDouble() * servings;
+        totalFiber += ((food['fiber'] ?? 0) as num).toDouble() * servings;
+        totalSodium += ((food['sodium'] ?? 0) as num).toDouble() * servings;
+        totalSaturatedFat += ((food['saturatedFat'] ?? 0) as num).toDouble() * servings;
+        totalTransFat += ((food['transFat'] ?? 0) as num).toDouble() * servings;
+        totalCholesterol += ((food['cholesterol'] ?? 0) as num).toDouble() * servings;
+      }
+    }
+
+    // 準備 AI 辨識細節（用於展開查看）
+    List<Map<String, dynamic>> aiDetails = foods.map((food) {
+      double servings = ((food['servings'] ?? 1.0) as num).toDouble();
+      return {
+        'name': food['name'] ?? '未知食物',
+        'servings': servings,
+        'calories': ((food['calories'] ?? 0) as num).toDouble() * servings,
+        'protein': ((food['protein'] ?? 0) as num).toDouble() * servings,
+        'carbs': ((food['carbs'] ?? 0) as num).toDouble() * servings,
+        'fat': ((food['fat'] ?? 0) as num).toDouble() * servings,
+        'sugar': ((food['sugar'] ?? 0) as num).toDouble() * servings,
+        'fiber': ((food['fiber'] ?? 0) as num).toDouble() * servings,
+        'confidence': food['confidence'] ?? 'medium',
+      };
+    }).toList();
+
+    // 儲存到 Firestore
+    DocumentReference docRef = await _firestore.collection(Collections.nutritionLogs).add({
+      'userId': userId,
+      'date': today,
+      'mealType': mealType,
+      'foodName': mealName,
+      'foodId': null,
+      'servings': 1.0,
+      'servingSize': '份',
+
+      // 營養素總計
+      'calories': totalCalories,
+      'protein': totalProtein,
+      'carbs': totalCarbs,
+      'fat': totalFat,
+      'sugar': totalSugar,
+      'fiber': totalFiber,
+      'sodium': totalSodium,
+      'saturatedFat': totalSaturatedFat,
+      'transFat': totalTransFat,
+      'cholesterol': totalCholesterol,
+
+      // 🔑 AI 辨識標記
+      'recordMethod': 'ai',
+      'isFromAI': true,
+      
+      // 🔑 AI 辨識細節（可展開查看）
+      'aiDetails': aiDetails,
+      'aiFoodCount': foods.length,
+
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // 更新每日總計
+    await _updateDailySummary(userId, today, {
+      'calories': totalCalories,
+      'protein': totalProtein,
+      'carbs': totalCarbs,
+      'fat': totalFat,
+    });
+
+    print('✅ AI 記錄成功: $mealName (${foods.length} 項食物)');
+    
+    return docRef.id;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ██  🆕 自訂食物功能 - v2.2 新增
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// 🆕 將 AI 辨識結果存為自訂食物
+  /// 
+  /// 儲存到 users/{userId}/customFoods
+  Future<String> saveAsCustomFood({
+    required String foodName,
+    required double calories,
+    required double protein,
+    required double carbs,
+    required double fat,
+    double sugar = 0,
+    double fiber = 0,
+    double sodium = 0,
+    double saturatedFat = 0,
+    double transFat = 0,
+    double cholesterol = 0,
+    String servingSize = '份',
+    String? category,
+    String? source,
+    List<Map<String, dynamic>>? aiDetails,
+  }) async {
+    String userId = _auth.currentUser!.uid;
+
+    DocumentReference docRef = await _firestore
+        .collection(Collections.users)
+        .doc(userId)
+        .collection('customFoods')
+        .add({
+      'name': foodName,
+      'calories': calories,
+      'protein': protein,
+      'carbs': carbs,
+      'fat': fat,
+      'sugar': sugar,
+      'fiber': fiber,
+      'sodium': sodium,
+      'saturatedFat': saturatedFat,
+      'transFat': transFat,
+      'cholesterol': cholesterol,
+      'servingSize': servingSize,
+      'category': category ?? '自訂',
+      'source': source ?? 'manual', // 'ai' 或 'manual'
+      'aiDetails': aiDetails, // 保留 AI 辨識細節（如果有）
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    print('✅ 已存為自訂食物: $foodName');
+    
+    return docRef.id;
+  }
+
+  /// 🆕 獲取用戶的自訂食物列表
+  Future<List<Map<String, dynamic>>> getCustomFoods() async {
+    String userId = _auth.currentUser!.uid;
+
+    QuerySnapshot snapshot = await _firestore
+        .collection(Collections.users)
+        .doc(userId)
+        .collection('customFoods')
+        .orderBy('createdAt', descending: true)
+        .get();
+
+    return snapshot.docs.map((doc) {
+      return {
+        'id': doc.id,
+        ...doc.data() as Map<String, dynamic>,
+      };
+    }).toList();
+  }
+
+  /// 🆕 搜尋自訂食物（用於食物搜尋頁面整合）
+  Future<List<Map<String, dynamic>>> searchCustomFoods(String query) async {
+    String userId = _auth.currentUser!.uid;
+    String lowerQuery = query.toLowerCase();
+
+    QuerySnapshot snapshot = await _firestore
+        .collection(Collections.users)
+        .doc(userId)
+        .collection('customFoods')
+        .get();
+
+    return snapshot.docs
+        .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
+        .where((food) => (food['name'] as String).toLowerCase().contains(lowerQuery))
+        .toList();
+  }
+
+  /// 🆕 刪除自訂食物
+  Future<void> deleteCustomFood(String foodId) async {
+    String userId = _auth.currentUser!.uid;
+
+    await _firestore
+        .collection(Collections.users)
+        .doc(userId)
+        .collection('customFoods')
+        .doc(foodId)
+        .delete();
+
+    print('✅ 已刪除自訂食物: $foodId');
+  }
+
+  // ========== 共用方法 ==========
 
   /// 更新每日總計
   Future<void> _updateDailySummary(

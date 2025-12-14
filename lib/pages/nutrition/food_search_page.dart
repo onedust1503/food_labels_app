@@ -16,6 +16,7 @@ import 'my_foods_page.dart';
 import 'my_combos_page.dart';
 import 'my_favorites_page.dart';
 import 'ocr_scan_page.dart'; // ✨ 掃描頁面（雙引擎版）
+import 'smart_scan_page.dart'; // ✨ 智能掃描頁面
 
 class FoodSearchPage extends StatefulWidget {
   const FoodSearchPage({super.key});
@@ -217,7 +218,7 @@ class _FoodSearchPageState extends State<FoodSearchPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const OcrScanPage(),
+        builder: (_) => const SmartScanPage(),
       ),
     );
   }

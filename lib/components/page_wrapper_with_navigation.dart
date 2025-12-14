@@ -33,6 +33,7 @@ import '../pages/profile/trainee_edit_page.dart';
 
 // 營養 OCR 掃描頁面
 import '../pages/nutrition/ocr_scan_page.dart';
+import '../pages/nutrition/smart_scan_page.dart';  // ✨ 智慧掃描頁面
 
 // 🆕 v3.9：快速回饋相關頁面
 import '../pages/coach/feedback_templates_page.dart';
@@ -327,7 +328,7 @@ class _PageWrapperWithNavigationState extends State<PageWrapperWithNavigation> w
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const OcrScanPage(),
+                    builder: (context) => const SmartScanPage(),
                   ),
                 );
               },

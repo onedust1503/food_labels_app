@@ -1,6 +1,7 @@
 // lib/pages/nutrition/nutrition_log_list_page.dart
 // Soft UI 風格的今日飲食記錄列表頁面
-// ✨ 增強版 v3.1: 組合編輯功能 + 食物詳情彈窗 + 掃描記錄標籤
+// ✨ 增強版 v3.2: 組合編輯功能 + 食物詳情彈窗 + 掃描記錄標籤 + 🆕 AI辨識記錄
+// ⚠️ 基於 v3.1 修改，保留所有原有功能
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:intl/intl.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/nutrition/soft_card.dart';
 import '../../services/meal_combo_service.dart';
+import '../../services/nutrition_service.dart'; // 🆕 新增：用於存為自訂食物
 import 'nutrition_analysis_page.dart';
 import 'add_combo_log_page.dart';
 
@@ -24,12 +26,16 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final MealComboService _comboService = MealComboService();
+  final NutritionService _nutritionService = NutritionService(); // 🆕 新增
   
   // 🎯 展開狀態管理
   final Set<String> _expandedCards = {};
   
   // 🆕 組合折疊狀態管理
   final Set<String> _collapsedCombos = {};
+  
+  // 🆕 AI 記錄展開狀態管理
+  final Set<String> _expandedAiLogs = {};
   
   // 🎯 滾動控制器
   final ScrollController _scrollController = ScrollController();
@@ -49,7 +55,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
   // 🎯 當前選中的標籤頁 (0=記錄, 1=分析)
   int _currentTabIndex = 0;
   
-  // 🆕 篩選模式: all, combo, single, scan
+  // 🆕 篩選模式: all, combo, single, scan, ai ← 新增 ai
   String _filterMode = 'all';
   
   @override
@@ -317,13 +323,15 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
             mealType = 'latenight';
           }
           
-          // 🆕 篩選處理 - 支援掃描篩選
+          // 🆕 篩選處理 - 支援掃描篩選 + AI 篩選
           bool isFromCombo = data['isFromCombo'] ?? false;
+          bool isFromAI = data['isFromAI'] ?? false; // 🆕 新增
           String recordMethod = data['recordMethod'] ?? 'search';
           
           if (_filterMode == 'combo' && !isFromCombo) continue;
-          if (_filterMode == 'single' && (isFromCombo || recordMethod == 'scan')) continue;
+          if (_filterMode == 'single' && (isFromCombo || recordMethod == 'scan' || recordMethod == 'ai')) continue;
           if (_filterMode == 'scan' && recordMethod != 'scan') continue;
+          if (_filterMode == 'ai' && recordMethod != 'ai') continue; // 🆕 新增
           
           if (groupedLogs.containsKey(mealType)) {
             groupedLogs[mealType]!.add(doc);
@@ -404,7 +412,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🆕 篩選按鈕 - 添加掃描選項
+  /// 🆕 篩選按鈕 - 添加掃描選項 + AI 選項
   Widget _buildFilterButtons() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -441,12 +449,20 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
                     color: AppColors.primary,
                   ),
                   const SizedBox(width: 8),
-                  // ✅ 新增：掃描篩選
+                  // ✅ 掃描篩選
                   _buildFilterChip(
                     label: '掃描',
                     value: 'scan',
                     icon: Icons.document_scanner,
                     color: const Color(0xFF8B5CF6),
+                  ),
+                  const SizedBox(width: 8),
+                  // 🆕 AI 辨識篩選
+                  _buildFilterChip(
+                    label: 'AI辨識',
+                    value: 'ai',
+                    icon: Icons.auto_awesome,
+                    color: const Color(0xFF10B981),
                   ),
                 ],
               ),
@@ -667,7 +683,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     );
   }
 
-  /// 🆕 餐別區塊 - 支援組合分組顯示
+  /// 🆕 餐別區塊 - 支援組合分組顯示 + AI 記錄顯示
   Widget _buildMealSection(
     String title,
     String mealType,
@@ -680,13 +696,16 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
       return sum + (data['calories'] ?? 0);
     });
 
-    // 🆕 將記錄按組合分組
+    // 🆕 將記錄按組合和 AI 分組
     Map<String, List<QueryDocumentSnapshot>> comboGroups = {};
+    List<QueryDocumentSnapshot> aiLogs = []; // 🆕 AI 記錄
     List<QueryDocumentSnapshot> singleLogs = [];
 
     for (var doc in logs) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
       bool isFromCombo = data['isFromCombo'] ?? false;
+      bool isFromAI = data['isFromAI'] ?? false; // 🆕
+      String recordMethod = data['recordMethod'] ?? 'search';
       
       if (isFromCombo) {
         String comboKey = '${data['comboId']}_${data['comboName']}';
@@ -694,6 +713,9 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
           comboGroups[comboKey] = [];
         }
         comboGroups[comboKey]!.add(doc);
+      } else if (isFromAI || recordMethod == 'ai') {
+        // 🆕 AI 記錄
+        aiLogs.add(doc);
       } else {
         singleLogs.add(doc);
       }
@@ -747,6 +769,9 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
           return _buildComboGroup(entry.key, entry.value, mealType);
         }),
 
+        // 🆕 顯示 AI 記錄
+        ...aiLogs.map((doc) => _buildAiLogCard(doc, mealType)),
+
         // 顯示單項記錄
         ...singleLogs.map((doc) => _buildFoodLogCard(doc, mealType)),
         
@@ -754,6 +779,620 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
       ],
     );
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ██  🆕 AI 辨識記錄卡片 - v3.2 新增
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// 🆕 AI 辨識記錄卡片
+  Widget _buildAiLogCard(QueryDocumentSnapshot doc, String mealType) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    String docId = doc.id;
+    bool isExpanded = _expandedAiLogs.contains(docId);
+    
+    String mealName = data['foodName'] ?? 'AI 辨識餐點';
+    int calories = (data['calories'] ?? 0).toInt();
+    double protein = (data['protein'] ?? 0).toDouble();
+    double carbs = (data['carbs'] ?? 0).toDouble();
+    double fat = (data['fat'] ?? 0).toDouble();
+    int foodCount = (data['aiFoodCount'] ?? 0);
+    List<dynamic> aiDetails = data['aiDetails'] ?? [];
+    String timeStr = _formatTime(data['createdAt']);
+
+    // AI 主題色
+    const Color aiColor = Color(0xFF10B981);
+
+    return SoftCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          // AI 記錄標題區
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  _expandedAiLogs.remove(docId);
+                } else {
+                  _expandedAiLogs.add(docId);
+                }
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    aiColor.withOpacity(0.1),
+                    aiColor.withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      // AI 圖標
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF10B981), Color(0xFF34D399)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.auto_awesome,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      
+                      // 餐點名稱和項目數
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              mealName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: aiColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.auto_awesome, size: 10, color: aiColor),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'AI辨識',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: aiColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '$foodCount 項食物 • $timeStr',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      // 展開/收合圖標
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: aiColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          color: aiColor,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // 營養素摘要
+                  Row(
+                    children: [
+                      _buildComboNutrientMini('熱量', calories.toString(), '大卡', AppColors.calories),
+                      Container(width: 1, height: 24, color: AppColors.divider),
+                      _buildComboNutrientMini('蛋白質', protein.toStringAsFixed(1), 'g', AppColors.protein),
+                      Container(width: 1, height: 24, color: AppColors.divider),
+                      _buildComboNutrientMini('碳水', carbs.toStringAsFixed(1), 'g', AppColors.carbs),
+                      Container(width: 1, height: 24, color: AppColors.divider),
+                      _buildComboNutrientMini('脂肪', fat.toStringAsFixed(1), 'g', AppColors.fat),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // 操作按鈕列
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Row(
+              children: [
+                // 🆕 存為我的食物按鈕
+                Expanded(
+                  child: _buildAiActionButton(
+                    icon: Icons.bookmark_add,
+                    label: '存為食物',
+                    color: aiColor,
+                    onTap: () => _showSaveAsCustomFoodDialog(doc),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // 編輯按鈕
+                Expanded(
+                  child: _buildAiActionButton(
+                    icon: Icons.edit,
+                    label: '編輯',
+                    color: const Color(0xFF4FACFE),
+                    onTap: () => _showEditDialog(doc),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // 刪除按鈕
+                Expanded(
+                  child: _buildAiActionButton(
+                    icon: Icons.delete_outline,
+                    label: '刪除',
+                    color: AppColors.error,
+                    onTap: () => _confirmDelete(doc),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // 展開時顯示 AI 辨識細節
+          if (isExpanded && aiDetails.isNotEmpty) ...[
+            const Divider(height: 1),
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.visibility, size: 16, color: aiColor),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'AI 辨識內容',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...aiDetails.asMap().entries.map((entry) {
+                    return _buildAiFoodDetailItem(entry.value as Map<String, dynamic>, entry.key == aiDetails.length - 1);
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 🆕 AI 操作按鈕
+  Widget _buildAiActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3), width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 🆕 AI 辨識食物細節項目
+  Widget _buildAiFoodDetailItem(Map<String, dynamic> food, bool isLast) {
+    String name = food['name'] ?? '未知食物';
+    double servings = ((food['servings'] ?? 1) as num).toDouble();
+    int calories = ((food['calories'] ?? 0) as num).toInt();
+    double protein = ((food['protein'] ?? 0) as num).toDouble();
+    double carbs = ((food['carbs'] ?? 0) as num).toDouble();
+    double fat = ((food['fat'] ?? 0) as num).toDouble();
+    String confidence = food['confidence'] ?? 'medium';
+
+    // 信心度顏色和標籤
+    Color confidenceColor;
+    String confidenceLabel;
+    switch (confidence) {
+      case 'high':
+        confidenceColor = const Color(0xFF10B981);
+        confidenceLabel = '高';
+        break;
+      case 'low':
+        confidenceColor = const Color(0xFFF59E0B);
+        confidenceLabel = '低';
+        break;
+      default:
+        confidenceColor = const Color(0xFF6B7280);
+        confidenceLabel = '中';
+    }
+
+    return Container(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      margin: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      decoration: BoxDecoration(
+        border: isLast ? null : Border(bottom: BorderSide(color: AppColors.divider.withOpacity(0.5))),
+      ),
+      child: Row(
+        children: [
+          // 食物圖標
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.restaurant, size: 16, color: Color(0xFF10B981)),
+          ),
+          const SizedBox(width: 10),
+          
+          // 食物資訊
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    // 信心度標籤
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: confidenceColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        confidenceLabel,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: confidenceColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      '${servings.toStringAsFixed(1)} 份',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$calories 大卡',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildMiniNutrient('P', protein, AppColors.protein),
+                    const SizedBox(width: 6),
+                    _buildMiniNutrient('C', carbs, AppColors.carbs),
+                    const SizedBox(width: 6),
+                    _buildMiniNutrient('F', fat, AppColors.fat),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 🆕 存為自訂食物對話框
+  void _showSaveAsCustomFoodDialog(QueryDocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    
+    String originalName = data['foodName'] ?? 'AI 辨識餐點';
+    double calories = (data['calories'] ?? 0).toDouble();
+    double protein = (data['protein'] ?? 0).toDouble();
+    double carbs = (data['carbs'] ?? 0).toDouble();
+    double fat = (data['fat'] ?? 0).toDouble();
+    double sugar = (data['sugar'] ?? 0).toDouble();
+    double fiber = (data['fiber'] ?? 0).toDouble();
+    List<dynamic> aiDetails = data['aiDetails'] ?? [];
+    
+    TextEditingController nameController = TextEditingController(text: originalName);
+    
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(color: AppColors.shadowDark, offset: const Offset(8, 8), blurRadius: 24),
+              BoxShadow(color: AppColors.shadowLight, offset: const Offset(-8, -8), blurRadius: 24),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 標題
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF10B981), Color(0xFF34D399)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.bookmark_add, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '存為我的食物',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                      color: AppColors.textSecondary,
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 20),
+                
+                // 食物名稱輸入
+                const Text('食物名稱', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    hintText: '輸入食物名稱',
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // 營養素預覽
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: Color(0xFF10B981)),
+                          SizedBox(width: 6),
+                          Text('營養素 (每份)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: _buildNutrientPreview('熱量', calories.toInt().toString(), '大卡', AppColors.calories)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _buildNutrientPreview('蛋白質', protein.toStringAsFixed(1), 'g', AppColors.protein)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: _buildNutrientPreview('碳水', carbs.toStringAsFixed(1), 'g', AppColors.carbs)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _buildNutrientPreview('脂肪', fat.toStringAsFixed(1), 'g', AppColors.fat)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 8),
+                
+                const Text(
+                  '儲存後可在搜尋食物時快速找到',
+                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // 操作按鈕
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: AppColors.background,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text('取消', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await _saveAsCustomFood(
+                            nameController.text.trim().isEmpty ? originalName : nameController.text.trim(),
+                            calories,
+                            protein,
+                            carbs,
+                            fat,
+                            sugar,
+                            fiber,
+                            aiDetails,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: const Color(0xFF10B981),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        child: const Text('儲存', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 🆕 儲存為自訂食物
+  Future<void> _saveAsCustomFood(
+    String name,
+    double calories,
+    double protein,
+    double carbs,
+    double fat,
+    double sugar,
+    double fiber,
+    List<dynamic> aiDetails,
+  ) async {
+    try {
+      await _nutritionService.saveAsCustomFood(
+        foodName: name,
+        calories: calories,
+        protein: protein,
+        carbs: carbs,
+        fat: fat,
+        sugar: sugar,
+        fiber: fiber,
+        source: 'ai',
+        aiDetails: aiDetails.map((e) => e as Map<String, dynamic>).toList(),
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text('「$name」已存為我的食物')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('儲存自訂食物失敗: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('儲存失敗: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ██  以下是原版 v3.1 的所有功能（完整保留）
+  // ══════════════════════════════════════════════════════════════════════════
 
   /// 🆕 組合群組卡片 - v3.0 修改：再記一次 → 編輯份量
   Widget _buildComboGroup(
@@ -1712,7 +2351,7 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     }
   }
 
-  /// ✅ 新增：記錄方式標籤
+  /// ✅ 記錄方式標籤 - 🆕 新增 AI 支援
   Widget _buildRecordMethodBadge(String method) {
     // 組合記錄不顯示標籤（因為已經有組合群組顯示）
     if (method == 'combo') return const SizedBox.shrink();
@@ -1731,6 +2370,11 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
         icon = Icons.edit_note;
         label = '手動';
         color = const Color(0xFFFA709A);
+        break;
+      case 'ai': // 🆕 新增
+        icon = Icons.auto_awesome;
+        label = 'AI辨識';
+        color = const Color(0xFF10B981);
         break;
       default:
         icon = Icons.search;
@@ -1942,6 +2586,11 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     bool isFromCombo = data['isFromCombo'] ?? false;
     if (isFromCombo) return const SizedBox.shrink();
     
+    // 🆕 AI 記錄由 _buildAiLogCard 處理
+    bool isFromAI = data['isFromAI'] ?? false;
+    String recordMethod = data['recordMethod'] ?? 'search';
+    if (isFromAI || recordMethod == 'ai') return const SizedBox.shrink();
+    
     String foodName = data['foodName'] ?? '未知食物';
     double servings = (data['servings'] ?? 1).toDouble();
     String servingSize = data['servingSize'] ?? '份';
@@ -1949,7 +2598,6 @@ class _NutritionLogListPageState extends State<NutritionLogListPage> {
     double protein = (data['protein'] ?? 0).toDouble();
     double carbs = (data['carbs'] ?? 0).toDouble();
     double fat = (data['fat'] ?? 0).toDouble();
-    String recordMethod = data['recordMethod'] ?? 'search';
     
     double saturatedFat = (data['saturatedFat'] ?? 0).toDouble();
     double transFat = (data['transFat'] ?? 0).toDouble();

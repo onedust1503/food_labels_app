@@ -1,5 +1,5 @@
 // lib/services/ai_food_service.dart
-// AI 食物辨識服務 - v4 修正錯誤訊息顯示
+// AI 食物辨識服務 - v5 新增 sugar + fiber 營養素支援
 
 import 'dart:convert';
 import 'dart:io';
@@ -51,7 +51,7 @@ class BoundingBox {
   };
 }
 
-/// 食物項目
+/// 食物項目 - v5 新增 sugar, fiber
 class FoodItem {
   final String name;
   final String portion;
@@ -61,6 +61,8 @@ class FoodItem {
   final double protein;
   final double carbs;
   final double fat;
+  final double sugar;   // 🆕 v5: 糖
+  final double fiber;   // 🆕 v5: 膳食纖維
   final String? notes;
   final BoundingBox? boundingBox;
 
@@ -73,6 +75,8 @@ class FoodItem {
     required this.protein,
     required this.carbs,
     required this.fat,
+    this.sugar = 0,   // 🆕
+    this.fiber = 0,   // 🆕
     this.notes,
     this.boundingBox,
   });
@@ -87,6 +91,8 @@ class FoodItem {
       protein: (json['protein'] as num?)?.toDouble() ?? 0,
       carbs: (json['carbs'] as num?)?.toDouble() ?? 0,
       fat: (json['fat'] as num?)?.toDouble() ?? 0,
+      sugar: (json['sugar'] as num?)?.toDouble() ?? 0,   // 🆕
+      fiber: (json['fiber'] as num?)?.toDouble() ?? 0,   // 🆕
       notes: json['notes'] as String?,
       boundingBox: json['bounding_box'] != null
           ? BoundingBox.fromJson(json['bounding_box'])
@@ -103,23 +109,29 @@ class FoodItem {
     'protein': protein,
     'carbs': carbs,
     'fat': fat,
+    'sugar': sugar,   // 🆕
+    'fiber': fiber,   // 🆕
     'notes': notes,
     'bounding_box': boundingBox?.toJson(),
   };
 }
 
-/// 營養總計
+/// 營養總計 - v5 新增 sugar, fiber
 class NutritionTotal {
   final double calories;
   final double protein;
   final double carbs;
   final double fat;
+  final double sugar;   // 🆕 v5
+  final double fiber;   // 🆕 v5
 
   NutritionTotal({
     required this.calories,
     required this.protein,
     required this.carbs,
     required this.fat,
+    this.sugar = 0,   // 🆕
+    this.fiber = 0,   // 🆕
   });
 
   factory NutritionTotal.fromJson(Map<String, dynamic> json) {
@@ -128,6 +140,8 @@ class NutritionTotal {
       protein: (json['protein'] as num?)?.toDouble() ?? 0,
       carbs: (json['carbs'] as num?)?.toDouble() ?? 0,
       fat: (json['fat'] as num?)?.toDouble() ?? 0,
+      sugar: (json['sugar'] as num?)?.toDouble() ?? 0,   // 🆕
+      fiber: (json['fiber'] as num?)?.toDouble() ?? 0,   // 🆕
     );
   }
 }
@@ -344,7 +358,7 @@ class AIFoodService {
       final callable = _functions.httpsCallable(
         'analyzeFood',
         options: HttpsCallableOptions(
-          timeout: const Duration(seconds: 120), // 配合 Cloud Function 的 120 秒
+          timeout: const Duration(seconds: 120),
         ),
       );
 
@@ -359,19 +373,20 @@ class AIFoodService {
         'targetCalories': targetCalories,
       });
 
-      // 🆕 安全的類型轉換
+      // 安全的類型轉換
       final rawData = result.data;
       final data = _convertToStringDynamic(rawData);
 
       if (kDebugMode) {
-        print('🍽️ [AI] Cloud Function 回應: success=${data['success']}, modelUsed=${data['modelUsed']}');
+        print('🍽️ [AI] Cloud Function 回應: success=${data['success']}, '
+            'modelUsed=${data['modelUsed']}');
       }
 
       if (data['success'] == true && data['result'] != null) {
         if (kDebugMode) {
           print('🍽️ [AI] 分析成功！使用模型: ${data['modelUsed']}');
         }
-        // 🆕 對 result 也做類型轉換
+        // 對 result 也做類型轉換
         final resultData = _convertToStringDynamic(data['result']);
         return FoodAnalysisResult.fromJson(resultData);
       } else {
@@ -391,7 +406,7 @@ class AIFoodService {
       // 判斷是否為可重試錯誤
       final isRetryable = _isRetryableError(e.code, e.message);
 
-      // 🆕 直接使用 Cloud Function 傳回的詳細訊息
+      // 直接使用 Cloud Function 傳回的詳細訊息
       final errorMessage = _getErrorMessage(e.code, e.message);
 
       throw AIFoodServiceException(
@@ -437,7 +452,7 @@ class AIFoodService {
     return base64Encode(compressedBytes);
   }
 
-  /// 🆕 遞迴轉換 Map 類型（解決 Firebase 回傳類型問題）
+  /// 遞迴轉換 Map 類型（解決 Firebase 回傳類型問題）
   Map<String, dynamic> _convertToStringDynamic(dynamic data) {
     if (data is Map<String, dynamic>) {
       return data;
@@ -455,7 +470,7 @@ class AIFoodService {
     return {};
   }
 
-  /// 🆕 轉換 List 中的 Map
+  /// 轉換 List 中的 Map
   List<dynamic> _convertList(List<dynamic> list) {
     return list.map((item) {
       if (item is Map) {
@@ -467,7 +482,7 @@ class AIFoodService {
     }).toList();
   }
 
-  /// 🆕 錯誤訊息轉換（優先使用 Cloud Function 傳回的詳細訊息）
+  /// 錯誤訊息轉換（優先使用 Cloud Function 傳回的詳細訊息）
   String _getErrorMessage(String code, [String? message]) {
     // 如果 message 包含錯誤代碼標記（來自 Cloud Function），直接使用
     if (message != null && message.startsWith('[')) {

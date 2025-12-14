@@ -1,8 +1,7 @@
 // lib/components/network_banner.dart
-// 🔬 加強版 - 包含詳細診斷日誌
+// 🎨 方案 A: 浮動卡片式 - Morandi 配色 + Soft UI 風格
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../providers/network_provider.dart';
 
@@ -18,119 +17,285 @@ class NetworkBanner extends StatefulWidget {
   State<NetworkBanner> createState() => _NetworkBannerState();
 }
 
-class _NetworkBannerState extends State<NetworkBanner> {
+class _NetworkBannerState extends State<NetworkBanner> 
+    with SingleTickerProviderStateMixin {
+  
+  late AnimationController _animationController;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  // 🎨 Morandi 配色
+  static const Color _offlineColor = Color(0xFFD4A574);      // 莫蘭迪橘
+  static const Color _offlineColorDark = Color(0xFFC4956A);  // 深一點的橘
+  static const Color _onlineColor = Color(0xFF7BA388);       // 莫蘭迪綠
+  static const Color _onlineColorDark = Color(0xFF6B9378);   // 深一點的綠
+
   @override
   void initState() {
     super.initState();
-    if (kDebugMode) {
-      print('🎨 NetworkBanner.initState() 被調用');
-    }
+    
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    
+    // 從下方滑入
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic,
+    ));
+    
+    // 淡入
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ));
+    
+    // 輕微縮放效果
+    _scaleAnimation = Tween<double>(
+      begin: 0.95,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutBack,
+    ));
   }
 
   @override
   void dispose() {
-    if (kDebugMode) {
-      print('🗑️  NetworkBanner.dispose() 被調用');
-    }
+    _animationController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (kDebugMode) {
-      print('🎨 NetworkBanner.build() 被調用');
-    }
-    
     return Consumer<NetworkProvider>(
-      builder: (context, networkProvider, child) {
-        if (kDebugMode) {
-          print('📺 NetworkBanner.Consumer.builder() 被調用');
-          print('   - NetworkProvider hashCode: ${networkProvider.hashCode}');
-          print('   - isOnline: ${networkProvider.isOnline}');
-          print('   - 應該顯示橫幅: ${!networkProvider.isOnline}');
-        }
+      builder: (context, networkProvider, _) {
+        final shouldShowBanner = !networkProvider.isOnline || networkProvider.showRecoveryBanner;
         
+        if (shouldShowBanner) {
+          _animationController.forward();
+        } else {
+          _animationController.reverse();
+        }
+
         return Stack(
           children: [
-            // 主要內容（首頁）
+            // 主要內容
             widget.child,
             
-            // 網路橫幅（浮動在頂部）
-            if (!networkProvider.isOnline) ...[
-              if (kDebugMode) _buildDebugIndicator(),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  child: Material(
-                    color: Colors.red.shade700,
-                    elevation: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.wifi_off,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              '網路連接已中斷',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () async {
-                              if (kDebugMode) {
-                                print('🔄 重試按鈕被點擊');
-                              }
-                              await networkProvider.checkConnectivity();
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            child: const Text(
-                              '重試',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
+            // 浮動卡片橫幅
+            AnimatedBuilder(
+              animation: _animationController,
+              builder: (context, child) {
+                if (_animationController.value == 0 && !shouldShowBanner) {
+                  return const SizedBox.shrink();
+                }
+                
+                return Positioned(
+                  bottom: 80, // 在底部導航欄上方
+                  left: 16,
+                  right: 16,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: ScaleTransition(
+                        scale: _scaleAnimation,
+                        child: _buildFloatingCard(networkProvider),
                       ),
                     ),
                   ),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ],
         );
       },
     );
   }
 
-  /// Debug 模式下在橫幅下方顯示綠色指示器
-  Widget _buildDebugIndicator() {
-    return Positioned(
-      top: 60,
-      left: 0,
-      right: 0,
-      child: Container(
-        color: Colors.green,
-        padding: const EdgeInsets.all(8),
-        child: const Text(
-          '🐛 DEBUG: 橫幅應該在上方顯示',
-          style: TextStyle(color: Colors.white),
-          textAlign: TextAlign.center,
+  Widget _buildFloatingCard(NetworkProvider networkProvider) {
+    final isRecovery = networkProvider.showRecoveryBanner && networkProvider.isOnline;
+    
+    // 根據狀態選擇顏色
+    final primaryColor = isRecovery ? _onlineColor : _offlineColor;
+    final secondaryColor = isRecovery ? _onlineColorDark : _offlineColorDark;
+    
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [primaryColor, secondaryColor],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          // 主陰影
+          BoxShadow(
+            color: primaryColor.withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: 0,
+          ),
+          // 柔和的底部陰影
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isRecovery 
+              ? () => networkProvider.hideRecoveryBanner()
+              : () => networkProvider.checkConnectivity(),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            child: Row(
+              children: [
+                // 圖標容器
+                _buildIconContainer(isRecovery),
+                
+                const SizedBox(width: 14),
+                
+                // 文字內容
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isRecovery ? '網路已恢復' : '網路連線中斷',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isRecovery ? '所有功能正常運作' : '部分功能可能無法使用',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.85),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // 按鈕
+                _buildActionButton(isRecovery, networkProvider),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconContainer(bool isRecovery) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.8, end: 1.0),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutBack,
+      builder: (context, value, child) {
+        return Transform.scale(
+          scale: value,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.22),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(
+              child: isRecovery
+                  ? const Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    )
+                  : _buildPulsingIcon(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPulsingIcon() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.9, end: 1.1),
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.easeInOut,
+      builder: (context, value, child) {
+        return Transform.scale(
+          scale: value,
+          child: const Icon(
+            Icons.wifi_off_rounded,
+            color: Colors.white,
+            size: 26,
+          ),
+        );
+      },
+      onEnd: () {
+        // 重複動畫
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+  }
+
+  Widget _buildActionButton(bool isRecovery, NetworkProvider networkProvider) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.22),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isRecovery 
+              ? () => networkProvider.hideRecoveryBanner()
+              : () async {
+                  await networkProvider.checkConnectivity();
+                },
+          borderRadius: BorderRadius.circular(25),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isRecovery ? 14 : 18,
+              vertical: 10,
+            ),
+            child: isRecovery
+                ? const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  )
+                : const Text(
+                    '重試',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
         ),
       ),
     );

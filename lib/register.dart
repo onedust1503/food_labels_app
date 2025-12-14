@@ -3,6 +3,8 @@ import 'package:flutter/services.dart'; // 新增：觸覺回饋功能
 // *** 新增：導入 Firebase 相關套件 ***
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart'; // ✅ 新增：Provider
+import 'providers/network_provider.dart'; // ✅ 新增：NetworkProvider
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -240,7 +242,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      // 檢查網路連接
+      // ✅ 修改：使用 NetworkProvider 進行真實網路檢測
       bool hasInternet = await _checkInternetConnection();
       if (!hasInternet) {
         throw Exception('無網路連接，請檢查您的網路設定');
@@ -320,12 +322,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  // 檢查網路連接狀態
+  // ✅ 修改：使用 NetworkProvider 進行真實網路檢測
   Future<bool> _checkInternetConnection() async {
-    // 實際專案中，這裡應該使用 connectivity_plus 套件
-    // 現在先模擬網路檢查
-    await Future.delayed(const Duration(milliseconds: 500));
-    return true; // 模擬網路正常
+    final networkProvider = Provider.of<NetworkProvider>(context, listen: false);
+    await networkProvider.checkConnectivity();
+    return networkProvider.isOnline;
   }
 
   // 顯示提示訊息 (修改：支援不同顏色)

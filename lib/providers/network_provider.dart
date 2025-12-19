@@ -1,5 +1,5 @@
 // lib/providers/network_provider.dart
-// 🚀 修復版 v3 - 確保定期檢查始終運行
+// 🚀 修復版 v5 - 使用 HTTP 測試（更可靠，不會被防火牆阻擋）
 
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -124,35 +124,19 @@ class NetworkProvider extends ChangeNotifier {
         print('⏰ NetworkProvider: 定期檢查網路... (第 ${timer.tick} 次)');
       }
       
-      // 只有在有 WiFi/行動網路連接時才做真實測試
-      final results = await Connectivity().checkConnectivity();
-      final hadConnection = results.any((result) => result != ConnectivityResult.none);
+      // ✅ 直接用 HTTP 測試
+      final reallyOnline = await _checkRealConnectivity();
       
-      if (kDebugMode) {
-        print('   - 連接狀態: $results');
-        print('   - 有連接: $hadConnection');
-      }
-      
-      if (hadConnection) {
-        final reallyOnline = await _checkRealConnectivity();
-        
-        // 只有狀態改變時才更新
-        if (reallyOnline != _isOnline) {
-          if (kDebugMode) {
-            print('⏰ 定期檢查發現狀態改變: $_isOnline -> $reallyOnline');
-          }
-          _updateOnlineStatus(reallyOnline);
-        } else {
-          if (kDebugMode) {
-            print('   - 狀態未改變: $_isOnline');
-          }
-        }
-      } else if (_isOnline) {
-        // 連接斷開但狀態還是 online
+      // 只有狀態改變時才更新
+      if (reallyOnline != _isOnline) {
         if (kDebugMode) {
-          print('⏰ 定期檢查: 無連接，設為離線');
+          print('⏰ 定期檢查發現狀態改變: $_isOnline -> $reallyOnline');
         }
-        _updateOnlineStatus(false);
+        _updateOnlineStatus(reallyOnline);
+      } else {
+        if (kDebugMode) {
+          print('   - 狀態未改變: $_isOnline');
+        }
       }
     });
   }
@@ -164,14 +148,9 @@ class NetworkProvider extends ChangeNotifier {
       print('   - 當前狀態: $_isOnline');
     }
     
-    final hadConnection = results.any((result) => result != ConnectivityResult.none);
-    
-    if (hadConnection) {
-      final reallyOnline = await _checkRealConnectivity();
-      _updateOnlineStatus(reallyOnline);
-    } else {
-      _updateOnlineStatus(false);
-    }
+    // ✅ 不管 connectivity_plus 說什麼，都用 HTTP 測試確認
+    final reallyOnline = await _checkRealConnectivity();
+    _updateOnlineStatus(reallyOnline);
   }
 
   void _updateOnlineStatus(bool newStatus) {
@@ -215,63 +194,66 @@ class NetworkProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ 使用 TCP Socket 連接測試
+  // ✅ 使用 HTTP 請求測試（更可靠，不會被防火牆阻擋）
   Future<bool> _checkRealConnectivity() async {
     try {
       if (kDebugMode) {
-        print('🔍 NetworkProvider: 進行真實網路測試 (TCP Socket)...');
+        print('🔍 NetworkProvider: 進行真實網路測試 (HTTP)...');
       }
       
-      final socket = await Socket.connect(
-        '8.8.8.8',
-        53,
-        timeout: const Duration(seconds: 3),
-      );
-      socket.destroy();
+      // 使用 HTTP HEAD 請求測試
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      
+      final request = await client.headUrl(Uri.parse('https://www.google.com'));
+      final response = await request.close();
+      client.close();
+      
+      final success = response.statusCode == 200;
       
       if (kDebugMode) {
-        print('   - TCP Socket 連線測試: 成功 ✅');
+        print('   - HTTP 測試 (Google): ${success ? "成功 ✅" : "失敗 ❌"} (狀態碼: ${response.statusCode})');
       }
-      return true;
       
-    } on SocketException catch (e) {
-      if (kDebugMode) {
-        print('   - TCP Socket 連線測試: SocketException ❌');
-        print('   - 錯誤: ${e.message}');
-      }
-      return false;
-    } on TimeoutException catch (_) {
-      if (kDebugMode) {
-        print('   - TCP Socket 連線測試: 超時 ❌');
-      }
-      return false;
+      return success;
+      
     } catch (e) {
       if (kDebugMode) {
-        print('   - TCP Socket 連線測試錯誤: $e');
+        print('   - HTTP 測試失敗: $e');
       }
       
       // 備用方案
-      try {
-        if (kDebugMode) {
-          print('   - 嘗試備用測試 (Cloudflare DNS)...');
-        }
-        final socket2 = await Socket.connect(
-          '1.1.1.1',
-          53,
-          timeout: const Duration(seconds: 3),
-        );
-        socket2.destroy();
-        
-        if (kDebugMode) {
-          print('   - 備用測試: 成功 ✅');
-        }
-        return true;
-      } catch (_) {
-        if (kDebugMode) {
-          print('   - 備用測試: 失敗 ❌');
-        }
-        return false;
+      return await _backupConnectivityCheck();
+    }
+  }
+
+  // ✅ 備用連線測試
+  Future<bool> _backupConnectivityCheck() async {
+    try {
+      if (kDebugMode) {
+        print('   - 嘗試備用測試 (Cloudflare)...');
       }
+      
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      
+      final request = await client.headUrl(Uri.parse('https://1.1.1.1'));
+      final response = await request.close();
+      client.close();
+      
+      // Cloudflare 可能返回 200, 301, 或 302
+      final success = response.statusCode >= 200 && response.statusCode < 400;
+      
+      if (kDebugMode) {
+        print('   - 備用測試 (Cloudflare): ${success ? "成功 ✅" : "失敗 ❌"} (狀態碼: ${response.statusCode})');
+      }
+      
+      return success;
+    } catch (e) {
+      if (kDebugMode) {
+        print('   - 備用測試失敗: $e');
+      }
+      return false;
     }
   }
 
@@ -281,20 +263,9 @@ class NetworkProvider extends ChangeNotifier {
     }
     
     try {
-      final results = await Connectivity().checkConnectivity();
-      
-      if (kDebugMode) {
-        print('   - 檢查結果: $results');
-      }
-      
-      final hadConnection = results.any((result) => result != ConnectivityResult.none);
-      
-      if (hadConnection) {
-        final reallyOnline = await _checkRealConnectivity();
-        _updateOnlineStatus(reallyOnline);
-      } else {
-        _updateOnlineStatus(false);
-      }
+      // ✅ 直接用 HTTP 測試
+      final reallyOnline = await _checkRealConnectivity();
+      _updateOnlineStatus(reallyOnline);
       
       if (kDebugMode) {
         print('   ✅ 檢查完成: ${_isOnline ? "已連線" : "已斷線"}');
